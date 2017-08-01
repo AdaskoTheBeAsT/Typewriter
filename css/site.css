@@ -44,6 +44,10 @@ a:hover,a:focus,.a:active {
   background-color: transparent;
 }
 
+ .navbar-toggle:focus {
+    background-color: transparent;
+}
+
 /*.navbar.navbar-themed {
   border: none;
 }
