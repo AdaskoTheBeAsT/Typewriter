@@ -39,6 +39,11 @@ a:hover,a:focus,.a:active {
   background-color: transparent;
 }
 
+.navbar.navbar-toggle {
+  color: #ebebeb;
+  background-color: transparent;
+}
+
 /*.navbar.navbar-themed {
   border: none;
 }
