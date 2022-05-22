@@ -13,6 +13,10 @@ From the other side that extensions really helps fulstack developers and work on
 
 ## Main differences between original and this fork
 
+## Version 2.8.1
+
+- fixed tool manifest dependency to require VS 17.2.x
+
 ## Version 2.8.0
 
 - version compatible with Visual Studio 17.2.x
