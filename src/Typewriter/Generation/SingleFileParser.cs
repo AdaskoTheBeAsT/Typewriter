@@ -1,4 +1,5 @@
 ﻿using EnvDTE;
+using Microsoft.Build.Framework;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,6 +7,7 @@ using System.Reflection;
 using System.Runtime.Remoting.Contexts;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web.UI.Design;
 using Typewriter.CodeModel;
 using Typewriter.TemplateEditor.Lexing;
 using Typewriter.VisualStudio;
@@ -60,6 +62,7 @@ namespace Typewriter.Generation
                 stream.Advance(identifier.Length);
                 int advance = 0;
                 int offset = stream.Position + 1;
+                int index = 0;
                 foreach (var f in files)
                 {
 
@@ -91,45 +94,39 @@ namespace Typewriter.Generation
                             }
                             else
                             {
-                                IEnumerable<Item> items;
-                                if (filter != null && filter.StartsWith("$", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    var predicate = filter.Remove(0, 1);
-                                    if (extensions != null)
-                                    {
-                                        // Lambda filters are always defined in the first extension type
-                                        var c = extensions.FirstOrDefault()?.GetMethod(predicate);
-                                        if (c != null)
-                                        {
-                                            try
-                                            {
-                                                items = collection.Where(x => (bool)c.Invoke(null, new object[] { x })).ToList();
-                                                matchFound = matchFound || items.Any();
-                                            }
-                                            catch (Exception e)
-                                            {
-                                                items = Array.Empty<Item>();
-                                                hasError = true;
-
-                                                var message = $"Error rendering template. Cannot apply filter to identifier '{identifier}'.";
-                                                LogException(e, message, projectItem, sourcePath);
-                                            }
-                                        }
-                                        else
-                                        {
-                                            items = Array.Empty<Item>();
-                                        }
-                                    }
-                                    else
-                                    {
-                                        items = Array.Empty<Item>();
-                                    }
-                                }
-                                else
-                                {
-                                    items = ItemFilter.Apply(collection, filter, ref matchFound);
-                                }
+                                IEnumerable<Item> items = ApplyFilter(collection, filter, projectItem, identifier, sourcePath);
+                                
                                 output += string.Join(ParseTemplate(projectItem, sourcePath, separator, context), items.Select(item => ParseTemplate(projectItem, sourcePath, block, item)));
+                                // In this case we mus check if  we get items of the next element too
+                                for (int i= index+1; i<files.Length; i++)
+                                {
+
+                                    var next = files[i];
+
+                                   
+                                    if (next != null)
+                                    {
+                                        if (TryGetIdentifier(projectItem, next.FullName, identifier, next, out var vnext))
+                                        {
+                                            if (vnext is IEnumerable<Item> colnext)
+                                            {
+                                                
+
+                                                colnext = ApplyFilter(colnext, filter, projectItem, identifier, next.FullName);
+
+                                                if (colnext.Any())
+                                                {
+                                                    
+
+                                                    output += ParseTemplate(projectItem, sourcePath, separator, context);
+
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                    }
+                                }
                             }
                         }
                         else if (value is bool)
@@ -157,6 +154,7 @@ namespace Typewriter.Generation
                     }
 
                     advance = innerStream.Position+1;
+                    index++;
                 }
 
                 bool canAdvance = stream.Advance(advance - offset);
@@ -167,14 +165,62 @@ namespace Typewriter.Generation
             return false;
         }
 
-        private static string ParseBlock(Stream stream, char open, char close)
+        private IEnumerable<Item> ApplyFilter(IEnumerable<Item> collection, string filter, ProjectItem projectItem, string identifier, string sourcePath)
+        {
+            IEnumerable<Item> items;
+            if (filter != null && filter.StartsWith("$", StringComparison.OrdinalIgnoreCase))
+            {
+                var predicate = filter.Remove(0, 1);
+                if (extensions != null)
+                {
+                    // Lambda filters are always defined in the first extension type
+                    var c = extensions.FirstOrDefault()?.GetMethod(predicate);
+                    if (c != null)
+                    {
+                        try
+                        {
+                            items = collection.Where(x => (bool)c.Invoke(null, new object[] { x })).ToList();
+                            matchFound = matchFound || items.Any();
+                        }
+                        catch (Exception e)
+                        {
+                            items = Array.Empty<Item>();
+                            hasError = true;
+
+                            var message = $"Error rendering template. Cannot apply filter to identifier '{identifier}'.";
+                            LogException(e, message, projectItem, sourcePath);
+                        }
+                    }
+                    else
+                    {
+                        items = Array.Empty<Item>();
+                    }
+                }
+                else
+                {
+                    items = Array.Empty<Item>();
+                }
+            }
+            else
+            {
+                items = ItemFilter.Apply(collection, filter, ref matchFound);
+            }
+
+
+            return items;
+        }
+
+        private static string ParseBlock(Stream stream, char open, char close, bool onlyPeek = false)
         {
             if (stream.Peek() == open)
             {
                 var block = stream.PeekBlock(2, open, close);
 
-                stream.Advance(block.Length);
-                stream.Advance(stream.Peek(2) == close ? 2 : 1);
+                if (!onlyPeek)
+                {
+                    stream.Advance(block.Length);
+                    stream.Advance(stream.Peek(2) == close ? 2 : 1);
+                }
 
                 return block;
             }
