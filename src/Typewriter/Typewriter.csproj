@@ -66,6 +66,7 @@
     <Compile Include="CodeModel\Implementation\RecordImpl.cs" />
     <Compile Include="CodeModel\Implementation\TypeParameterImpl.cs" />
     <Compile Include="Generation\Controllers\BlockingQueue.cs" />
+    <Compile Include="Generation\SingleFileParser.cs" />
     <Compile Include="Generation\SolutionFilesHelper.cs" />
     <Compile Include="Properties\SharedAssemblyInfo.cs" />
     <Compile Include="CodeModel\Collections\AttributeCollectionImpl.cs" />

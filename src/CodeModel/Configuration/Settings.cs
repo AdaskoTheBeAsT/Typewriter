@@ -14,6 +14,14 @@ namespace Typewriter.Configuration
         public abstract Settings IncludeProject(string projectName);
 
         /// <summary>
+        /// Single File Mode - Template will be parsed in one file. Ignor
+        /// Note: SingleFileMode ignores the filename factory(!)
+        /// </summary>
+        /// <param name="singleFilename">The single filename.</param>
+        /// <returns></returns>
+        public abstract Settings SingleFileMode(string singleFilename);
+
+        /// <summary>
         /// Includes files in the current project when rendering the template.
         /// </summary>
         public abstract Settings IncludeCurrentProject();
@@ -60,5 +68,22 @@ namespace Typewriter.Configuration
         /// Gets or sets value indicating if generated files should not be added to project.
         /// </summary>
         public bool SkipAddingGeneratedFilesToProject { get; set; }
+
+        /// <summary>
+        /// Gets a value indicating whether this instance is single file mode.
+        /// </summary>
+        /// <value>
+        ///   <c>true</c> if this instance is single file mode; otherwise, <c>false</c>.
+        /// </value>
+        public abstract bool IsSingleFileMode { get; }
+
+        /// <summary>
+        /// Gets the name of the single file.
+        /// </summary>
+        /// <value>
+        /// The name of the single file.
+        /// </value>
+        public abstract string SingleFileName { get; }
+
     }
 }

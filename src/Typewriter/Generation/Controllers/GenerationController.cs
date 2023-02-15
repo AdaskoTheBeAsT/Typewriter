@@ -54,6 +54,38 @@ namespace Typewriter.Generation.Controllers
                 {
                     var stopwatch = Stopwatch.StartNew();
 
+                    // Intervene here!!! when singlefilemode use the singlefile renderer
+                    if (template.Settings.IsSingleFileMode)
+                    {
+                        // Single File Render
+
+                        var files = filesToRender.Select(path =>
+                        {
+                            var metadata = _metadataProvider.GetFile(path, template.Settings, null);
+                            if (metadata == null)
+                            {
+                                // the cs-file was found, but the build-action is not set to compile.
+                                return null;
+                            }
+
+                            var file = new FileImpl(metadata);
+
+                            return file;
+                        }).Where(f => f != null).ToArray();
+
+
+                        template.RenderFile(files);
+
+                        stopwatch.Stop();
+                        Log.Debug("{0} processed {1} in {2}ms", GenerationType.Template, templatePath,
+                        stopwatch.ElapsedMilliseconds);
+
+                        return;
+
+                    }
+
+
+
                     foreach (var path in filesToRender)
                     {
                         var metadata = _metadataProvider.GetFile(path, template.Settings, null);
@@ -100,6 +132,8 @@ namespace Typewriter.Generation.Controllers
                 // Delay to wait for Roslyn to refresh the current Workspace after a change.
                 await Task.Delay(1000).ConfigureAwait(true);
 
+               
+
                 Enqueue(GenerationType.Render, paths, (path, template) => _metadataProvider.GetFile(path, template.Settings, RenderFile), (fileMeta, template) =>
                 {
                     if (fileMeta == null)
@@ -108,7 +142,35 @@ namespace Typewriter.Generation.Controllers
                         return;
                     }
 
+
                     var file = new FileImpl(fileMeta);
+
+                    if (template.Settings.IsSingleFileMode)
+                    {
+                        var filesToRender = template.GetFilesToRender();
+                        // In this case we need all files
+                        if (template.ShouldRenderFile(file.FullName))
+                        {
+                          
+                            var files = filesToRender.Select(path =>
+                            {
+                                var metadata = _metadataProvider.GetFile(path, template.Settings, null);
+                                if (metadata == null)
+                                {
+                                    // the cs-file was found, but the build-action is not set to compile.
+                                    return null;
+                                } 
+
+                                return new FileImpl(metadata);
+                            }).Where(f => f != null).ToArray();
+
+                            template.RenderFile(files);
+
+                        }
+
+                        return;
+                    }
+
                     if (template.ShouldRenderFile(file.FullName))
                     {
                         template.RenderFile(file);
@@ -129,7 +191,35 @@ namespace Typewriter.Generation.Controllers
             ThreadHelper.JoinableTaskFactory.Run(async () =>
             {
                 await Task.Delay(1000).ConfigureAwait(true);
-                Enqueue(GenerationType.Delete, paths, (path, template) => template.DeleteFile(path));
+                Enqueue(GenerationType.Delete, paths, (path, template) =>
+                {
+                    if (template.Settings.IsSingleFileMode)
+                    {
+                        //File needs to be deleted manually
+                        // Since we can check here if any condition in the single file is met
+                        // But we can update the file
+                        var filesToRender = template.GetFilesToRender();
+
+                        var files = filesToRender.Select(p =>
+                        {
+                            var metadata = _metadataProvider.GetFile(p, template.Settings, null);
+                            if (metadata == null)
+                            {
+                                // the cs-file was found, but the build-action is not set to compile.
+                                return null;
+                            }
+
+                            return new FileImpl(metadata);
+                        }).Where(f => f != null).ToArray();
+
+                        template.RenderFile(files);
+
+                        return;
+                    }
+
+
+                    template.DeleteFile(path);
+                });
             });
         }
         private void Enqueue(GenerationType type, string[] paths, Action<string, Template> action)
@@ -161,6 +251,28 @@ namespace Typewriter.Generation.Controllers
                         if (item.NewFileMeta == null)
                         {
                             // the cs-file was found, but the build-action is not set to compile.
+                            return;
+                        }
+
+                        // Single mode?
+
+                        if (template.Settings.IsSingleFileMode)
+                        {
+                            // In case of single file mode we need to recheck all files for this template
+                            var files = template.GetFilesToRender().Select(path =>
+                            {
+                                var metadata = _metadataProvider.GetFile(path, template.Settings, null);
+                                if (metadata == null)
+                                {
+                                    // the cs-file was found, but the build-action is not set to compile.
+                                    return null;
+                                }
+
+                                return new FileImpl(metadata);
+                            }).Where(f => f != null).ToArray();
+
+                            template.RenderFile(files);
+
                             return;
                         }
 

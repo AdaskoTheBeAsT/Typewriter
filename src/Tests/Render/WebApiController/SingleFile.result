@@ -1,0 +1,10 @@
+﻿
+export class CombinedClass {
+
+public model1:string = 'Typewriter.Tests.Render.WebApiController.SingleFileModels.Model1:M1';
+
+public model2:string = 'Typewriter.Tests.Render.WebApiController.SingleFileModels.Model2:M2';
+
+public model3:string = 'Typewriter.Tests.Render.WebApiController.SingleFileModels.Model3:M3';
+
+}

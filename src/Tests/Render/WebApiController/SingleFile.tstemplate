@@ -1,0 +1,17 @@
+﻿${
+    Template(Settings settings) {
+        
+        settings.SingleFileMode("index.d.ts");
+    
+    }
+
+    string NameAndProperties(Class cls) {
+    
+        return $"{cls.FullName}:{string.Join(",", cls.Properties.Select(x => x.Name))}";
+    }
+}
+export class CombinedClass {
+$Classes(x => x.Namespace.StartsWith("Typewriter.Tests.Render.WebApiController.SingleFileModels"))[
+public $name:string = '$NameAndProperties';
+]
+}

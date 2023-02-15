@@ -119,6 +119,21 @@ namespace Typewriter.Generation
             }
         }
 
+        public string Render(File[] files, out bool success)
+        {
+            try
+            {
+                return SingleFileParser.Parse(_projectItem, files, _template.Value, _customExtensions, out success);
+
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex.Message + " Template: " + _templatePath);
+                success = false;
+                return null;
+            }
+        }
+
         public bool RenderFile(File file)
         {
             var output = Render(file, out var success);
@@ -133,6 +148,23 @@ namespace Typewriter.Generation
                 {
                     SaveFile(file, output, ref success);
                 }
+            }
+
+            return success;
+        }
+
+
+        public bool RenderFile(File[] files)
+        {
+            var output = Render(files, out var success);
+
+            if (success)
+            {
+                string outputdir = GetOutputDirectory();
+
+                string singleFileName = this.Settings.SingleFileName;
+
+                WriteFile(Path.Combine(outputdir, singleFileName), output);
             }
 
             return success;

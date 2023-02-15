@@ -84,6 +84,9 @@
     <Compile Include="Metadata\Roslyn\RoslynClassMetadataTests.cs" />
     <Compile Include="Metadata\Support\GeneratedClass.cs" />
     <Compile Include="Metadata\Support\GeneratedClass.Additional.cs" />
+    <Compile Include="Render\WebApiController\SingleFileModels\Model1.cs" />
+    <Compile Include="Render\WebApiController\SingleFileModels\Model2.cs" />
+    <Compile Include="Render\WebApiController\SingleFileModels\Model3.cs" />
     <Compile Include="Support\AcceptVerbsAttribute.cs" />
     <Compile Include="TestInfrastructure\RoslynFixture.cs" />
     <Compile Include="TestInfrastructure\Dte.cs" />
@@ -109,6 +112,8 @@
   <ItemGroup>
     <None Include="Render\RoutedApiController\BooksController.result" />
     <None Include="Render\RoutedApiController\BooksController.tstemplate" />
+    <None Include="Render\WebApiController\SingleFile.result" />
+    <None Include="Render\WebApiController\SingleFile.tstemplate" />
     <None Include="Render\WebApiController\WebApiController.result" />
     <None Include="xunit.runner.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
