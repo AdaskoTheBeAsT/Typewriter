@@ -47,7 +47,7 @@ namespace Typewriter.CodeModel.Implementation
 
         public override bool IsPrimitive => IsPrimitive(_metadata);
 
-        public override bool IsDate => string.Equals(Name, "Date", StringComparison.OrdinalIgnoreCase);
+        public override bool IsDate => string.Equals(Name, "Date", StringComparison.OrdinalIgnoreCase) || string.Equals(Name, "Date | null", StringComparison.OrdinalIgnoreCase);
 
         public override bool IsDefined => _metadata.IsDefined;
 
