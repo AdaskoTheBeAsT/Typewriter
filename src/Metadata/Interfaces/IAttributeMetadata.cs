@@ -7,5 +7,7 @@ namespace Typewriter.Metadata.Interfaces
         string Value { get; }
 
         IEnumerable<IAttributeArgumentMetadata> Arguments { get; }
+
+        ITypeMetadata Type { get; }
     }
 }

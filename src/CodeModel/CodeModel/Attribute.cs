@@ -50,6 +50,11 @@ namespace Typewriter.CodeModel
         public abstract IAttributeArgumentCollection Arguments { get; }
 
         /// <summary>
+        /// The type of the attribute.
+        /// </summary>
+        public abstract Type Type { get; }
+
+        /// <summary>
         /// Converts the current instance to string.
         /// </summary>
         public static implicit operator string(Attribute instance)

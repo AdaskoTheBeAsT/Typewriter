@@ -33,6 +33,8 @@ namespace Typewriter.CodeModel.Implementation
 
         public override string Value => GetValue(_metadata.Value);
 
+        public override Type Type => TypeImpl.FromMetadata(_metadata.Type, Parent, Settings);
+
         private IAttributeArgumentCollection _arguments;
 
         public override IAttributeArgumentCollection Arguments => _arguments ?? (_arguments = AttributeArgumentImpl.FromMetadata(_metadata.Arguments, this, Settings));
