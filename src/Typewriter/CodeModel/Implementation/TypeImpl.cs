@@ -13,6 +13,7 @@ namespace Typewriter.CodeModel.Implementation
         private readonly ITypeMetadata _metadata;
         private readonly Lazy<string> _lazyName;
         private readonly Lazy<string> _lazyOriginalName;
+        private readonly Lazy<Type>   _lazyElementType;
 
         private TypeImpl(ITypeMetadata metadata, Item parent, Settings settings)
         {
@@ -20,8 +21,11 @@ namespace Typewriter.CodeModel.Implementation
             Parent = parent;
             _lazyName = new Lazy<string>(() => GetTypeScriptName(metadata, settings));
             _lazyOriginalName = new Lazy<string>(() => GetOriginalName(metadata));
+            _lazyElementType = new Lazy<Type>(() => metadata.ElementType != null ? FromMetadata(metadata.ElementType, parent, settings) : null);
             Settings = settings;
         }
+
+        public override Type ElementType => _lazyElementType.Value;
 
         public override Item Parent { get; }
 

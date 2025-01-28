@@ -38,6 +38,7 @@ namespace Typewriter.Metadata.Roslyn
 
         public bool HasSetter => _symbol.SetMethod != null && _symbol.SetMethod.DeclaredAccessibility == Accessibility.Public;
 
+
         public static IEnumerable<IPropertyMetadata> FromPropertySymbol(IEnumerable<IPropertySymbol> symbols, Settings settings)
         {
             return symbols.Where(p => p.DeclaredAccessibility == Accessibility.Public && !p.IsStatic)

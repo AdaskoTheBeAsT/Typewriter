@@ -223,6 +223,11 @@ namespace Typewriter.CodeModel
         public abstract Settings Settings { get; }
 
         /// <summary>
+        /// If this type is an array (the primitive kind), the type of the elements, else null.
+        /// </summary>
+        public abstract Type ElementType { get; }
+
+        /// <summary>
         /// Converts the current instance to string.
         /// </summary>
         public static implicit operator string(Type instance)
