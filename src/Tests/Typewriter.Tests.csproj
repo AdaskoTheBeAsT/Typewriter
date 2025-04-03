@@ -5,52 +5,52 @@
     <LangVersion>8.0</LangVersion>
     <IsTestProject>true</IsTestProject>
     <OutputPath1>bin\$(Configuration)\$(TargetFramework)\</OutputPath1>
-	<DefineConstants>NETFRAMEWORK</DefineConstants>
+    <DefineConstants>NETFRAMEWORK</DefineConstants>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FluentAssertions" Version="7.0.0" />
-    <PackageReference Include="Microsoft.Build" Version="17.12.6" />
-    <PackageReference Include="Microsoft.IO.Redist" Version="6.1.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="4.12.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.12.0" />
+    <PackageReference Include="FluentAssertions" Version="7.2.0" />
+    <PackageReference Include="Microsoft.Build" Version="17.13.9" />
+    <PackageReference Include="Microsoft.IO.Redist" Version="6.1.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="4.13.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.13.0" />
     <PackageReference Include="Microsoft.VisualStudio.Debugger.Contracts" Version="17.2.0" />
-    <PackageReference Include="Microsoft.VisualStudio.LanguageServices" Version="4.12.0" />
-    <PackageReference Include="Microsoft.VisualStudio.Sdk.TestFramework" Version="17.11.8" />
-    <PackageReference Include="Microsoft.VisualStudio.Sdk.TestFramework.Xunit" Version="17.11.8" />
-    <PackageReference Include="Microsoft.VisualStudio.Shell.15.0" Version="17.12.40392" />
-    <PackageReference Include="Microsoft.VisualStudio.Shell.Framework" Version="17.12.40391" />
-    <PackageReference Include="Microsoft.VisualStudio.Utilities" Version="17.12.40391" />
+    <PackageReference Include="Microsoft.VisualStudio.LanguageServices" Version="4.13.0" />
+    <PackageReference Include="Microsoft.VisualStudio.Sdk.TestFramework" Version="17.11.57" />
+    <PackageReference Include="Microsoft.VisualStudio.Sdk.TestFramework.Xunit" Version="17.11.57" />
+    <PackageReference Include="Microsoft.VisualStudio.Shell.15.0" Version="17.13.40096" />
+    <PackageReference Include="Microsoft.VisualStudio.Shell.Framework" Version="17.13.40096" />
+    <PackageReference Include="Microsoft.VisualStudio.Utilities" Version="17.13.40096" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
     <PackageReference Include="Should" Version="1.1.20" />
-    <PackageReference Include="StreamJsonRpc" Version="2.21.10" />
+    <PackageReference Include="StreamJsonRpc" Version="2.22.11" />
     <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
-    <PackageReference Include="System.Memory" Version="4.6.0" />
-    <PackageReference Include="System.Numerics.Vectors" Version="4.6.0" />
+    <PackageReference Include="System.Memory" Version="4.6.2" />
+    <PackageReference Include="System.Numerics.Vectors" Version="4.6.1" />
     <PackageReference Include="System.Reflection.TypeExtensions" Version="4.7.0" />
-    <PackageReference Include="xunit" Version="2.9.2" />
-    <PackageReference Include="xunit.core" Version="2.9.2" />
-    <PackageReference Include="xunit.runner.console" Version="2.9.2">
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.core" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.console" Version="2.9.3">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="xunit.runner.msbuild" Version="2.9.2">
+    <PackageReference Include="xunit.runner.msbuild" Version="2.9.3">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-   
+
   </ItemGroup>
 
   <ItemGroup>
-	<Reference Include="System.Collections">
-	  <HintPath>$(MSBuildToolsPath)\ReferenceAssemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Collections.dll</HintPath>
-	</Reference>
+    <Reference Include="System.Collections">
+      <HintPath>$(MSBuildToolsPath)\ReferenceAssemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Collections.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
