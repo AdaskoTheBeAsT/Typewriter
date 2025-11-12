@@ -49,14 +49,10 @@ namespace Typewriter.Metadata.Roslyn
 
         public string DefaultValue { get; set; }
 
-        public ITypeMetadata ElementType { 
-            get {
-                if( _symbol is IArrayTypeSymbol arrayTypeSymbol ) {
-                    return FromTypeSymbol(arrayTypeSymbol.ElementType, Settings);
-                }
-                return null;
-            }
-        }
+        public ITypeMetadata ElementType =>
+            _symbol is IArrayTypeSymbol arrayTypeSymbol
+                ? FromTypeSymbol(arrayTypeSymbol.ElementType, Settings)
+                : null;
 
         public IEnumerable<string> FileLocations => _symbol.Locations.Select(l => l.SourceTree.FilePath);
 
