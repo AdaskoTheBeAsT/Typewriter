@@ -15,22 +15,22 @@
         <Tags>TypeScript, Code Generation, Templates, Web API, MVC, Typewriter</Tags>
     </Metadata>
     <Installation InstalledByMsi="false">
-        <InstallationTarget Version="[17.13.5,18.0)" Id="Microsoft.VisualStudio.Community">
+        <InstallationTarget Version="[17.13.5,19.0)" Id="Microsoft.VisualStudio.Community">
             <ProductArchitecture>amd64</ProductArchitecture>
         </InstallationTarget>
-        <InstallationTarget Version="[17.13.5,18.0)" Id="Microsoft.VisualStudio.Pro">
+        <InstallationTarget Version="[17.13.5,19.0)" Id="Microsoft.VisualStudio.Pro">
             <ProductArchitecture>amd64</ProductArchitecture>
         </InstallationTarget>
-        <InstallationTarget Version="[17.13.5,18.0)" Id="Microsoft.VisualStudio.Enterprise">
+        <InstallationTarget Version="[17.13.5,19.0)" Id="Microsoft.VisualStudio.Enterprise">
             <ProductArchitecture>amd64</ProductArchitecture>
         </InstallationTarget>
-        <InstallationTarget Version="[17.13.5,18.0)" Id="Microsoft.VisualStudio.Community">
+        <InstallationTarget Version="[17.13.5,19.0)" Id="Microsoft.VisualStudio.Community">
             <ProductArchitecture>arm64</ProductArchitecture>
         </InstallationTarget>
-        <InstallationTarget Version="[17.13.5,18.0)" Id="Microsoft.VisualStudio.Pro">
+        <InstallationTarget Version="[17.13.5,19.0)" Id="Microsoft.VisualStudio.Pro">
             <ProductArchitecture>arm64</ProductArchitecture>
         </InstallationTarget>
-        <InstallationTarget Version="[17.13.5,18.0)" Id="Microsoft.VisualStudio.Enterprise">
+        <InstallationTarget Version="[17.13.5,19.0)" Id="Microsoft.VisualStudio.Enterprise">
             <ProductArchitecture>arm64</ProductArchitecture>
         </InstallationTarget>
     </Installation>
