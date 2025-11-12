@@ -41,6 +41,8 @@ namespace Typewriter.Metadata.Roslyn
 
         public ITypeMetadata Type => null;
 
+        public ITypeMetadata ElementType => null;
+
         public string DefaultValue => "void(0)";
 
         public IEnumerable<IAttributeMetadata> Attributes => Array.Empty<IAttributeMetadata>();
