@@ -25,7 +25,7 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="8.0.0" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="4.11.0" PrivateAssets="all" ExcludeAssets="runtime" />-->
-    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.13.61" PrivateAssets="all"  ExcludeAssets="runtime"/>
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" PrivateAssets="all"  ExcludeAssets="runtime"/>
 	<!--<PackageReference Include="Roslynator.Analyzers" Version="4.11.0" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Roslynator.CodeAnalysis.Analyzers" Version="4.11.0" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Roslynator.Formatting.Analyzers" Version="4.11.0" PrivateAssets="all" ExcludeAssets="runtime" />-->

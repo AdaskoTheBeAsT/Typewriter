@@ -11,23 +11,24 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FluentAssertions" Version="7.2.0" />
-    <PackageReference Include="Microsoft.Build" Version="17.13.9" />
-    <PackageReference Include="Microsoft.IO.Redist" Version="6.1.2" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="4.13.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.13.0" />
+	<PackageReference Include="AwesomeAssertions " Version="9.3.0" />
+	<PackageReference Include="AwesomeAssertions.Analyzers" Version="9.0.8" />
+	<PackageReference Include="Microsoft.Build" Version="17.14.28" />
+    <PackageReference Include="Microsoft.IO.Redist" Version="6.1.3" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="4.14.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.14.0" />
     <PackageReference Include="Microsoft.VisualStudio.Debugger.Contracts" Version="17.2.0" />
-    <PackageReference Include="Microsoft.VisualStudio.LanguageServices" Version="4.13.0" />
-    <PackageReference Include="Microsoft.VisualStudio.Sdk.TestFramework" Version="17.11.57" />
-    <PackageReference Include="Microsoft.VisualStudio.Sdk.TestFramework.Xunit" Version="17.11.57" />
-    <PackageReference Include="Microsoft.VisualStudio.Shell.15.0" Version="17.13.40096" />
-    <PackageReference Include="Microsoft.VisualStudio.Shell.Framework" Version="17.13.40096" />
-    <PackageReference Include="Microsoft.VisualStudio.Utilities" Version="17.13.40096" />
+    <PackageReference Include="Microsoft.VisualStudio.LanguageServices" Version="4.14.0" />
+    <PackageReference Include="Microsoft.VisualStudio.Sdk.TestFramework" Version="17.11.66" />
+    <PackageReference Include="Microsoft.VisualStudio.Sdk.TestFramework.Xunit" Version="17.11.66" />
+    <PackageReference Include="Microsoft.VisualStudio.Shell.15.0" Version="17.14.40264" />
+    <PackageReference Include="Microsoft.VisualStudio.Shell.Framework" Version="17.14.40264" />
+    <PackageReference Include="Microsoft.VisualStudio.Utilities" Version="17.14.40264" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
     <PackageReference Include="Should" Version="1.1.20" />
-    <PackageReference Include="StreamJsonRpc" Version="2.22.11" />
+    <PackageReference Include="StreamJsonRpc" Version="2.22.23" />
     <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
-    <PackageReference Include="System.Memory" Version="4.6.2" />
+    <PackageReference Include="System.Memory" Version="4.6.3" />
     <PackageReference Include="System.Numerics.Vectors" Version="4.6.1" />
     <PackageReference Include="System.Reflection.TypeExtensions" Version="4.7.0" />
     <PackageReference Include="xunit" Version="2.9.3" />

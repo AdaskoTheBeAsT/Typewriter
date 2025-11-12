@@ -78,22 +78,22 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces">
-      <Version>4.13.0</Version>
+      <Version>4.14.0</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.VisualStudio.Debugger.Contracts">
       <Version>17.2.0</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.VisualStudio.LanguageServices">
-      <Version>4.13.0</Version>
+      <Version>4.14.0</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.VisualStudio.SDK">
-      <Version>17.13.40096</Version>
+      <Version>17.14.40265</Version>
     </PackageReference>
     <PackageReference Include="Newtonsoft.Json">
-      <Version>13.0.3</Version>
+      <Version>13.0.4</Version>
     </PackageReference>
     <PackageReference Include="StreamJsonRpc">
-      <Version>2.22.11</Version>
+      <Version>2.22.23</Version>
     </PackageReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
