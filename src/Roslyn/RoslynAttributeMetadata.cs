@@ -27,18 +27,12 @@ namespace Typewriter.Metadata.Roslyn
                 _value = declaration.Substring(index + 1, declaration.Length - index - 2);
 
                 // Trim {} from params
-                if (_value.EndsWith("\"}", StringComparison.OrdinalIgnoreCase))
-                {
-                    _value = _value.Remove(_value.LastIndexOf("{\"", StringComparison.Ordinal), 1);
-                    _value = _value.TrimEnd('}');
-                }
-                else if (_value.EndsWith("}", StringComparison.OrdinalIgnoreCase))
+                if (_value.EndsWith("\"}", StringComparison.OrdinalIgnoreCase) || _value.EndsWith("}", StringComparison.OrdinalIgnoreCase))
                 {
                     _value = _value.Remove(_value.LastIndexOf("{", StringComparison.Ordinal), 1);
                     _value = _value.TrimEnd('}');
                 }
             }
-
             if (_name.EndsWith("Attribute", StringComparison.OrdinalIgnoreCase))
             {
                 _name = _name.Substring(0, _name.Length - 9);
