@@ -57,7 +57,7 @@ jobs:
         run: npm --prefix vscode run bundle
 
       - name: Verify Rider plugin configuration
-        run: .\rider\gradlew.bat -p rider verifyPluginProjectConfiguration
+        run: .\rider\gradlew.bat -p rider verifyPluginProjectConfiguration --info --stacktrace --console=plain
 
       - name: Verify Rider plugin compatibility
         run: .\rider\gradlew.bat -p rider verifyPlugin
