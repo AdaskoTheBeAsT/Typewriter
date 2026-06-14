@@ -1,0 +1,171 @@
+{
+  "name": "typewriter-vscode",
+  "displayName": "Typewriter",
+  "description": "VS Code adapter for Typewriter .tst templates.",
+  "version": "3.0.0",
+  "publisher": "adaskothebeast",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter.git",
+    "directory": "vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter/issues"
+  },
+  "homepage": "https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter#readme",
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:typewriter",
+    "onCommand:typewriter.generate",
+    "onCommand:typewriter.generateAll",
+    "onCommand:typewriter.validate",
+    "onCommand:typewriter.restartServer",
+    "workspaceContains:**/*.tst"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "typewriter",
+        "aliases": [
+          "Typewriter",
+          "typewriter"
+        ],
+        "extensions": [
+          ".tst"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "typewriter",
+        "scopeName": "source.typewriter",
+        "path": "./syntaxes/tst.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "typewriter.generate",
+        "title": "Typewriter: Generate Current Template"
+      },
+      {
+        "command": "typewriter.generateAll",
+        "title": "Typewriter: Generate All Templates"
+      },
+      {
+        "command": "typewriter.validate",
+        "title": "Typewriter: Validate Current Template"
+      },
+      {
+        "command": "typewriter.restartServer",
+        "title": "Typewriter: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "Typewriter",
+      "properties": {
+        "typewriter.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Typewriter CLI executable. Leave empty to use a built local repo CLI, then the packaged CLI, then 'typewriter' on PATH."
+        },
+        "typewriter.cliArguments": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Arguments inserted before the Typewriter command. Useful when cliPath is 'dotnet'."
+        },
+        "typewriter.workspacePath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Workspace, solution, project, or folder path passed to --workspace. Relative values are resolved from the VS Code workspace folder."
+        },
+        "typewriter.projectPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Optional project path passed to --project. Relative values are resolved from the Typewriter workspace path."
+        },
+        "typewriter.templatePath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Fallback template path for current-template commands when the active editor is not a .tst file."
+        },
+        "typewriter.framework": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Optional target framework passed to --framework."
+        },
+        "typewriter.allProjects": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pass --all-projects for Generate All when the workspace contains multiple projects."
+        },
+        "typewriter.generateOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Generate the current .tst template when it is saved."
+        },
+        "typewriter.validateOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Validate the current .tst template when it is saved. Ignored when generateOnSave is enabled."
+        },
+        "typewriter.languageServer.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the Typewriter language server for live .tst diagnostics."
+        },
+        "typewriter.languageServer.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Typewriter language server executable. Leave empty to use a built local repo server, then the packaged server, then 'typewriter-lsp' on PATH."
+        },
+        "typewriter.languageServer.arguments": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Arguments passed to the Typewriter language server executable."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "check": "node --check src/extension.js",
+    "lint": "npm run check",
+    "bundle": "esbuild src/extension.js --bundle --platform=node --external:vscode --outfile=dist/extension.js",
+    "vscode:prepublish": "npm run bundle",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.25.5"
+  }
+}

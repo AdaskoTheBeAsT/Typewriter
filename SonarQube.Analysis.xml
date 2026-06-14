@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SonarQubeAnalysisProperties  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns="http://www.sonarsource.com/msbuild/integration/2015/1">
+  <Property Name="sonar.exclusions">**/bin/**/*,**/obj/**/*,.git/**/*,.github/**/*,.config/**/*,.vs/**/*,.vscode/**/*,docs/**/*,**/*.js,**/*.css,**/*.html</Property>
+  <Property Name="sonar.coverage.exclusions">**/test/**/*.cs,**/tests/**/*.cs,**/*.js,**/*.css,**/*.html</Property>
+  <Property Name="sonar.cs.vstest.reportsPaths">**/TestResults/*.trx</Property>
+  <Property Name="sonar.cs.vscoveragexml.reportsPaths">coverage.xml</Property>
+</SonarQubeAnalysisProperties>

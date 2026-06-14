@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test-package:
+    name: Build, Test, Package
+    runs-on: windows-latest
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.caching=true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Restore .NET
+        run: dotnet restore AdaskoTheBeAsT.Typewriter.slnx
+
+      - name: Build .NET
+        run: dotnet build AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-restore -m:1
+
+      - name: Test .NET
+        run: dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build -m:1
+
+      - name: Install VS Code dependencies
+        run: npm ci --prefix vscode
+
+      - name: Lint VS Code extension
+        run: npm --prefix vscode run lint
+
+      - name: Bundle VS Code extension
+        run: npm --prefix vscode run bundle
+
+      - name: Verify Rider plugin configuration
+        run: .\rider\gradlew.bat -p rider verifyPluginProjectConfiguration --stacktrace --console=plain
+
+      - name: Verify Rider plugin compatibility
+        run: .\rider\gradlew.bat -p rider verifyPlugin
+
+      - name: Build Rider plugin
+        run: .\rider\gradlew.bat -p rider buildPlugin
+
+      - name: Prepare package output
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path artifacts/packages | Out-Null
+
+      - name: Pack CLI tool
+        run: dotnet pack src/Typewriter.Cli/Typewriter.Cli.csproj --configuration Release --no-build --output artifacts/packages
+
+      - name: Pack language server tool
+        run: dotnet pack src/Typewriter.LanguageServer/Typewriter.LanguageServer.csproj --configuration Release --no-build --output artifacts/packages
+
+      - name: Build Visual Studio VSIX
+        run: dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --configuration Release --no-restore -m:1
+
+      - name: Package VS Code extension
+        shell: pwsh
+        run: .\Build-VSCodeExtension.ps1 -OutputDirectory artifacts/packages
+
+      - name: Collect editor packages
+        shell: pwsh
+        run: |
+          Copy-Item src/Typewriter.VisualStudio/bin/Release/net472/Typewriter.VisualStudio.vsix artifacts/packages/Typewriter.VisualStudio-3.0.0.vsix
+          Copy-Item rider/build/distributions/typewriter-rider-3.0.0.zip artifacts/packages/Typewriter-Rider-3.0.0.zip
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: typewriter-packages
+          path: |
+            artifacts/packages/*.nupkg
+            artifacts/packages/*.vsix
+            artifacts/packages/*.zip

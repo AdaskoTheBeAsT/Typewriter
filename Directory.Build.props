@@ -4,12 +4,56 @@
   <PropertyGroup>
     <!-- Common ruleset shared by all projects -->
     <CodeAnalysisRuleset>$(MSBuildThisFileDirectory)AdaskoTheBeAsT.ruleset</CodeAnalysisRuleset>
+    <LangVersion>14.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);1701;1702;1591</NoWarn>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
+    <ErrorLog>$(MSBuildThisFileDirectory).sarif\$(MSBuildProjectName).json</ErrorLog>
+    <Version>4.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Add reference to analyzers to all projects  -->
+    <PackageReference Include="AdaskoTheBeAsT.AsyncFixer" Version="2.1.0.1" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="AdaskoTheBeAsT.Asyncify" Version="0.9.7.50" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="AdaskoTheBeAsT.CodeCracker.CSharp" Version="1.1.0.100" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="AdaskoTheBeAsT.ConcurrencyLab.ParallelChecker" Version="2.7.0.50" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="AdaskoTheBeAsT.IDisposableAnalyzers" Version="4.0.7.50" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="AdaskoTheBeAsT.Puma.Security.Rules.2022" Version="2.3.1.50" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="AdaskoTheBeAsT.ReflectionAnalyzer" Version="0.3.1.50" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="AdaskoTheBeAsT.SecurityCodeScan.VS2022" Version="5.6.7.50" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Meziantou.Analyzer" Version="3.0.103" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis" Version="5.3.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="5.3.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.3.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.3.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.301" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="5.3.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Roslynator.Analyzers" Version="4.15.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Roslynator.CodeAnalysis.Analyzers" Version="4.15.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Roslynator.Formatting.Analyzers" Version="4.15.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.27.0.140913" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" PrivateAssets="all" ExcludeAssets="runtime" />
+
     <!-- Common StyleCop configuration -->
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)stylecop.json" />
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)SecurityCodeScan.config.yml" />
+  </ItemGroup>
+
+  <!-- Analyzer behavior (build + IDE use this) -->
+  <PropertyGroup>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Don’t rely on TreatWarningsAsErrors for edit-time; use .globalconfig severities -->
+  </PropertyGroup>
+
+  <!-- Ship your global config from the package -->
+  <ItemGroup>
+    <!--<EditorConfigFiles Include="$(MSBuildThisFileDirectory).globalconfig" />-->
   </ItemGroup>
 
 </Project>

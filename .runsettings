@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="Code Coverage">
+        <Configuration>
+          <CodeCoverage>
+            <ModulePaths>
+              <Exclude>
+                <!-- Add entries here to exclude assemblies -->
+                <!-- Example: To exclude all test assemblies -->
+                <ModulePath>.*\.Test\.dll</ModulePath>
+                <ModulePath>.*\.IntegrationTest\.dll</ModulePath>
+              </Exclude>
+            </ModulePaths>
+          </CodeCoverage>
+        </Configuration>
+      </DataCollector>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura,opencover</Format>
+          <Include>[AdaskoTheBeAsT.*]*</Include>
+          <Exclude>[*.Test]*,[*.IntegrationTest]*</Exclude>
+          <ExcludeByAttribute>System.Obsolete,System.CodeDom.Compiler.GeneratedCodeAttribute,System.Runtime.CompilerServices.CompilerGeneratedAttribute,System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+          <SkipAutoProps>true</SkipAutoProps>
+          <DeterministicReport>false</DeterministicReport>
+          <ExcludeAssembliesWithoutSources>MissingAll</ExcludeAssembliesWithoutSources>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

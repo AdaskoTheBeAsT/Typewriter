@@ -1,6 +1,0 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<RunSettings>
-  <TestRunParameters>
-    <Parameter name="DOTNET_ADDITIONAL_DEPS" value="%USERPROFILE%\.nuget\packages\microsoft.netcore.app.runtime.win-x64\6.0.33\runtimes\win-x64\lib\net6.0" />
-  </TestRunParameters>
-</RunSettings>

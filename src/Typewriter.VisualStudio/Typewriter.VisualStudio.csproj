@@ -1,0 +1,83 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <RootNamespace>Typewriter.VisualStudio</RootNamespace>
+    <AssemblyName>Typewriter.VisualStudio</AssemblyName>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
+    <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
+    <VSSDKTargetPlatformVersion>17.0</VSSDKTargetPlatformVersion>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <UseCodebase>true</UseCodebase>
+    <IncludeAssemblyFromOutputFolderInVSIXContainer>true</IncludeAssemblyFromOutputFolderInVSIXContainer>
+    <IncludeDebugSymbolsInVSIXContainer>true</IncludeDebugSymbolsInVSIXContainer>
+    <IncludeDebugSymbolsInLocalVSIXDeployment>true</IncludeDebugSymbolsInLocalVSIXDeployment>
+    <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
+    <CopyOutputSymbolsToOutputDirectory>true</CopyOutputSymbolsToOutputDirectory>
+    <DeployExtension>false</DeployExtension>
+    <VsixType>v3</VsixType>
+    <TypewriterPackagedCliPublishDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\typewriter-cli\</TypewriterPackagedCliPublishDir>
+    <TypewriterPackagedLanguageServerPublishDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\typewriter-lsp\</TypewriterPackagedLanguageServerPublishDir>
+    <RunAnalyzers>false</RunAnalyzers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="source.extension.vsixmanifest" SubType="Designer" />
+    <VSCTCompile Include="TypewriterPackage.vsct" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <Content Include="vsix-icon-90.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="vsix-preview-200.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="PresentationCore" />
+    <Reference Include="System.ComponentModel.Composition" />
+    <Reference Include="System.Design" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.VisualStudio.LanguageServer.Client" Version="17.14.60" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.6.38345" PrivateAssets="all" />
+    <PackageReference Include="System.Text.Json" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Typewriter.Cli\Typewriter.Cli.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" />
+    <ProjectReference Include="..\Typewriter.LanguageServer\Typewriter.LanguageServer.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="PublishTypewriterCliForVsix" BeforeTargets="GetVsixSourceItems">
+    <RemoveDir Directories="$(TypewriterPackagedCliPublishDir)" />
+    <MSBuild Projects="..\Typewriter.Cli\Typewriter.Cli.csproj" Targets="Restore;Publish" Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(TypewriterPackagedCliPublishDir);SelfContained=false;UseAppHost=false;SatelliteResourceLanguages=en;RunAnalyzers=false" />
+    <ItemGroup>
+      <TypewriterPackagedCliFile Include="$(TypewriterPackagedCliPublishDir)**\*.*" Exclude="$(TypewriterPackagedCliPublishDir)**\*.pdb;$(TypewriterPackagedCliPublishDir)**\*.xml" />
+      <Content Include="@(TypewriterPackagedCliFile)">
+        <IncludeInVSIX>true</IncludeInVSIX>
+        <VSIXSubPath>tools\typewriter-cli\%(RecursiveDir)</VSIXSubPath>
+      </Content>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="PublishTypewriterLanguageServerForVsix" BeforeTargets="GetVsixSourceItems">
+    <RemoveDir Directories="$(TypewriterPackagedLanguageServerPublishDir)" />
+    <MSBuild Projects="..\Typewriter.LanguageServer\Typewriter.LanguageServer.csproj" Targets="Restore;Publish" Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(TypewriterPackagedLanguageServerPublishDir);SelfContained=false;UseAppHost=false;SatelliteResourceLanguages=en;RunAnalyzers=false" />
+    <ItemGroup>
+      <TypewriterPackagedLanguageServerFile Include="$(TypewriterPackagedLanguageServerPublishDir)**\*.*" Exclude="$(TypewriterPackagedLanguageServerPublishDir)**\*.pdb;$(TypewriterPackagedLanguageServerPublishDir)**\*.xml" />
+      <Content Include="@(TypewriterPackagedLanguageServerFile)">
+        <IncludeInVSIX>true</IncludeInVSIX>
+        <VSIXSubPath>tools\typewriter-lsp\%(RecursiveDir)</VSIXSubPath>
+      </Content>
+    </ItemGroup>
+  </Target>
+
+</Project>
