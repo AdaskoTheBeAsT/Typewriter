@@ -10,7 +10,7 @@
     <NoWarn>$(NoWarn);1701;1702;1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
-    <ErrorLog>$(SolutionDir)\.sarif\$(MSBuildProjectName).json</ErrorLog>
+    <ErrorLog>$(MSBuildThisFileDirectory).sarif\$(MSBuildProjectName).json</ErrorLog>
     <Version>4.0.0</Version>
   </PropertyGroup>
 
