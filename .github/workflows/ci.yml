@@ -12,6 +12,8 @@ jobs:
   build-test-package:
     name: Build, Test, Package
     runs-on: windows-latest
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.caching=true"
 
     steps:
       - name: Checkout
@@ -39,6 +41,8 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
       - name: Restore .NET
         run: dotnet restore AdaskoTheBeAsT.Typewriter.slnx

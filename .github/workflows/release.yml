@@ -42,6 +42,7 @@ jobs:
     env:
       ContinuousIntegrationBuild: true
       PACKAGE_OUTPUT_DIRECTORY: artifacts/packages
+      GRADLE_OPTS: "-Dorg.gradle.caching=true"
 
     steps:
       - name: Checkout
@@ -71,6 +72,8 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
       - name: Apply tag version
         id: apply_version
