@@ -4,6 +4,11 @@ namespace Typewriter.Engine;
 
 public sealed class GeneratedFilePlanner
 {
+    private static readonly string CrLfGeneratedFileHeader = GeneratedFileHeader.Value.Replace(
+        oldValue: "\n",
+        newValue: "\r\n",
+        comparisonType: StringComparison.Ordinal);
+
     public bool TryPlan(
         WorkspaceContext workspace,
         TemplateDocument template,
@@ -89,7 +94,7 @@ public sealed class GeneratedFilePlanner
 #pragma warning disable SCS0018,SEC0116
             var existing = File.ReadAllText(path: resolvedOutputPath);
 #pragma warning restore SCS0018,SEC0116
-            if (!existing.StartsWith(value: GeneratedFileHeader.Value, comparisonType: StringComparison.Ordinal)
+            if (!HasGeneratedHeader(content: existing)
                 && !string.Equals(a: existing, b: content, comparisonType: StringComparison.Ordinal))
             {
                 diagnostic = new GenerationDiagnostic(
@@ -154,11 +159,15 @@ public sealed class GeneratedFilePlanner
 
     private static string EnsureGeneratedHeader(string content)
     {
-        if (content.StartsWith(value: GeneratedFileHeader.Value, comparisonType: StringComparison.Ordinal))
+        if (HasGeneratedHeader(content: content))
         {
             return content;
         }
 
         return $"{GeneratedFileHeader.Value}\n\n{content.TrimStart('\r', '\n')}";
     }
+
+    private static bool HasGeneratedHeader(string content) =>
+        content.StartsWith(value: GeneratedFileHeader.Value, comparisonType: StringComparison.Ordinal)
+        || content.StartsWith(value: CrLfGeneratedFileHeader, comparisonType: StringComparison.Ordinal);
 }

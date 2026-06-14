@@ -586,6 +586,7 @@ public sealed class CliIntegrationTests
         CancellationToken cancellationToken)
     {
         var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(seconds: 30);
+        string? lastContent = null;
         while (true)
         {
             if (File.Exists(path: path))
@@ -593,6 +594,7 @@ public sealed class CliIntegrationTests
                 try
                 {
                     var content = await File.ReadAllTextAsync(path: path, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+                    lastContent = content;
                     if (content.Contains(value: expectedContent, comparisonType: StringComparison.Ordinal))
                     {
                         return;
@@ -606,7 +608,13 @@ public sealed class CliIntegrationTests
 
             if (DateTimeOffset.UtcNow >= timeoutAt)
             {
-                throw new TimeoutException(message: $"Expected content was not generated in {path}: {expectedContent}");
+                var message = $"Expected content was not generated in {path}: {expectedContent}";
+                if (lastContent is not null)
+                {
+                    message += $"{Environment.NewLine}Last content:{Environment.NewLine}{lastContent}";
+                }
+
+                throw new TimeoutException(message: message);
             }
 
             await Task.Delay(millisecondsDelay: 100, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
