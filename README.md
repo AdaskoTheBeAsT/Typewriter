@@ -1,6 +1,11 @@
-# ⌨️ Typewriter — Generate TypeScript from C#, Everywhere
+# Typewriter
 
-[![CI](https://img.shields.io/github/actions/workflow/status/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter/ci.yml?branch=master&label=CI&logo=github)](https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter/actions/workflows/ci.yml)
+![Typewriter](assets/source/typewriter-logo-1600x500.png)
+
+## Generate TypeScript from C#, Everywhere
+
+
+[![CI](https://img.shields.io/github/actions/workflow/status/AdaskoTheBeAsT/Typewriter/ci.yml?branch=master&label=CI&logo=github)](https://github.com/AdaskoTheBeAsT/Typewriter/actions/workflows/ci.yml)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](global.json)
 [![C#](https://img.shields.io/badge/C%23-14.0-239120?logo=csharp)](Directory.Build.props)
 [![Platforms](https://img.shields.io/badge/platforms-CLI%20%C2%B7%20VS%20Code%20%C2%B7%20VS%202026%20%C2%B7%20Rider%20%C2%B7%20LSP-blue)](#-editor-integrations)
@@ -14,22 +19,52 @@
 
 ## 📑 Table of Contents
 
-- [Why Typewriter?](#-why-typewriter)
-- [Why This Version Beats the Classic VS Extension](#-why-this-version-beats-the-classic-vs-extension)
-- [What Is in the Box](#-what-is-in-the-box)
-- [Quick Start](#-quick-start-5-minutes-to-generated-code)
-- [CLI Reference](#-cli-reference)
-- [Configuration: typewriter.json](#%EF%B8%8F-configuration-typewriterjson)
-- [Template Authoring](#-template-authoring)
-- [Template Settings API](#-template-settings-api)
-- [Editor Integrations](#-editor-integrations)
-- [Samples](#-samples)
-- [Migrating from the Original Typewriter](#-migrating-from-the-original-typewriter)
-- [Architecture](#%EF%B8%8F-architecture)
-- [Building from Source](#-building-from-source)
-- [Project Status and Roadmap](#-project-status-and-roadmap)
-- [Contributing](#-contributing)
-- [Acknowledgments](#-acknowledgments)
+- [Typewriter](#typewriter)
+  - [Generate TypeScript from C#, Everywhere](#generate-typescript-from-c-everywhere)
+  - [📑 Table of Contents](#-table-of-contents)
+  - [✨ Why Typewriter?](#-why-typewriter)
+  - [🚀 Why This Version Beats the Classic VS Extension](#-why-this-version-beats-the-classic-vs-extension)
+    - [New goodies at a glance](#new-goodies-at-a-glance)
+  - [📦 What Is in the Box](#-what-is-in-the-box)
+  - [🚦 Quick Start (5 Minutes to Generated Code)](#-quick-start-5-minutes-to-generated-code)
+    - [1️⃣ Choose your IDE plugin or dotnet tool](#1️⃣-choose-your-ide-plugin-or-dotnet-tool)
+    - [2️⃣ Initialize your workspace](#2️⃣-initialize-your-workspace)
+    - [3️⃣ Write your first template](#3️⃣-write-your-first-template)
+    - [4️⃣ Add a C# model](#4️⃣-add-a-c-model)
+    - [5️⃣ Generate ✨](#5️⃣-generate-)
+  - [🛠 CLI Reference](#-cli-reference)
+    - [Commands](#commands)
+    - [Options](#options)
+    - [Exit codes](#exit-codes)
+    - [Diagnostic codes](#diagnostic-codes)
+  - [⚙️ Configuration: `typewriter.json`](#️-configuration-typewriterjson)
+    - [Top-level settings](#top-level-settings)
+    - [`output` settings](#output-settings)
+    - [`diagnostics` settings](#diagnostics-settings)
+    - [🔍 Discovery and precedence](#-discovery-and-precedence)
+    - [🌱 Environment variables](#-environment-variables)
+  - [📝 Template Authoring](#-template-authoring)
+    - [Core syntax](#core-syntax)
+    - [Sharing logic between templates: `#load` vs `#r`](#sharing-logic-between-templates-load-vs-r)
+    - [Compiled C# helpers](#compiled-c-helpers)
+    - [Shared helpers and render completion hooks](#shared-helpers-and-render-completion-hooks)
+    - [Custom output paths](#custom-output-paths)
+    - [Web API URL helpers](#web-api-url-helpers)
+  - [🎛 Template Settings API](#-template-settings-api)
+  - [🧩 Editor Integrations](#-editor-integrations)
+    - [Installing editor packages](#installing-editor-packages)
+    - [💜 VS Code](#-vs-code)
+    - [🟣 Visual Studio 2026](#-visual-studio-2026)
+    - [🧠 JetBrains Rider](#-jetbrains-rider)
+    - [🌐 Language Server (any LSP client)](#-language-server-any-lsp-client)
+  - [🧪 Samples](#-samples)
+  - [🔄 Migrating from the Original Typewriter](#-migrating-from-the-original-typewriter)
+  - [🏗️ Architecture](#️-architecture)
+  - [🔨 Building from Source](#-building-from-source)
+  - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
+  - [🤝 Contributing](#-contributing)
+  - [🐛 Issues and Support](#-issues-and-support)
+  - [🙏 Acknowledgments](#-acknowledgments)
 
 ---
 
@@ -50,18 +85,18 @@
 
 The previous [`AdaskoTheBeAsT/Typewriter`](https://github.com/AdaskoTheBeAsT/Typewriter) fork is a mature Visual Studio extension. This repository keeps the same `.tst` template spirit, then turns Typewriter into a modern, scriptable, multi-editor toolchain.
 
-| Area | Classic Typewriter fork | This version |
-|---|---|---|
-| Runtime model | Visual Studio extension centered around VS events, DTE/COM, and VS project integration | Editor-independent engine plus thin adapters for CLI, LSP, VS Code, Visual Studio, and Rider |
-| Automation | Best inside Visual Studio, difficult to run consistently in headless builds | `typewriter generate`, `validate`, `watch`, and `list-templates` work locally and in CI |
-| Configuration | Mostly per-template `Settings` and Visual Studio options | Repository-local `typewriter.json` with discovery, formatting, encoding, nullability, naming, dry-run, and warning policy |
-| CI behavior | No first-class JSON contract or deterministic command exit model | JSON/text output, dry-run, deterministic exit codes, and `--fail-on-warning` |
-| Editor experience | Visual Studio editor support | Language Server diagnostics, completion, hover, go-to-definition, and semantic tokens, reused by VS Code and any LSP client |
-| IDE coverage | Visual Studio 2022 focused | CLI, VS Code, Visual Studio 2026, JetBrains Rider, and any LSP-capable editor |
-| Project loading | Visual Studio-oriented solution/project context | Buildalyzer and Roslyn loading for solutions, projects, folders, target frameworks, references, and multi-project workspaces |
-| File safety | Generated file behavior depends on the VS extension workflow | Planned writes block paths outside the workspace, refuse non-Typewriter overwrites, skip unchanged files, and warn on duplicate outputs |
-| Template runtime | Classic helpers and settings | Classic helpers plus `#load`, NuGet `#r`, `settings.Log` diagnostics, `Template(Settings, File)`, `OnRenderComplete`, parent/current helper parameters, and richer stack traces |
-| Packaging | VSIX releases | NuGet tool packages, language-server package, VSIX, VS Code VSIX, and Rider plugin artifacts from CI |
+| Area              | Classic Typewriter fork                                                                | This version                                                                                                                                                                    |
+| ----------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime model     | Visual Studio extension centered around VS events, DTE/COM, and VS project integration | Editor-independent engine plus thin adapters for CLI, LSP, VS Code, Visual Studio, and Rider                                                                                    |
+| Automation        | Best inside Visual Studio, difficult to run consistently in headless builds            | `typewriter generate`, `validate`, `watch`, and `list-templates` work locally and in CI                                                                                         |
+| Configuration     | Mostly per-template `Settings` and Visual Studio options                               | Repository-local `typewriter.json` with discovery, formatting, encoding, nullability, naming, dry-run, and warning policy                                                       |
+| CI behavior       | No first-class JSON contract or deterministic command exit model                       | JSON/text output, dry-run, deterministic exit codes, and `--fail-on-warning`                                                                                                    |
+| Editor experience | Visual Studio editor support                                                           | Language Server diagnostics, completion, hover, go-to-definition, and semantic tokens, reused by VS Code and any LSP client                                                     |
+| IDE coverage      | Visual Studio 2022 focused                                                             | CLI, VS Code, Visual Studio 2026, JetBrains Rider, and any LSP-capable editor                                                                                                   |
+| Project loading   | Visual Studio-oriented solution/project context                                        | Buildalyzer and Roslyn loading for solutions, projects, folders, target frameworks, references, and multi-project workspaces                                                    |
+| File safety       | Generated file behavior depends on the VS extension workflow                           | Planned writes block paths outside the workspace, refuse non-Typewriter overwrites, skip unchanged files, and warn on duplicate outputs                                         |
+| Template runtime  | Classic helpers and settings                                                           | Classic helpers plus `#load`, NuGet `#r`, `settings.Log` diagnostics, `Template(Settings, File)`, `OnRenderComplete`, parent/current helper parameters, and richer stack traces |
+| Packaging         | VSIX releases                                                                          | NuGet tool packages, language-server package, VSIX, VS Code VSIX, and Rider plugin artifacts from CI                                                                            |
 
 ### New goodies at a glance
 
@@ -80,30 +115,40 @@ The previous [`AdaskoTheBeAsT/Typewriter`](https://github.com/AdaskoTheBeAsT/Typ
 
 ## 📦 What Is in the Box
 
-| Component | Path | What it does |
-|---|---|---|
-| 🛠️ **Typewriter CLI** | [`src/Typewriter.Cli`](src/Typewriter.Cli) | `init`, `generate`, `validate`, `watch`, `list-templates` — scriptable and CI-ready |
-| ⚙️ **Engine** | [`src/Typewriter.Engine`](src/Typewriter.Engine) | Template parsing, rendering, compiled C# helpers, output planning and writing |
-| 🔬 **Roslyn metadata** | [`src/Typewriter.Roslyn`](src/Typewriter.Roslyn) | Extracts classes, records, interfaces, enums, delegates, members, attributes, doc comments |
-| 🏗️ **Buildalyzer bridge** | [`src/Typewriter.Buildalyzer`](src/Typewriter.Buildalyzer) | Loads solutions/projects and resolves references without Visual Studio |
-| 🌐 **Language Server** | [`src/Typewriter.LanguageServer`](src/Typewriter.LanguageServer) | LSP: live diagnostics, completion, hover, go-to-definition, semantic tokens |
-| 💜 **VS Code extension** | [`vscode/`](vscode) | `.tst` language support, commands, Problems integration, LSP client |
-| 🟣 **Visual Studio 2026 extension** | [`src/Typewriter.VisualStudio`](src/Typewriter.VisualStudio) | SDK-style VSIX for AMD64 and ARM64: generate on save, Error List diagnostics, Output window logging |
-| 🧠 **JetBrains Rider plugin** | [`rider/`](rider) | IntelliJ frontend plugin: `.tst` highlighting, Tools menu actions, settings, save-time CLI generation |
-| 📐 **Abstractions** | [`src/Typewriter.Abstractions`](src/Typewriter.Abstractions) | Shared contracts: configuration, diagnostics, metadata, generation results |
+| Component                          | Path                                                             | What it does                                                                                          |
+| ---------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 🛠️ **Typewriter CLI**               | [`src/Typewriter.Cli`](src/Typewriter.Cli)                       | `init`, `generate`, `validate`, `watch`, `list-templates` — scriptable and CI-ready                   |
+| ⚙️ **Engine**                       | [`src/Typewriter.Engine`](src/Typewriter.Engine)                 | Template parsing, rendering, compiled C# helpers, output planning and writing                         |
+| 🔬 **Roslyn metadata**              | [`src/Typewriter.Roslyn`](src/Typewriter.Roslyn)                 | Extracts classes, records, interfaces, enums, delegates, members, attributes, doc comments            |
+| 🏗️ **Buildalyzer bridge**           | [`src/Typewriter.Buildalyzer`](src/Typewriter.Buildalyzer)       | Loads solutions/projects and resolves references without Visual Studio                                |
+| 🌐 **Language Server**              | [`src/Typewriter.LanguageServer`](src/Typewriter.LanguageServer) | LSP: live diagnostics, completion, hover, go-to-definition, semantic tokens                           |
+| 💜 **VS Code extension**            | [`vscode/`](vscode)                                              | `.tst` language support, commands, Problems integration, LSP client                                   |
+| 🟣 **Visual Studio 2026 extension** | [`src/Typewriter.VisualStudio`](src/Typewriter.VisualStudio)     | SDK-style VSIX for AMD64 and ARM64: generate on save, Error List diagnostics, Output window logging   |
+| 🧠 **JetBrains Rider plugin**       | [`rider/`](rider)                                                | IntelliJ frontend plugin: `.tst` highlighting, Tools menu actions, settings, save-time CLI generation |
+| 📐 **Abstractions**                 | [`src/Typewriter.Abstractions`](src/Typewriter.Abstractions)     | Shared contracts: configuration, diagnostics, metadata, generation results                            |
 
 ---
 
 ## 🚦 Quick Start (5 Minutes to Generated Code)
 
-### 1️⃣ Get the CLI
+### 1️⃣ Choose your IDE plugin or dotnet tool
 
-Until packages are published to NuGet, run the CLI straight from the repo:
+Start with the plugin for the IDE you use. Download editor packages from the
+GitHub [Tags tab](https://github.com/AdaskoTheBeAsT/Typewriter/tags):
+choose a tag, expand **Assets**, then install the matching package.
+
+| IDE                | Download                                 | Install                                                                                                              |
+| ------------------ | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| VS Code            | `typewriter-vscode-<version>.vsix`       | Run `code --install-extension typewriter-vscode-<version>.vsix`, or use **Extensions → ... → Install from VSIX...**  |
+| Visual Studio 2026 | `Typewriter.VisualStudio-<version>.vsix` | Double-click the VSIX, or open it with the Visual Studio VSIX installer, then restart Visual Studio                  |
+| JetBrains Rider    | `Typewriter-Rider-<version>.zip`         | Use **Settings/Preferences → Plugins → gear menu → Install Plugin from Disk...**, select the ZIP, then restart Rider |
+
+The CLI and language server are also published to NuGet as dotnet tools:
 
 ```bash
-git clone https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter.git
-cd AdaskoTheBeAsT.Typewriter
-dotnet run --project src/Typewriter.Cli -- --help
+dotnet tool install --global AdaskoTheBeAsT.Typewriter.Cli --prerelease
+dotnet tool install --global AdaskoTheBeAsT.Typewriter.LanguageServer --prerelease
+typewriter --help
 ```
 
 ### 2️⃣ Initialize your workspace
@@ -172,48 +217,48 @@ typewriter [command] [options]
 
 ### Commands
 
-| Command | Description |
-|---|---|
-| `init` | 🆕 Create a `typewriter.json` with default values (`--force` to overwrite) |
-| `generate` | 🏭 Generate TypeScript files from templates (default command) |
-| `validate` | ✅ Parse templates and load metadata without writing files |
-| `watch` | 👀 Watch C# projects and templates, regenerate on change (debounced) |
-| `list-templates` | 📋 List the `.tst` templates discovered for the workspace |
+| Command          | Description                                                               |
+| ---------------- | ------------------------------------------------------------------------- |
+| `init`           | 🆕 Create a `typewriter.json` with default values (`--force` to overwrite) |
+| `generate`       | 🏭 Generate TypeScript files from templates (default command)              |
+| `validate`       | ✅ Parse templates and load metadata without writing files                 |
+| `watch`          | 👀 Watch C# projects and templates, regenerate on change (debounced)       |
+| `list-templates` | 📋 List the `.tst` templates discovered for the workspace                  |
 
 ### Options
 
-| Option | Description |
-|---|---|
-| `--workspace <path>` | Solution, project, or folder to operate on |
-| `--project <path>` | Specific C# project to read |
-| `--template <path>` | A single template file or template directory |
-| `--framework <tfm>` | Target framework for metadata loading (e.g. `net9.0`) |
-| `--all-projects` | Generate for every project in a multi-project workspace |
-| `--output text\|json` | Output format (use `json` in CI and tooling) |
-| `--dry-run` | Render everything, write nothing |
-| `--fail-on-warning` | Non-zero exit code when warnings are emitted |
+| Option                | Description                                             |
+| --------------------- | ------------------------------------------------------- |
+| `--workspace <path>`  | Solution, project, or folder to operate on              |
+| `--project <path>`    | Specific C# project to read                             |
+| `--template <path>`   | A single template file or template directory            |
+| `--framework <tfm>`   | Target framework for metadata loading (e.g. `net9.0`)   |
+| `--all-projects`      | Generate for every project in a multi-project workspace |
+| `--output text\|json` | Output format (use `json` in CI and tooling)            |
+| `--dry-run`           | Render everything, write nothing                        |
+| `--fail-on-warning`   | Non-zero exit code when warnings are emitted            |
 
 ### Exit codes
 
-| Code | Meaning |
-|---:|---|
-| `0` | 🟢 Success |
-| `1` | 🔴 Generation failed (errors, or warnings with `--fail-on-warning`) |
-| `2` | 🟠 Invalid command-line arguments |
-| `3` | 🟠 Project load failed (`TW0003`) |
-| `4` | 🟠 Template parse error (`TW0002`) |
+| Code | Meaning                                                            |
+| ---: | ------------------------------------------------------------------ |
+|  `0` | 🟢 Success                                                          |
+|  `1` | 🔴 Generation failed (errors, or warnings with `--fail-on-warning`) |
+|  `2` | 🟠 Invalid command-line arguments                                   |
+|  `3` | 🟠 Project load failed (`TW0003`)                                   |
+|  `4` | 🟠 Template parse error (`TW0002`)                                  |
 
 ### Diagnostic codes
 
-| Code | Meaning |
-|---|---|
-| `TW0001` | Unknown template member |
-| `TW0002` | Template parse error |
-| `TW0003` | Project load failed |
-| `TW0004` | C# compilation diagnostic surfaced from Roslyn |
-| `TW0005` | Output path escapes the workspace (blocked for safety) |
-| `TW0006` | Output would overwrite a file not generated by Typewriter (blocked) |
-| `TW0007` | Template log message (`settings.Log`) surfaced as a diagnostic |
+| Code     | Meaning                                                                                                                      |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `TW0001` | Unknown template member                                                                                                      |
+| `TW0002` | Template parse error                                                                                                         |
+| `TW0003` | Project load failed                                                                                                          |
+| `TW0004` | C# compilation diagnostic surfaced from Roslyn                                                                               |
+| `TW0005` | Output path escapes the workspace (blocked for safety)                                                                       |
+| `TW0006` | Output would overwrite a file not generated by Typewriter (blocked)                                                          |
+| `TW0007` | Template log message (`settings.Log`) surfaced as a diagnostic                                                               |
 | `TW0008` | Duplicate generated output path warning; generation continues and the last render wins unless `--fail-on-warning` is enabled |
 
 ---
@@ -248,32 +293,32 @@ Generated by `typewriter init`. All values below are the defaults:
 
 ### Top-level settings
 
-| Key | Default | Description |
-|---|---|---|
-| `templates` | `["**/*.tst"]` | Glob patterns used to discover templates |
-| `exclude` | `bin`, `obj`, `node_modules` globs | Glob patterns excluded from discovery |
-| `defaultTargetFramework` | `null` | TFM used when a project multi-targets (e.g. `net9.0`) |
+| Key                      | Default                            | Description                                           |
+| ------------------------ | ---------------------------------- | ----------------------------------------------------- |
+| `templates`              | `["**/*.tst"]`                     | Glob patterns used to discover templates              |
+| `exclude`                | `bin`, `obj`, `node_modules` globs | Glob patterns excluded from discovery                 |
+| `defaultTargetFramework` | `null`                             | TFM used when a project multi-targets (e.g. `net9.0`) |
 
 ### `output` settings
 
-| Key | Default | Description |
-|---|---|---|
-| `newline` | `"lf"` | `lf` or `crlf` line endings in generated files |
-| `encoding` | `"utf-8"` | `utf-8` (no BOM) or `utf-8-bom` ⚠️ the original Typewriter emitted a BOM by default — set `utf-8-bom` for byte-identical output |
-| `writeOnlyWhenChanged` | `true` | Skip disk writes when content is unchanged (keeps file watchers and HMR calm) |
-| `dryRun` | `false` | Render without writing files |
-| `fileNameConvention` | `"preserve"` | Output file naming: `preserve`, `kebab`, `pascal`, `camel`, `snake` |
-| `strictNull` | `true` | Render nullable types as `T \| null`; templates can override via `settings.DisableStrictNullGeneration()` |
-| `indentStyle` | `"preserve"` | Re-indent generated output: `preserve`, `space`, or `tab` (the rendered indent unit is detected automatically) |
-| `indentSize` | `4` | Target indent width used when `indentStyle` is `space` |
-| `insertFinalNewline` | `false` | Ensure generated files end with a single trailing newline |
-| `trimTrailingWhitespace` | `false` | Strip trailing spaces and tabs from every generated line |
-| `quoteStyle` | `"double"` | Default string literal character for generated defaults: `double`, `single`, or `backtick`; `settings.UseStringLiteralCharacter(...)` in a template wins |
+| Key                      | Default      | Description                                                                                                                                              |
+| ------------------------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `newline`                | `"lf"`       | `lf` or `crlf` line endings in generated files                                                                                                           |
+| `encoding`               | `"utf-8"`    | `utf-8` (no BOM) or `utf-8-bom` ⚠️ the original Typewriter emitted a BOM by default — set `utf-8-bom` for byte-identical output                           |
+| `writeOnlyWhenChanged`   | `true`       | Skip disk writes when content is unchanged (keeps file watchers and HMR calm)                                                                            |
+| `dryRun`                 | `false`      | Render without writing files                                                                                                                             |
+| `fileNameConvention`     | `"preserve"` | Output file naming: `preserve`, `kebab`, `pascal`, `camel`, `snake`                                                                                      |
+| `strictNull`             | `true`       | Render nullable types as `T \| null`; templates can override via `settings.DisableStrictNullGeneration()`                                                |
+| `indentStyle`            | `"preserve"` | Re-indent generated output: `preserve`, `space`, or `tab` (the rendered indent unit is detected automatically)                                           |
+| `indentSize`             | `4`          | Target indent width used when `indentStyle` is `space`                                                                                                   |
+| `insertFinalNewline`     | `false`      | Ensure generated files end with a single trailing newline                                                                                                |
+| `trimTrailingWhitespace` | `false`      | Strip trailing spaces and tabs from every generated line                                                                                                 |
+| `quoteStyle`             | `"double"`   | Default string literal character for generated defaults: `double`, `single`, or `backtick`; `settings.UseStringLiteralCharacter(...)` in a template wins |
 
 ### `diagnostics` settings
 
-| Key | Default | Description |
-|---|---|---|
+| Key             | Default | Description                               |
+| --------------- | ------- | ----------------------------------------- |
 | `failOnWarning` | `false` | Treat warnings as failures (great for CI) |
 
 ### 🔍 Discovery and precedence
@@ -285,11 +330,11 @@ Generated by `typewriter init`. All values below are the defaults:
 
 ### 🌱 Environment variables
 
-| Variable | Overrides |
-|---|---|
-| `TYPEWRITER_DEFAULT_TARGET_FRAMEWORK` | `defaultTargetFramework` |
-| `TYPEWRITER_OUTPUT_NEWLINE` | `output.newline` |
-| `TYPEWRITER_FAIL_ON_WARNING` | `diagnostics.failOnWarning` (`true`/`1`/`yes`) |
+| Variable                              | Overrides                                      |
+| ------------------------------------- | ---------------------------------------------- |
+| `TYPEWRITER_DEFAULT_TARGET_FRAMEWORK` | `defaultTargetFramework`                       |
+| `TYPEWRITER_OUTPUT_NEWLINE`           | `output.newline`                               |
+| `TYPEWRITER_FAIL_ON_WARNING`          | `diagnostics.failOnWarning` (`true`/`1`/`yes`) |
 
 ---
 
@@ -299,16 +344,16 @@ Templates are `.tst` files using the original Typewriter dialect — existing te
 
 ### Core syntax
 
-| Construct | Meaning |
-|---|---|
-| `$Classes(filter)[...]` | Render block for every matching class (also `$Records`, `$Interfaces`, `$Enums`, `$Delegates`) |
-| `$Properties[...][separator]` | Iterate members (also `$Methods`, `$Parameters`, `$Fields`, `$Constants`, `$Events`, `$Values`) |
-| `$Name`, `$name`, `$FullName`, `$Namespace`, `$Type` | Scalar substitutions (lowercase first letter via `$name`) |
-| `(*Model)`, `([Attribute])`, `(c => c.IsPublic)` | Wildcard, attribute, and lambda filters |
-| `$IsNullable[yes][no]` | Conditional true/false blocks |
-| `${ ... }` | Compiled C# helper block — write real C# methods used by the template |
-| `#r "nuget: PackageId, 1.2.3"` | Reference DLLs or NuGet packages (restored automatically) from helper code |
-| `#load "shared-helpers.cs"` | Include shared C# source helper members from a file relative to the current template/helper file |
+| Construct                                            | Meaning                                                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `$Classes(filter)[...]`                              | Render block for every matching class (also `$Records`, `$Interfaces`, `$Enums`, `$Delegates`)   |
+| `$Properties[...][separator]`                        | Iterate members (also `$Methods`, `$Parameters`, `$Fields`, `$Constants`, `$Events`, `$Values`)  |
+| `$Name`, `$name`, `$FullName`, `$Namespace`, `$Type` | Scalar substitutions (lowercase first letter via `$name`)                                        |
+| `(*Model)`, `([Attribute])`, `(c => c.IsPublic)`     | Wildcard, attribute, and lambda filters                                                          |
+| `$IsNullable[yes][no]`                               | Conditional true/false blocks                                                                    |
+| `${ ... }`                                           | Compiled C# helper block — write real C# methods used by the template                            |
+| `#r "nuget: PackageId, 1.2.3"`                       | Reference DLLs or NuGet packages (restored automatically) from helper code                       |
+| `#load "shared-helpers.cs"`                          | Include shared C# source helper members from a file relative to the current template/helper file |
 
 ### Sharing logic between templates: `#load` vs `#r`
 
@@ -491,21 +536,21 @@ The built-in Web API helpers parse `Route` and `RoutePrefix` attribute values, i
 
 The `Settings` object passed to the template constructor keeps the original API so old templates compile unchanged. Current wiring status:
 
-| Setting | Status | Notes |
-|---|:---:|---|
-| `OutputExtension` | ✅ | Default `.ts` |
-| `OutputFilenameFactory` | ✅ | Per-source fan-out and no-match suppression supported |
-| `OutputDirectory` | ✅ | Relative paths resolve against the template location |
-| `SingleFileMode("name.ts")` | ✅ | Renders the whole template into one file |
-| `UseStringLiteralCharacter('\'')` | ✅ | Affects generated string literals and defaults; defaults from `output.quoteStyle` in `typewriter.json` |
-| `TemplatePath` | ✅ | Full path of the executing template |
-| `Log` (`ILog`) | ✅ | Messages surface as `TW0007` diagnostics in CLI output and editors |
-| `IncludeCurrentProject()` / `IncludeReferencedProjects()` / `IncludeAllProjects()` / `IncludeProject(name)` | ♻️ | Accepted for compatibility; project scope is now controlled by `--project`, `--all-projects`, and the workspace |
-| `DisableStrictNullGeneration()` | ✅ | Defaults from `output.strictNull` in `typewriter.json`; calling this in the template overrides it |
-| `DisableUtf8BomGeneration()` / `Utf8BomGeneration` | ✅ | Defaults from `output.encoding` in `typewriter.json`; the template override wins per file |
-| `PartialRenderingMode` | 🚧 | Accepted but not wired yet |
-| `SolutionFullName` | ✅ | Populated from the resolved workspace (solution or folder path) |
-| `SkipAddingGeneratedFilesToProject` | ➖ | Obsolete — SDK-style projects include files automatically |
+| Setting                                                                                                     | Status | Notes                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------- |
+| `OutputExtension`                                                                                           |   ✅    | Default `.ts`                                                                                                   |
+| `OutputFilenameFactory`                                                                                     |   ✅    | Per-source fan-out and no-match suppression supported                                                           |
+| `OutputDirectory`                                                                                           |   ✅    | Relative paths resolve against the template location                                                            |
+| `SingleFileMode("name.ts")`                                                                                 |   ✅    | Renders the whole template into one file                                                                        |
+| `UseStringLiteralCharacter('\'')`                                                                           |   ✅    | Affects generated string literals and defaults; defaults from `output.quoteStyle` in `typewriter.json`          |
+| `TemplatePath`                                                                                              |   ✅    | Full path of the executing template                                                                             |
+| `Log` (`ILog`)                                                                                              |   ✅    | Messages surface as `TW0007` diagnostics in CLI output and editors                                              |
+| `IncludeCurrentProject()` / `IncludeReferencedProjects()` / `IncludeAllProjects()` / `IncludeProject(name)` |   ♻️    | Accepted for compatibility; project scope is now controlled by `--project`, `--all-projects`, and the workspace |
+| `DisableStrictNullGeneration()`                                                                             |   ✅    | Defaults from `output.strictNull` in `typewriter.json`; calling this in the template overrides it               |
+| `DisableUtf8BomGeneration()` / `Utf8BomGeneration`                                                          |   ✅    | Defaults from `output.encoding` in `typewriter.json`; the template override wins per file                       |
+| `PartialRenderingMode`                                                                                      |   🚧    | Accepted but not wired yet                                                                                      |
+| `SolutionFullName`                                                                                          |   ✅    | Populated from the resolved workspace (solution or folder path)                                                 |
+| `SkipAddingGeneratedFilesToProject`                                                                         |   ➖    | Obsolete — SDK-style projects include files automatically                                                       |
 
 Legend: ✅ working · ♻️ superseded by CLI/config · 🚧 accepted no-op (tracked) · ➖ intentionally dropped
 
@@ -517,11 +562,11 @@ Legend: ✅ working · ♻️ superseded by CLI/config · 🚧 accepted no-op (t
 
 Release builds produce installable editor packages as GitHub release assets:
 
-| Editor | Artifact | Install |
-|---|---|---|
-| Visual Studio 2026 | `Typewriter.VisualStudio-<version>.vsix` | Double-click the VSIX, or run it with the Visual Studio VSIX installer, then restart Visual Studio |
-| VS Code | `typewriter-vscode-<version>.vsix` | Run `code --install-extension typewriter-vscode-<version>.vsix`, or use **Extensions → ... → Install from VSIX...** |
-| JetBrains Rider | `Typewriter-Rider-<version>.zip` | Use **Settings/Preferences → Plugins → gear menu → Install Plugin from Disk...**, select the ZIP, then restart Rider |
+| Editor             | Artifact                                 | Install                                                                                                              |
+| ------------------ | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Visual Studio 2026 | `Typewriter.VisualStudio-<version>.vsix` | Double-click the VSIX, or run it with the Visual Studio VSIX installer, then restart Visual Studio                   |
+| VS Code            | `typewriter-vscode-<version>.vsix`       | Run `code --install-extension typewriter-vscode-<version>.vsix`, or use **Extensions → ... → Install from VSIX...**  |
+| JetBrains Rider    | `Typewriter-Rider-<version>.zip`         | Use **Settings/Preferences → Plugins → gear menu → Install Plugin from Disk...**, select the ZIP, then restart Rider |
 
 The editor packages include the Typewriter CLI and language server tools used by the integrations. If you build locally, the same package names are written to `artifacts/packages`.
 
@@ -554,11 +599,11 @@ Located in [`vscode/`](vscode) ([extension README](vscode/README.md)).
 
 SDK-style VSIX in [`src/Typewriter.VisualStudio`](src/Typewriter.VisualStudio). **Tools → Options → Typewriter**:
 
-| Category | Options |
-|---|---|
-| CLI | CLI path, CLI arguments |
-| Language Server | Enabled (default ✔), path, arguments |
-| Generation | Workspace path, project path, target framework, generate all projects, **generate on save** (default ✔) |
+| Category        | Options                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------- |
+| CLI             | CLI path, CLI arguments                                                                                 |
+| Language Server | Enabled (default ✔), path, arguments                                                                    |
+| Generation      | Workspace path, project path, target framework, generate all projects, **generate on save** (default ✔) |
 
 Diagnostics land in the **Error List**, logs in the **Output** window, and `.tst` files get classification plus Ctrl+Space completions.
 
@@ -578,14 +623,14 @@ This is not a ReSharper backend plugin. Deep C# semantic loading remains in the 
 
 Each sample in [`samples/`](samples) ships with checked-in TypeScript snapshots used by the test suite:
 
-| Sample | Demonstrates |
-|---|---|
-| [`SimpleApi`](samples/SimpleApi) | 🍃 Basic model generation |
-| [`NullableModels`](samples/NullableModels) | 🎯 Nullable reference types → `T \| null` |
-| [`RecordsAndEnums`](samples/RecordsAndEnums) | 📊 C# records and enum generation |
-| [`MultiProjectSolution`](samples/MultiProjectSolution) | 🏗️ Multi-project workspaces and project references |
-| [`WebApiServices`](samples/WebApiServices) | 🌐 Controllers → typed API clients, constants generation |
-| [`SignalRHubs`](samples/SignalRHubs) | 📡 SignalR hub → typed client interfaces |
+| Sample                                                 | Demonstrates                                            |
+| ------------------------------------------------------ | ------------------------------------------------------- |
+| [`SimpleApi`](samples/SimpleApi)                       | 🍃 Basic model generation                                |
+| [`NullableModels`](samples/NullableModels)             | 🎯 Nullable reference types → `T \| null`                |
+| [`RecordsAndEnums`](samples/RecordsAndEnums)           | 📊 C# records and enum generation                        |
+| [`MultiProjectSolution`](samples/MultiProjectSolution) | 🏗️ Multi-project workspaces and project references       |
+| [`WebApiServices`](samples/WebApiServices)             | 🌐 Controllers → typed API clients, constants generation |
+| [`SignalRHubs`](samples/SignalRHubs)                   | 📡 SignalR hub → typed client interfaces                 |
 
 ---
 
@@ -593,14 +638,14 @@ Each sample in [`samples/`](samples) ships with checked-in TypeScript snapshots 
 
 Coming from the [original VS extension](https://github.com/AdaskoTheBeAsT/Typewriter)? Your `.tst` templates should run unchanged — the differences are operational:
 
-| Original behavior | Replacement |
-|---|---|
-| 🖱 VS-only, DTE/COM based | Cross-platform CLI + LSP + editor adapters |
-| “Auto-render when C# files change” VS option | `typewriter watch` (or editor generate-on-save) |
-| “Render template on save” VS option | VS: *Generate on save* · VS Code: `typewriter.generateOnSave` |
-| “Add generated files to VS project” | Not needed — SDK-style projects glob files automatically |
-| `settings.IncludeReferencedProjects()` etc. | `--project`, `--all-projects`, workspace selection |
-| UTF-8 **with BOM** by default | UTF-8 **without BOM** — set `"encoding": "utf-8-bom"` to match old output |
+| Original behavior                                      | Replacement                                                                        |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| 🖱 VS-only, DTE/COM based                               | Cross-platform CLI + LSP + editor adapters                                         |
+| “Auto-render when C# files change” VS option           | `typewriter watch` (or editor generate-on-save)                                    |
+| “Render template on save” VS option                    | VS: *Generate on save* · VS Code: `typewriter.generateOnSave`                      |
+| “Add generated files to VS project”                    | Not needed — SDK-style projects glob files automatically                           |
+| `settings.IncludeReferencedProjects()` etc.            | `--project`, `--all-projects`, workspace selection                                 |
+| UTF-8 **with BOM** by default                          | UTF-8 **without BOM** — set `"encoding": "utf-8-bom"` to match old output          |
 | Strict-null toggle via `DisableStrictNullGeneration()` | ✅ Works; set `"strictNull": false` in `typewriter.json` or call it in the template |
 
 📋 Detailed parity tracking lives in [`compatibility.md`](compatibility.md) (template-runtime gaps) and [`implemented.md`](implemented.md) (full implementation record).
@@ -690,15 +735,15 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 
 ## 🗺 Project Status and Roadmap
 
-| Milestone | Status |
-|---|:---:|
-| Core engine, Roslyn metadata, first template execution | ✅ |
-| CLI (`generate`, `validate`, `watch`, `list-templates`, JSON output) | ✅ |
-| VS Code extension + Language Server | ✅ |
-| Visual Studio 2026 VSIX (AMD64 + ARM64) | ✅ |
-| JetBrains Rider frontend plugin | ✅ |
-| Old-template compatibility hardening | 🚧 ongoing |
-| NuGet / Marketplace publishing | 📋 planned |
+| Milestone                                                            |  Status   |
+| -------------------------------------------------------------------- | :-------: |
+| Core engine, Roslyn metadata, first template execution               |     ✅     |
+| CLI (`generate`, `validate`, `watch`, `list-templates`, JSON output) |     ✅     |
+| VS Code extension + Language Server                                  |     ✅     |
+| Visual Studio 2026 VSIX (AMD64 + ARM64)                              |     ✅     |
+| JetBrains Rider frontend plugin                                      |     ✅     |
+| Old-template compatibility hardening                                 | 🚧 ongoing |
+| NuGet / Marketplace publishing                                       | 📋 planned |
 
 - 📗 [`implemented.md`](implemented.md) — everything that is done, in detail
 - 📙 [`to_implement.md`](to_implement.md) — roadmap and backlog
