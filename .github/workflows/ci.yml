@@ -36,7 +36,9 @@ jobs:
         with:
           distribution: microsoft
           java-version: 21
-          cache: gradle
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Restore .NET
         run: dotnet restore AdaskoTheBeAsT.Typewriter.slnx
