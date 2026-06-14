@@ -159,3 +159,20 @@ $RECYCLE.BIN/
 # Mac desktop service store files
 .DS_Store
 .vs
+
+.sarif/
+!.sarif/.gitkeep
+
+# VS Code extension artifacts
+vscode/node_modules/
+vscode/out/
+vscode/dist/
+vscode/*.vsix
+
+# JetBrains Rider plugin artifacts
+rider/.gradle/
+rider/.intellijPlatform/
+rider/build/
+rider/out/
+
+artifacts/

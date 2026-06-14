@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable">
+  <Extern href="stdidcmd.h" />
+  <Extern href="vsshlids.h" />
+
+  <Commands package="guidTypewriterPackage">
+    <Groups>
+      <Group guid="guidTypewriterCommandSet" id="TypewriterMenuGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS" />
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <Button guid="guidTypewriterCommandSet" id="cmdidGenerateCurrentTemplate" priority="0x0100" type="Button">
+        <Parent guid="guidTypewriterCommandSet" id="TypewriterMenuGroup" />
+        <Strings>
+          <ButtonText>Typewriter: Generate Current Template</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidTypewriterCommandSet" id="cmdidGenerateAllTemplates" priority="0x0101" type="Button">
+        <Parent guid="guidTypewriterCommandSet" id="TypewriterMenuGroup" />
+        <Strings>
+          <ButtonText>Typewriter: Generate All Templates</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidTypewriterCommandSet" id="cmdidValidateCurrentTemplate" priority="0x0102" type="Button">
+        <Parent guid="guidTypewriterCommandSet" id="TypewriterMenuGroup" />
+        <Strings>
+          <ButtonText>Typewriter: Validate Current Template</ButtonText>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="guidTypewriterPackage" value="{0f42254e-a1f3-45bb-9209-b7a4d5c30791}" />
+    <GuidSymbol name="guidTypewriterCommandSet" value="{70f36224-b7ab-491c-9f9c-b241ebafde9a}">
+      <IDSymbol name="TypewriterMenuGroup" value="0x1020" />
+      <IDSymbol name="cmdidGenerateCurrentTemplate" value="0x0100" />
+      <IDSymbol name="cmdidGenerateAllTemplates" value="0x0101" />
+      <IDSymbol name="cmdidValidateCurrentTemplate" value="0x0102" />
+    </GuidSymbol>
+  </Symbols>
+</CommandTable>

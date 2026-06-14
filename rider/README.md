@@ -1,0 +1,40 @@
+# Typewriter for JetBrains Rider
+
+JetBrains Rider adapter for Typewriter `.tst` templates.
+
+This is the Rider frontend layer: a Kotlin/IntelliJ Platform plugin for UI, actions, settings, editor integration, and file watching. It does not add a ReSharper backend plugin. C# semantic loading still happens in the existing Typewriter CLI/Roslyn engine.
+
+## Compatibility
+
+- Plugin version: `3.0.0`.
+- Rider/IntelliJ Platform: `2026.1+` (`sinceBuild` `261`).
+- Java: `21+`.
+
+## Features
+
+- Registers `.tst` files as Typewriter templates.
+- Adds syntax highlighting and color scheme entries for Typewriter directives, template expressions, helper blocks, strings, numbers, comments, and delimiters.
+- Adds Tools | Typewriter actions:
+  - Generate Current Template
+  - Generate All Templates
+  - Validate Current Template
+- Adds Settings | Typewriter project settings for CLI path, CLI arguments, workspace/project/template paths, framework, all-project generation, and save-time generation/validation.
+- Runs the Typewriter CLI directly, using the local repository CLI project when opened from this source tree and falling back to `typewriter` on `PATH`.
+
+## Build
+
+Prerequisites:
+
+- Eclipse Temurin JDK 21 (`EclipseAdoptium.Temurin.21.JDK` on Windows)
+
+```powershell
+winget install EclipseAdoptium.Temurin.21.JDK
+```
+
+```powershell
+.\rider\gradlew.bat -p rider verifyPluginProjectConfiguration
+.\rider\gradlew.bat -p rider verifyPlugin
+.\rider\gradlew.bat -p rider buildPlugin
+```
+
+The plugin ZIP is written under `rider/build/distributions/`. CI expects `rider/build/distributions/typewriter-rider-3.0.0.zip` and collects it as `Typewriter-Rider-3.0.0.zip`.

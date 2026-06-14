@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 500" role="img" aria-labelledby="title desc">
+  <title id="title">Typewriter logo</title>
+  <desc id="desc">Typewriter wordmark with a code-generating typewriter icon.</desc>
+  <rect width="1600" height="500" fill="#0B1020"/>
+  <!-- Inline full icon without nested defs limitations -->
+  <g transform="translate(60 62) scale(0.3671875)">
+    <defs>
+      <linearGradient id="baseGradLogo" x1="180" y1="585" x2="850" y2="885" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#94A3B8"/>
+        <stop offset="1" stop-color="#E2E8F0"/>
+      </linearGradient>
+      <linearGradient id="paperGradLogo" x1="260" y1="120" x2="750" y2="700" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#0F172A"/>
+        <stop offset="1" stop-color="#1E293B"/>
+      </linearGradient>
+      <filter id="softShadowLogo" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.16"/>
+      </filter>
+    </defs>
+    <g filter="url(#softShadowLogo)">
+      <rect x="104" y="587" width="86" height="46" rx="22" fill="#E2E8F0"/>
+      <rect x="834" y="587" width="86" height="46" rx="22" fill="#E2E8F0"/>
+      <circle cx="115" cy="610" r="22" fill="#E2E8F0"/>
+      <circle cx="909" cy="610" r="22" fill="#E2E8F0"/>
+      <path d="M101 618 L62 618 Q44 618 44 636 L44 724 Q44 742 62 742 L101 742" fill="none" stroke="#38BDF8" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M168 593H856C895 593 927 624 927 663L968 834C968 890 923 936 866 936H158C101 936 56 890 56 834L97 663C97 624 129 593 168 593Z" fill="url(#baseGradLogo)"/>
+      <rect x="218" y="531" width="588" height="105" rx="52" fill="#CBD5E1"/>
+      <path d="M265 92H681L795 205V668C795 702 768 730 734 730H265C231 730 204 702 204 668V153C204 119 231 92 265 92Z" fill="url(#paperGradLogo)" stroke="#60A5FA" stroke-width="10"/>
+      <path d="M681 92V170C681 192 699 210 721 210H795" fill="none" stroke="#60A5FA" stroke-width="10"/>
+      <path d="M681 92C731 104 781 153 795 205H721C699 205 681 187 681 165V92Z" fill="#1E293B" opacity="0.92"/>
+      <path d="M358 206L291 262L358 318" fill="none" stroke="#38BDF8" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M553 206L620 262L553 318" fill="none" stroke="#38BDF8" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M486 190L419 338" fill="none" stroke="#38BDF8" stroke-width="36" stroke-linecap="round"/>
+      <rect x="278" y="425" width="55" height="23" rx="11" fill="#64748B"/>
+      <rect x="375" y="425" width="270" height="23" rx="11" fill="#BAE6FD"/>
+      <rect x="278" y="488" width="55" height="23" rx="11" fill="#64748B"/>
+      <rect x="375" y="488" width="210" height="23" rx="11" fill="#64748B"/>
+      <rect x="278" y="551" width="55" height="23" rx="11" fill="#64748B" opacity="0.55"/>
+      <rect x="375" y="551" width="150" height="23" rx="11" fill="#BAE6FD"/>
+      <rect x="558" y="551" width="145" height="23" rx="11" fill="#64748B"/>
+      <rect x="278" y="614" width="55" height="23" rx="11" fill="#64748B" opacity="0.45"/>
+      <rect x="375" y="614" width="215" height="23" rx="11" fill="#64748B"/>
+      <rect x="805" y="405" width="118" height="18" rx="9" fill="#38BDF8" opacity="0.95"/>
+      <rect x="805" y="454" width="100" height="18" rx="9" fill="#BAE6FD" opacity="0.9"/>
+      <rect x="922" y="454" width="40" height="18" rx="9" fill="#BAE6FD" opacity="0.75"/>
+      <rect x="805" y="503" width="135" height="18" rx="9" fill="#38BDF8" opacity="0.75"/>
+      <rect x="958" y="503" width="45" height="18" rx="9" fill="#BAE6FD" opacity="0.58"/>
+      <g fill="#0F172A">
+        <circle cx="220" cy="784" r="32"/><circle cx="302" cy="784" r="32"/><circle cx="384" cy="784" r="32"/><circle cx="466" cy="784" r="32"/><circle cx="548" cy="784" r="32"/><circle cx="630" cy="784" r="32"/><circle cx="712" cy="784" r="32"/>
+        <circle cx="261" cy="855" r="32"/><circle cx="343" cy="855" r="32"/><circle cx="425" cy="855" r="32"/><circle cx="507" cy="855" r="32"/><circle cx="589" cy="855" r="32"/><circle cx="671" cy="855" r="32"/>
+        <rect x="360" y="895" width="300" height="44" rx="22"/>
+      </g>
+    </g>
+  </g>
+  <text x="500" y="316" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="148" font-weight="750" letter-spacing="-6" fill="#E5E7EB">Typewriter</text>
+  <circle cx="1223" cy="205" r="17" fill="#38BDF8"/>
+</svg>

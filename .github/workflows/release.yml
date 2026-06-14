@@ -1,0 +1,237 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  detect_lightweight_tag:
+    name: Detect lightweight tag
+    runs-on: windows-latest
+    outputs:
+      is_lightweight_tag: ${{ steps.lightweight_tag.outputs.is_lightweight_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect lightweight tag
+        id: lightweight_tag
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/detect-lightweight-tag@v1
+
+      - name: Show tag type
+        shell: pwsh
+        run: |
+          Write-Host "Is lightweight tag: ${{ steps.lightweight_tag.outputs.is_lightweight_tag }}"
+
+  release:
+    name: Publish release
+    needs: detect_lightweight_tag
+    if: needs.detect_lightweight_tag.outputs.is_lightweight_tag == 'true'
+    runs-on: windows-latest
+    env:
+      ContinuousIntegrationBuild: true
+      PACKAGE_OUTPUT_DIRECTORY: artifacts/packages
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/setup-dotnet-sdks@v1
+        with:
+          use_global_json: "true"
+          show_info: "true"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: 21
+          cache: gradle
+
+      - name: Apply tag version
+        id: apply_version
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/set-directory-build-props-version-from-tag@v1
+        with:
+          tag: ${{ github.ref_name }}
+          strip_v_prefix: "true"
+          fail_if_not_semver: "true"
+
+      - name: Stamp release versions
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.apply_version.outputs.version }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:VERSION)) {
+            throw "Resolved release version is empty."
+          }
+
+          npm --prefix vscode version $env:VERSION --no-git-tag-version --allow-same-version
+
+          foreach ($projectPath in @(
+            "src/Typewriter.Cli/Typewriter.Cli.csproj",
+            "src/Typewriter.LanguageServer/Typewriter.LanguageServer.csproj"
+          )) {
+            $resolvedPath = (Resolve-Path -LiteralPath $projectPath).Path
+            $project = New-Object System.Xml.XmlDocument
+            $project.PreserveWhitespace = $true
+            $project.Load($resolvedPath)
+            $versionNode = $project.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='Version']")
+            if ($null -eq $versionNode) {
+              throw "Unable to find Version in $projectPath."
+            }
+
+            $versionNode.InnerText = $env:VERSION
+            $project.Save($resolvedPath)
+          }
+
+          $manifestPath = "src/Typewriter.VisualStudio/source.extension.vsixmanifest"
+          $resolvedManifestPath = (Resolve-Path -LiteralPath $manifestPath).Path
+          $manifest = New-Object System.Xml.XmlDocument
+          $manifest.PreserveWhitespace = $true
+          $manifest.Load($resolvedManifestPath)
+          $identity = $manifest.SelectSingleNode("/*[local-name()='PackageManifest']/*[local-name()='Metadata']/*[local-name()='Identity']")
+          if ($null -eq $identity) {
+            throw "Unable to find VSIX identity in $manifestPath."
+          }
+
+          $identity.SetAttribute("Version", $env:VERSION)
+          $manifest.Save($resolvedManifestPath)
+
+          $gradlePropertiesPath = "rider/gradle.properties"
+          $pluginVersionFound = $false
+          $gradleProperties = Get-Content -LiteralPath $gradlePropertiesPath | ForEach-Object {
+            if ($_ -match "^\s*pluginVersion\s*=") {
+              $pluginVersionFound = $true
+              "pluginVersion=$env:VERSION"
+            } else {
+              $_
+            }
+          }
+
+          if (-not $pluginVersionFound) {
+            throw "Unable to find pluginVersion in $gradlePropertiesPath."
+          }
+
+          $gradleProperties | Set-Content -LiteralPath $gradlePropertiesPath
+          Write-Host "Stamped release version: $env:VERSION"
+
+      - name: Validate NuGet publishing configuration
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) {
+            throw "Secret NUGET_API_KEY is required to publish NuGet packages."
+          }
+
+      - name: Restore .NET
+        run: dotnet restore AdaskoTheBeAsT.Typewriter.slnx
+
+      - name: Build .NET
+        run: dotnet build AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-restore -m:1
+
+      - name: Test .NET
+        run: dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build -m:1
+
+      - name: Prepare package output
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path $env:PACKAGE_OUTPUT_DIRECTORY | Out-Null
+
+      - name: Pack CLI NuGet tool
+        shell: pwsh
+        run: .\Build-CliNuGetTool.ps1 -Configuration Release -OutputDirectory $env:PACKAGE_OUTPUT_DIRECTORY -NoRestore -NoBuild
+
+      - name: Pack language server NuGet tool
+        shell: pwsh
+        run: .\Build-LanguageServerNuGetTool.ps1 -Configuration Release -OutputDirectory $env:PACKAGE_OUTPUT_DIRECTORY -NoRestore -NoBuild
+
+      - name: Package VS Code extension
+        shell: pwsh
+        run: .\Build-VSCodeExtension.ps1 -OutputDirectory $env:PACKAGE_OUTPUT_DIRECTORY -InstallDependencies
+
+      - name: Package Visual Studio VSIX
+        shell: pwsh
+        run: .\Build-VisualStudioVsix.ps1 -Configuration Release -OutputDirectory $env:PACKAGE_OUTPUT_DIRECTORY -NoRestore
+
+      - name: Package Rider plugin
+        shell: pwsh
+        run: .\Build-RiderPluginWithTools.ps1 -Configuration Release -OutputDirectory $env:PACKAGE_OUTPUT_DIRECTORY
+
+      - name: Validate release artifacts
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.apply_version.outputs.version }}
+        run: |
+          $expectedArtifacts = @(
+            "$env:PACKAGE_OUTPUT_DIRECTORY/AdaskoTheBeAsT.Typewriter.Cli.$env:VERSION.nupkg",
+            "$env:PACKAGE_OUTPUT_DIRECTORY/AdaskoTheBeAsT.Typewriter.LanguageServer.$env:VERSION.nupkg",
+            "$env:PACKAGE_OUTPUT_DIRECTORY/typewriter-vscode-$env:VERSION.vsix",
+            "$env:PACKAGE_OUTPUT_DIRECTORY/Typewriter.VisualStudio-$env:VERSION.vsix",
+            "$env:PACKAGE_OUTPUT_DIRECTORY/Typewriter-Rider-$env:VERSION.zip"
+          )
+
+          foreach ($artifact in $expectedArtifacts) {
+            if (-not (Test-Path -LiteralPath $artifact)) {
+              throw "Expected release artifact is missing: $artifact"
+            }
+
+            if ((Get-Item -LiteralPath $artifact).Length -le 0) {
+              throw "Expected release artifact is empty: $artifact"
+            }
+          }
+
+      - name: Publish NuGet packages
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@v1
+        with:
+          package_output_directory: artifacts/packages
+          nuget_source_url: https://api.nuget.org/v3/index.json
+          nuget_api_key: ${{ secrets.NUGET_API_KEY }}
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.apply_version.outputs.version }}
+        run: |
+          $releaseArtifacts = @(
+            "$env:PACKAGE_OUTPUT_DIRECTORY/typewriter-vscode-$env:VERSION.vsix",
+            "$env:PACKAGE_OUTPUT_DIRECTORY/Typewriter.VisualStudio-$env:VERSION.vsix",
+            "$env:PACKAGE_OUTPUT_DIRECTORY/Typewriter-Rider-$env:VERSION.zip"
+          )
+
+          $releaseArguments = @(
+            "release",
+            "create",
+            $env:GITHUB_REF_NAME,
+            "--verify-tag",
+            "--title",
+            "Typewriter $env:VERSION",
+            "--generate-notes"
+          ) + $releaseArtifacts
+
+          gh @releaseArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub release creation failed with exit code $LASTEXITCODE."
+          }
