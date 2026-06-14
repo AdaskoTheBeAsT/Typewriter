@@ -94,22 +94,18 @@ jobs:
 
           npm --prefix vscode version $env:VERSION --no-git-tag-version --allow-same-version
 
-          foreach ($projectPath in @(
-            "src/Typewriter.Cli/Typewriter.Cli.csproj",
-            "src/Typewriter.LanguageServer/Typewriter.LanguageServer.csproj"
-          )) {
-            $resolvedPath = (Resolve-Path -LiteralPath $projectPath).Path
-            $project = New-Object System.Xml.XmlDocument
-            $project.PreserveWhitespace = $true
-            $project.Load($resolvedPath)
-            $versionNode = $project.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='Version']")
-            if ($null -eq $versionNode) {
-              throw "Unable to find Version in $projectPath."
-            }
-
-            $versionNode.InnerText = $env:VERSION
-            $project.Save($resolvedPath)
+          $directoryBuildPropsPath = "Directory.Build.props"
+          $resolvedDirectoryBuildPropsPath = (Resolve-Path -LiteralPath $directoryBuildPropsPath).Path
+          $directoryBuildProps = New-Object System.Xml.XmlDocument
+          $directoryBuildProps.PreserveWhitespace = $true
+          $directoryBuildProps.Load($resolvedDirectoryBuildPropsPath)
+          $versionNode = $directoryBuildProps.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='Version']")
+          if ($null -eq $versionNode) {
+            throw "Unable to find Version in $directoryBuildPropsPath."
           }
+
+          $versionNode.InnerText = $env:VERSION
+          $directoryBuildProps.Save($resolvedDirectoryBuildPropsPath)
 
           $manifestPath = "src/Typewriter.VisualStudio/source.extension.vsixmanifest"
           $resolvedManifestPath = (Resolve-Path -LiteralPath $manifestPath).Path
