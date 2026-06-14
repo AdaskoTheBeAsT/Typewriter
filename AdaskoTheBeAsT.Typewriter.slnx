@@ -1,0 +1,43 @@
+<Solution>
+  <Folder Name="/.props/">
+    <File Path=".editorconfig" />
+    <File Path=".runsettings" />
+    <File Path="AdaskoTheBeAsT.ruleset" />
+    <File Path="coverage.settings.xml" />
+    <File Path="DeterministicBuild.targets" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Build.targets" />
+    <File Path="global.json" />
+    <File Path="SecurityCodeScan.config.yml" />
+    <File Path="Settings.StyleCop" />
+    <File Path="SonarQube.Analysis.xml" />
+    <File Path="stylecop.json" />
+  </Folder>
+  <Folder Name="/Buildalyzer/" />
+  <Folder Name="/Buildalyzer/src/">
+    <Project Path="Buildalyzer/src/Buildalyzer.Logger/Buildalyzer.Logger.csproj" />
+    <Project Path="Buildalyzer/src/Buildalyzer.Workspaces/Buildalyzer.Workspaces.csproj" />
+    <Project Path="Buildalyzer/src/Buildalyzer/Buildalyzer.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Typewriter.Abstractions/Typewriter.Abstractions.csproj" />
+    <Project Path="src/Typewriter.Buildalyzer/Typewriter.Buildalyzer.csproj" />
+    <Project Path="src/Typewriter.Engine/Typewriter.Engine.csproj" />
+    <Project Path="src/Typewriter.Roslyn/Typewriter.Roslyn.csproj" />
+    <Project Path="src/Typewriter.Cli/Typewriter.Cli.csproj" />
+    <Project Path="src/Typewriter.LanguageServer/Typewriter.LanguageServer.csproj" />
+    <Project Path="src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/.props/">
+    <File Path="tests/Directory.Build.props" />
+  </Folder>
+  <Folder Name="/tests/unit/">
+    <Project Path="tests/unit/Typewriter.Buildalyzer.Tests/Typewriter.Buildalyzer.Tests.csproj" />
+    <Project Path="tests/unit/Typewriter.Cli.Tests/Typewriter.Cli.Tests.csproj" />
+    <Project Path="tests/unit/Typewriter.Engine.Tests/Typewriter.Engine.Tests.csproj" />
+    <Project Path="tests/unit/Typewriter.LanguageServer.Tests/Typewriter.LanguageServer.Tests.csproj" />
+    <Project Path="tests/unit/Typewriter.Roslyn.Tests/Typewriter.Roslyn.Tests.csproj" />
+    <Project Path="tests/unit/Typewriter.SnapshotTests/Typewriter.SnapshotTests.csproj" />
+  </Folder>
+</Solution>

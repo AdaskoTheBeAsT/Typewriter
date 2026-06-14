@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Remove="Microsoft.CodeAnalysis" />
+    <PackageReference Remove="Microsoft.CodeAnalysis.Common" />
+    <PackageReference Remove="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="5.3.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.VisualBasic" Version="5.3.0" />
+    <PackageReference Include="MsBuildPipeLogger.Logger" Version="1.1.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Buildalyzer\src\Buildalyzer\Buildalyzer.csproj" />
+    <ProjectReference Include="..\Typewriter.Abstractions\Typewriter.Abstractions.csproj" />
+  </ItemGroup>
+  
+</Project>

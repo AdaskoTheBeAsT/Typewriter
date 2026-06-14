@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>typewriter</ToolCommandName>
+    <PackageId>AdaskoTheBeAsT.Typewriter.Cli</PackageId>
+    <Authors>AdaskoTheBeAsT</Authors>
+    <Description>Command-line Typewriter generator for TypeScript output from C# projects and .tst templates.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>typewriter;typescript;code-generation;tst;dotnet-tool</PackageTags>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <PackageIcon>icon.png</PackageIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Remove="Microsoft.CodeAnalysis.Common" />
+    <PackageReference Remove="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="5.3.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" />
+    <PackageReference Include="System.CommandLine" Version="2.0.9" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Typewriter.Abstractions\Typewriter.Abstractions.csproj" />
+    <ProjectReference Include="..\Typewriter.Engine\Typewriter.Engine.csproj" />
+    <ProjectReference Include="..\Typewriter.Roslyn\Typewriter.Roslyn.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="README.md" Pack="true" PackagePath="\" />
+    <None Include="icon.png" Pack="true" PackagePath="" />
+  </ItemGroup>
+</Project>

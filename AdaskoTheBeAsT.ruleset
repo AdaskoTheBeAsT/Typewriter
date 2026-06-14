@@ -1,11 +1,28 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<RuleSet Name="AdaskoTheBeAsT Rules based on Microsoft Managed Recommended Rules" Description="These rules are for AdaskoTheBeAsT. These rules focus on the most critical problems in your code, including potential security holes, application crashes, and other important logic and design errors. It is recommended to include this rule set in any custom rule set you create for your projects." ToolsVersion="17.0">
+<RuleSet Name="AdaskoTheBeAsT.WkHtmlToPdf Rules based on Microsoft Managed Recommended Rules" Description="These rules are for AdaskoTheBeAsT and contributors. These rules focus on the most critical problems in your code, including potential security holes, application crashes, and other important logic and design errors. It is recommended to include this rule set in any custom rule set you create for your projects." ToolsVersion="18.0">
   <Localization ResourceAssembly="Microsoft.VisualStudio.CodeAnalysis.RuleSets.Strings.dll" ResourceBaseName="Microsoft.VisualStudio.CodeAnalysis.RuleSets.Strings.Localized">
     <Name Resource="MinimumRecommendedRules_Name" />
     <Description Resource="MinimumRecommendedRules_Description" />
   </Localization>
+  <Rules AnalyzerId="AwesomeAssertions.Analyzers" RuleNamespace="AwesomeAssertions.Analyzers">
+    <Rule Id="FAA0001" Action="Warning" />
+    <Rule Id="FAA0002" Action="Warning" />
+  </Rules>
   <Rules AnalyzerId="CodeCracker.CSharp" RuleNamespace="CodeCracker.CSharp">
-    <Rule Id="CC0091" Action="None" />
+    <Rule Id="CC0014" Action="Warning" />
+    <Rule Id="CC0030" Action="Warning" />
+    <Rule Id="CC0061" Action="Warning" />
+    <Rule Id="CC0065" Action="Warning" />
+  </Rules>
+  <Rules AnalyzerId="Meziantou.Analyzer" RuleNamespace="Meziantou.Analyzer">
+    <Rule Id="MA0003" Action="Warning" />
+    <Rule Id="MA0015" Action="None" />
+    <Rule Id="MA0016" Action="None" />
+    <Rule Id="MA0028" Action="Warning" />
+    <Rule Id="MA0040" Action="Warning" />
+    <Rule Id="MA0042" Action="Warning" />
+    <Rule Id="MA0076" Action="Warning" />
+    <Rule Id="MA0089" Action="Warning" />
   </Rules>
   <Rules AnalyzerId="Microsoft.Analyzers.ManagedCodeAnalysis" RuleNamespace="Microsoft.Rules.Managed">
     <Rule Id="CA1001" Action="Warning" />
@@ -75,6 +92,18 @@
   <Rules AnalyzerId="Microsoft.CodeAnalysis.CSharp" RuleNamespace="Microsoft.CodeAnalysis.CSharp">
     <Rule Id="CS1591" Action="None" />
   </Rules>
+  <Rules AnalyzerId="Microsoft.CodeAnalysis.CSharp.Features" RuleNamespace="Microsoft.CodeAnalysis.CSharp.Features">
+    <Rule Id="IDE0016" Action="Warning" />
+    <Rule Id="IDE0028" Action="Warning" />
+  </Rules>
+  <Rules AnalyzerId="Microsoft.CodeAnalysis.CSharp.NetAnalyzers" RuleNamespace="Microsoft.CodeAnalysis.CSharp.NetAnalyzers">
+    <Rule Id="CA2263" Action="Warning" />
+  </Rules>
+  <Rules AnalyzerId="Microsoft.CodeAnalysis.NetAnalyzers" RuleNamespace="Microsoft.CodeAnalysis.NetAnalyzers">
+    <Rule Id="CA1510" Action="Warning" />
+    <Rule Id="CA1861" Action="Warning" />
+    <Rule Id="CA2012" Action="Warning" />
+  </Rules>
   <Rules AnalyzerId="Microsoft.CodeQuality.Analyzers" RuleNamespace="Microsoft.CodeQuality.Analyzers">
     <Rule Id="CA2007" Action="None" />
   </Rules>
@@ -84,8 +113,24 @@
   <Rules AnalyzerId="Microsoft.Performance" RuleNamespace="Microsoft.Performance">
     <Rule Id="CA1822" Action="None" />
   </Rules>
+  <Rules AnalyzerId="Moq.Analyzers" RuleNamespace="Moq.Analyzers">
+    <Rule Id="Moq1410" Action="Warning" />
+  </Rules>
+  <Rules AnalyzerId="ParallelChecker.Core" RuleNamespace="ParallelChecker.Core">
+    <Rule Id="ParallelCheckerInfo" Action="Hidden" />
+  </Rules>
   <Rules AnalyzerId="Roslynator.CSharp.Analyzers" RuleNamespace="Roslynator.CSharp.Analyzers">
+    <Rule Id="RCS1058" Action="Warning" />
+    <Rule Id="RCS1118" Action="Warning" />
+    <Rule Id="RCS1163" Action="Warning" />
+    <Rule Id="RCS1175" Action="Warning" />
+    <Rule Id="RCS1192" Action="Warning" />
+    <Rule Id="RCS1196" Action="Warning" />
+    <Rule Id="RCS1197" Action="Warning" />
+    <Rule Id="RCS1212" Action="Warning" />
     <Rule Id="RCS1222" Action="None" />
+    <Rule Id="RCS1261" Action="Warning" />
+    <Rule Id="RCS1266" Action="Warning" />
   </Rules>
   <Rules AnalyzerId="SecurityCodeScan" RuleNamespace="SecurityCodeScan.Analyzers">
     <Rule Id="SCS0005" Action="None" />

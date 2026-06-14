@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+    <CodeCoverage>
+        <ModulePaths>
+            <Include>
+                <!-- instrument all managed modules by default -->
+                <ModulePath>(?i)(^|.*[\\/])adaskothebeast\.[^\\/]*\.(dll|exe)$</ModulePath>
+            </Include>
+            <Exclude>
+                <!-- exclude test assemblies -->
+                <ModulePath>(?i)(^|.*[\\/])[^\\/]*\.(test|tests|integrationtest|integrationtests)\.dll$</ModulePath>
+            </Exclude>
+        </ModulePaths>
+
+        <!-- keep empty unless you need regex-based function excludes -->
+        <Functions>
+            <Exclude>
+                <!-- examples:
+        <Function>^AdaskoTheBeAsT\.FunctionApp\.FunctionExecutorAutoStartup\..*</Function>
+        <Function>^AdaskoTheBeAsT\.FunctionApp\.FunctionExecutorHostBuilderExtensions\..*</Function>
+        <Function>^AdaskoTheBeAsT\.FunctionApp\.FunctionMetadataProviderAutoStartup\..*</Function>
+        <Function>^AdaskoTheBeAsT\.FunctionApp\.WorkerHostBuilderFunctionMetadataProviderExtension\..*</Function>
+        -->
+            </Exclude>
+        </Functions>
+
+        <Attributes>
+            <Exclude>
+                <Attribute>^System\.ObsoleteAttribute$</Attribute>
+                <Attribute>^System\.CodeDom\.Compiler\.GeneratedCodeAttribute$</Attribute>
+                <Attribute>^System\.Runtime\.CompilerServices\.CompilerGeneratedAttribute$</Attribute>
+                <Attribute>^System\.Diagnostics\.CodeAnalysis\.ExcludeFromCodeCoverageAttribute$</Attribute>
+                <Attribute>^System\.Diagnostics\.DebuggerHiddenAttribute$</Attribute>
+                <Attribute>^System\.Diagnostics\.DebuggerNonUserCodeAttribute$</Attribute>
+            </Exclude>
+        </Attributes>
+    </CodeCoverage>
+</Configuration>

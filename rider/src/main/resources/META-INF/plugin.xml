@@ -1,0 +1,58 @@
+<idea-plugin>
+    <id>com.adaskothebeast.typewriter</id>
+    <name>Typewriter</name>
+    <vendor url="https://github.com/AdaskoTheBeAsT">AdaskoTheBeAsT</vendor>
+    <description><![CDATA[
+        JetBrains Rider adapter for Typewriter .tst templates.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.rider</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType
+            name="Typewriter"
+            language="Typewriter"
+            implementationClass="com.adaskothebeast.typewriter.rider.TypewriterFileType"
+            fieldName="INSTANCE"
+            extensions="tst" />
+        <lang.syntaxHighlighterFactory
+            language="Typewriter"
+            implementationClass="com.adaskothebeast.typewriter.rider.TypewriterSyntaxHighlighterFactory" />
+        <colorSettingsPage implementation="com.adaskothebeast.typewriter.rider.TypewriterColorSettingsPage" />
+        <projectService serviceImplementation="com.adaskothebeast.typewriter.rider.TypewriterSettingsState" />
+        <projectService serviceImplementation="com.adaskothebeast.typewriter.rider.TypewriterCliService" />
+        <projectConfigurable
+            id="typewriter"
+            displayName="Typewriter"
+            instance="com.adaskothebeast.typewriter.rider.TypewriterConfigurable" />
+        <notificationGroup id="Typewriter" displayType="BALLOON" />
+    </extensions>
+
+    <projectListeners>
+        <listener
+            class="com.adaskothebeast.typewriter.rider.TypewriterSaveListener"
+            topic="com.intellij.openapi.vfs.newvfs.BulkFileListener" />
+    </projectListeners>
+
+    <actions>
+        <group id="Typewriter.ToolsMenu" text="Typewriter" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last" />
+            <action
+                id="Typewriter.GenerateCurrentTemplate"
+                class="com.adaskothebeast.typewriter.rider.TypewriterGenerateCurrentAction"
+                text="Generate Current Template"
+                description="Generate TypeScript from the current Typewriter template" />
+            <action
+                id="Typewriter.GenerateAllTemplates"
+                class="com.adaskothebeast.typewriter.rider.TypewriterGenerateAllAction"
+                text="Generate All Templates"
+                description="Generate TypeScript from all discovered Typewriter templates" />
+            <action
+                id="Typewriter.ValidateCurrentTemplate"
+                class="com.adaskothebeast.typewriter.rider.TypewriterValidateCurrentAction"
+                text="Validate Current Template"
+                description="Validate the current Typewriter template without writing generated files" />
+        </group>
+    </actions>
+</idea-plugin>

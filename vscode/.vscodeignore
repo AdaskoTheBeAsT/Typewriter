@@ -1,0 +1,7 @@
+node_modules/
+src/
+*.vsix
+*.ps1
+npm-debug.log
+yarn.lock
+pnpm-lock.yaml

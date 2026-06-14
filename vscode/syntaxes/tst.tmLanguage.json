@@ -1,0 +1,80 @@
+{
+  "name": "Typewriter",
+  "scopeName": "source.typewriter",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#directives"
+    },
+    {
+      "include": "#compatibilityBlocks"
+    },
+    {
+      "include": "#collections"
+    },
+    {
+      "include": "#members"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.typewriter",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.typewriter",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "name": "meta.directive.typewriter",
+          "match": "^\\s*//\\s*(?:output|typewriter-output|typewriter-template)\\s*:.*$"
+        }
+      ]
+    },
+    "compatibilityBlocks": {
+      "patterns": [
+        {
+          "name": "meta.embedded.block.csharp.typewriter",
+          "begin": "\\$\\{\\s*(?=(?:using\\s|#r\\s|#reference\\s|Template\\b|public\\s|private\\s|internal\\s|protected\\s|static\\s|const\\s|bool\\s|string\\s|char\\s|int\\s|long\\s|void\\s|List<|IEnumerable<))",
+          "end": "\\}",
+          "patterns": [
+            {
+              "name": "keyword.control.using.csharp",
+              "match": "\\b(?:using|return|if|else|foreach|for|while|switch|case|break|public|private|internal|protected|static|const|void|bool|string|int|long|char)\\b"
+            },
+            {
+              "name": "string.quoted.double.csharp",
+              "begin": "\"",
+              "end": "\""
+            }
+          ]
+        }
+      ]
+    },
+    "collections": {
+      "patterns": [
+        {
+          "name": "meta.collection.typewriter",
+          "match": "\\$(?:Classes|Records|Interfaces|Enums|Properties|Methods|Parameters|Constants|Values|EnumValues)(?:\\([^\\)]*\\))?(?=\\[)"
+        }
+      ]
+    },
+    "members": {
+      "patterns": [
+        {
+          "name": "variable.other.member.typewriter",
+          "match": "\\$[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    }
+  }
+}
