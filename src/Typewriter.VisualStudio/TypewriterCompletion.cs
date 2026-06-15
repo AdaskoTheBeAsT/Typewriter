@@ -25,6 +25,7 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
         "Types",
         "Classes",
         "Records",
+        "Structs",
         "Interfaces",
         "Enums",
         "Properties",
@@ -48,6 +49,8 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
         "IsStatic",
         "IsAbstract",
         "IsGeneric",
+        "IsStruct",
+        "IsIndexer",
         "IsCollection",
         "IsDictionary",
         "IsEnum",
@@ -77,6 +80,7 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
         "public",
         "return",
         "static",
+        "struct",
         "string",
         "switch",
         "true",
@@ -103,6 +107,7 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
         "Property",
         "Record",
         "Settings",
+        "Struct",
         "Type",
     ];
 

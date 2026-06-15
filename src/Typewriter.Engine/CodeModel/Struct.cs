@@ -1,14 +1,14 @@
 namespace Typewriter.CodeModel;
 
-public class Record : Item
+public class Struct : Item
 {
     public virtual IAttributeCollection Attributes { get; init; } = new AttributeCollection();
 
-    public virtual Record? BaseRecord { get; init; }
-
     public virtual IConstantCollection Constants { get; init; } = new ConstantCollection();
 
-    public virtual Record? ContainingRecord { get; init; }
+    public virtual Class? ContainingClass { get; init; }
+
+    public virtual Struct? ContainingStruct { get; init; }
 
     public virtual IDelegateCollection Delegates { get; init; } = new DelegateCollection();
 
@@ -20,9 +20,9 @@ public class Record : Item
 
     public virtual IInterfaceCollection Interfaces { get; init; } = new InterfaceCollection();
 
-    public virtual bool IsAbstract { get; init; }
-
     public virtual bool IsGeneric { get; init; }
+
+    public virtual bool IsStatic { get; init; }
 
     public virtual IMethodCollection Methods { get; init; } = new MethodCollection();
 
@@ -48,7 +48,7 @@ public class Record : Item
 
     public virtual ITypeParameterCollection TypeParameters { get; init; } = new TypeParameterCollection();
 
-    public static implicit operator string(Record? instance) => instance?.ToString() ?? string.Empty;
+    public static implicit operator string(Struct? instance) => instance?.ToString() ?? string.Empty;
 
-    public static implicit operator Type?(Record? instance) => instance?.Type;
+    public static implicit operator Type?(Struct? instance) => instance?.Type;
 }

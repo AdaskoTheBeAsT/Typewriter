@@ -22,5 +22,9 @@ public sealed record PropertyMetadata(
 
     public bool IsAbstract { get; init; }
 
+    public bool IsIndexer { get; init; }
+
     public bool IsVirtual { get; init; }
+
+    public IReadOnlyList<ParameterMetadata> Parameters { get; init; } = [];
 }

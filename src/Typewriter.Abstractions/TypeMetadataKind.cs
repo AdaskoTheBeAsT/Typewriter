@@ -4,6 +4,7 @@ public enum TypeMetadataKind
 {
     Class,
     Record,
+    Struct,
     Interface,
     Enum,
 }

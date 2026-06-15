@@ -24,8 +24,12 @@ public sealed class TemplateFeatureServiceTests
             var completions = await service.GetCompletionsAsync(document: document, settings: settings, position: new LspPosition(Line: 3, Character: 1), cancellationToken: CancellationToken.None);
 
             Assert.Contains(collection: completions.Items, filter: item => item.Label == "Classes");
+            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Structs");
             Assert.Contains(collection: completions.Items, filter: item => item.Label == "Customer");
+            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Coordinate");
             Assert.Contains(collection: completions.Items, filter: item => item.Label == "DisplayName");
+            Assert.Contains(collection: completions.Items, filter: item => item.Label == "index");
+            Assert.Contains(collection: completions.Items, filter: item => item.Label == "IsIndexer");
             Assert.Contains(collection: completions.Items, filter: item => item.Label == "FormatName");
         }
         finally
@@ -99,6 +103,7 @@ public sealed class TemplateFeatureServiceTests
             Assert.Contains(collection: completions.Items, filter: item => item.Label == "string");
             Assert.Contains(collection: completions.Items, filter: item => item.Label == "Class");
             Assert.Contains(collection: completions.Items, filter: item => item.Label == "File");
+            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Struct");
         }
         finally
         {
@@ -467,6 +472,13 @@ public sealed class TemplateFeatureServiceTests
                       {
                           /// <summary>Display name docs.</summary>
                           public required string DisplayName { get; init; }
+
+                              public string this[int index] => DisplayName;
+                          }
+
+                          public struct Coordinate
+                          {
+                              public int X { get; init; }
                       }
                       """).ConfigureAwait(continueOnCapturedContext: false);
         await File.WriteAllTextAsync(

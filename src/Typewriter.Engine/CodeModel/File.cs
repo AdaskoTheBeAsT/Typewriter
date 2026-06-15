@@ -14,5 +14,7 @@ public class File : Item
 
     public virtual IRecordCollection Records { get; init; } = new RecordCollection();
 
+    public virtual IStructCollection Structs { get; init; } = new StructCollection();
+
     public virtual ITypeCollection Types { get; init; } = new TypeCollection();
 }

@@ -20,6 +20,7 @@ using CodeModelParameterComment = Typewriter.CodeModel.ParameterComment;
 using CodeModelProperty = Typewriter.CodeModel.Property;
 using CodeModelRecord = Typewriter.CodeModel.Record;
 using CodeModelStaticReadOnlyField = Typewriter.CodeModel.StaticReadOnlyField;
+using CodeModelStruct = Typewriter.CodeModel.Struct;
 using CodeModelType = Typewriter.CodeModel.Type;
 using CodeModelTypeParameter = Typewriter.CodeModel.TypeParameter;
 using NameCase = Typewriter.CodeModel.NameCase;
@@ -105,6 +106,7 @@ public sealed class TemplateRenderer
         return identifier is "Types"
             or "Classes"
             or "Records"
+            or "Structs"
             or "Delegates"
             or "Interfaces"
             or "Enums";
@@ -825,6 +827,7 @@ public sealed class TemplateRenderer
             "NestedClasses" => @class.NestedClasses,
             "NestedEnums" => @class.NestedEnums,
             "NestedInterfaces" => @class.NestedInterfaces,
+            "NestedStructs" => @class.NestedStructs,
             "Parent" => @class.Parent,
             "Properties" => @class.Properties,
             "StaticReadOnlyFields" => @class.StaticReadOnlyFields,
@@ -859,6 +862,7 @@ public sealed class TemplateRenderer
             "Fields" => record.Fields,
             "Interfaces" => record.Interfaces,
             "Methods" => record.Methods,
+            "NestedStructs" => record.NestedStructs,
             "Parent" => record.Parent,
             "Properties" => record.Properties,
             "StaticReadOnlyFields" => record.StaticReadOnlyFields,
@@ -867,6 +871,44 @@ public sealed class TemplateRenderer
             "TypeParameters" => record.TypeParameters,
             "IsAbstract" => record.IsAbstract,
             "IsGeneric" => record.IsGeneric,
+            _ => Unresolved.Value,
+        };
+    }
+
+    private static object? ResolveCodeModelStruct(
+        CodeModelStruct @struct,
+        string identifier)
+    {
+        return identifier switch
+        {
+            "Name" => @struct.Name,
+            "name" => @struct.name,
+            "FullName" => @struct.FullName,
+            "AssemblyName" => @struct.AssemblyName,
+            "Namespace" => @struct.Namespace,
+            "Attributes" => @struct.Attributes,
+            "ContainingClass" => @struct.ContainingClass,
+            "ContainingStruct" => @struct.ContainingStruct,
+            "Constants" => @struct.Constants,
+            "Delegates" => @struct.Delegates,
+            "DocComment" => @struct.DocComment,
+            "Events" => @struct.Events,
+            "Fields" => @struct.Fields,
+            "Interfaces" => @struct.Interfaces,
+            "Methods" => @struct.Methods,
+            "NestedClasses" => @struct.NestedClasses,
+            "NestedEnums" => @struct.NestedEnums,
+            "NestedInterfaces" => @struct.NestedInterfaces,
+            "NestedRecords" => @struct.NestedRecords,
+            "NestedStructs" => @struct.NestedStructs,
+            "Parent" => @struct.Parent,
+            "Properties" => @struct.Properties,
+            "StaticReadOnlyFields" => @struct.StaticReadOnlyFields,
+            "Type" => @struct.Type,
+            "TypeArguments" => @struct.TypeArguments,
+            "TypeParameters" => @struct.TypeParameters,
+            "IsGeneric" => @struct.IsGeneric,
+            "IsStatic" => @struct.IsStatic,
             _ => Unresolved.Value,
         };
     }
@@ -888,6 +930,7 @@ public sealed class TemplateRenderer
             "Events" => @interface.Events,
             "Interfaces" => @interface.Interfaces,
             "Methods" => @interface.Methods,
+            "NestedStructs" => @interface.NestedStructs,
             "Parent" => @interface.Parent,
             "Properties" => @interface.Properties,
             "Type" => @interface.Type,
@@ -1055,8 +1098,10 @@ public sealed class TemplateRenderer
             "HasGetter" => property.HasGetter,
             "HasSetter" => property.HasSetter,
             "IsAbstract" => property.IsAbstract,
+            "IsIndexer" => property.IsIndexer,
             "IsVirtual" => property.IsVirtual,
             "IsRequired" => property.IsRequired,
+            "Parameters" => property.Parameters,
             "Attributes" => property.Attributes,
             _ => Unresolved.Value,
         };
@@ -1124,6 +1169,7 @@ public sealed class TemplateRenderer
             "NestedClasses" => type.NestedClasses,
             "NestedEnums" => type.NestedEnums,
             "NestedInterfaces" => type.NestedInterfaces,
+            "NestedStructs" => type.NestedStructs,
             "Parent" => type.Parent,
             "Properties" => type.Properties,
             "StaticReadOnlyFields" => type.StaticReadOnlyFields,
@@ -1144,6 +1190,7 @@ public sealed class TemplateRenderer
             "IsNullable" => type.IsNullable,
             "IsDynamic" => type.IsDynamic,
             "IsPrimitive" => type.IsPrimitive,
+            "IsStruct" => type.IsStruct,
             "IsTask" => type.IsTask,
             "IsTimeSpan" => type.IsTimeSpan,
             "IsValueTuple" => type.IsValueTuple,
@@ -1646,6 +1693,7 @@ public sealed class TemplateRenderer
         {
             "Class" => items.OfType<TypeMetadata>().Where(predicate: type => type.Kind == TypeMetadataKind.Class),
             "Record" => items.OfType<TypeMetadata>().Where(predicate: type => type.Kind == TypeMetadataKind.Record),
+            "Struct" => items.OfType<TypeMetadata>().Where(predicate: type => type.Kind == TypeMetadataKind.Struct),
             "Interface" => items.OfType<TypeMetadata>().Where(predicate: type => type.Kind == TypeMetadataKind.Interface),
             "Enum" => items.OfType<TypeMetadata>().Where(predicate: type => type.Kind == TypeMetadataKind.Enum),
             "HasProperties" => items.OfType<TypeMetadata>().Where(predicate: type => type.Properties.Count > 0),
@@ -1857,6 +1905,8 @@ public sealed class TemplateRenderer
             "IncludeInterface" => context is TypeMetadata { Kind: TypeMetadataKind.Interface } type
                 && MatchesRecipeTypePredicate(type: type, body: body),
             "IncludeRecord" => context is TypeMetadata { Kind: TypeMetadataKind.Record } type
+                && MatchesRecipeTypePredicate(type: type, body: body),
+            "IncludeStruct" => context is TypeMetadata { Kind: TypeMetadataKind.Struct } type
                 && MatchesRecipeTypePredicate(type: type, body: body),
             "IsEnumAsNumber" => context is TypeMetadata type
                 && !HasAttribute(attributes: type.Attributes, name: "AsString"),
@@ -2196,6 +2246,7 @@ public sealed class TemplateRenderer
             TypeParameterMetadata typeParameter => ResolveTypeParameter(typeParameter: typeParameter, identifier: identifier),
             CodeModelClass codeClass => ResolveCodeModelClass(@class: codeClass, identifier: identifier),
             CodeModelRecord codeRecord => ResolveCodeModelRecord(record: codeRecord, identifier: identifier),
+            CodeModelStruct codeStruct => ResolveCodeModelStruct(@struct: codeStruct, identifier: identifier),
             CodeModelInterface codeInterface => ResolveCodeModelInterface(@interface: codeInterface, identifier: identifier),
             CodeModelEnum codeEnum => ResolveCodeModelEnum(@enum: codeEnum, identifier: identifier),
             CodeModelDelegate codeDelegate => ResolveCodeModelDelegate(@delegate: codeDelegate, identifier: identifier),
@@ -2238,6 +2289,7 @@ public sealed class TemplateRenderer
             "Types" => metadata.Types,
             "Classes" => metadata.Types.Where(predicate: type => type.Kind is TypeMetadataKind.Class or TypeMetadataKind.Record),
             "Records" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Record),
+            "Structs" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Struct),
             "Delegates" => metadata.Delegates,
             "Interfaces" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Interface),
             "Enums" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Enum),
@@ -2282,8 +2334,12 @@ public sealed class TemplateRenderer
             "ContainingRecord" => string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)
                 ? null
                 : state?.ResolveParentType(fullName: type.ContainingTypeFullName) ?? Unresolved.Value,
+            "ContainingStruct" => string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)
+                ? null
+                : state?.ResolveParentType(fullName: type.ContainingTypeFullName) ?? Unresolved.Value,
             "NestedClasses" => type.NestedClasses,
             "NestedRecords" => type.NestedRecords,
+            "NestedStructs" => type.NestedStructs,
             "NestedEnums" => type.NestedEnums,
             "NestedInterfaces" => type.NestedInterfaces,
             "FileLocations" => type.FileLocations,
@@ -2291,6 +2347,7 @@ public sealed class TemplateRenderer
             "EnumValues" => type.EnumValues,
             "IsClass" => type.Kind == TypeMetadataKind.Class,
             "IsRecord" => type.Kind == TypeMetadataKind.Record,
+            "IsStruct" => type.Kind == TypeMetadataKind.Struct,
             "IsInterface" => type.Kind == TypeMetadataKind.Interface,
             "IsEnum" => type.Kind == TypeMetadataKind.Enum,
             "IsNullableAware" => type.IsNullableAware,
@@ -2322,8 +2379,10 @@ public sealed class TemplateRenderer
             "HasGetter" => property.HasGetter,
             "HasSetter" => property.HasSetter,
             "IsRequired" => property.IsRequired,
+            "IsIndexer" => property.IsIndexer,
             "IsAbstract" => property.IsAbstract,
             "IsVirtual" => property.IsVirtual,
+            "Parameters" => property.Parameters,
             "DocComment" => property.DocComment,
             "Attributes" => property.Attributes,
             _ => Unresolved.Value,
@@ -2367,7 +2426,9 @@ public sealed class TemplateRenderer
             "Name" => parameter.Name,
             "name" => ToCamelCase(value: parameter.Name),
             "FullName" => parameter.FullName,
-            "Parent" => state?.ResolveParentMethod(fullName: parameter.ParentMethodFullName) ?? Unresolved.Value,
+            "Parent" => !string.IsNullOrWhiteSpace(value: parameter.ParentMethodFullName)
+                ? state?.ResolveParentMethod(fullName: parameter.ParentMethodFullName) ?? Unresolved.Value
+                : state?.ResolveParentProperty(fullName: parameter.ParentPropertyFullName) ?? state?.CurrentParentContext ?? Unresolved.Value,
             "Type" => CreateTypeTemplateValue(type: parameter.Type, state: state),
             "CSharpType" => parameter.Type.Name,
             "TypeScriptType" => MapType(type: parameter.Type, state: state),
@@ -2376,6 +2437,7 @@ public sealed class TemplateRenderer
             "DocComment" => parameter.DocComment,
             "Attributes" => parameter.Attributes,
             "ParentMethodFullName" => parameter.ParentMethodFullName,
+            "ParentPropertyFullName" => parameter.ParentPropertyFullName,
             _ => Unresolved.Value,
         };
     }
@@ -2532,6 +2594,9 @@ public sealed class TemplateRenderer
             "IsDynamic" => IsDynamicType(type: type),
             "IsEnum" => type.IsEnum,
             "IsPrimitive" => IsPrimitiveType(type: type),
+            "IsStruct" => state is not null
+                && state.TryResolveType(fullName: type.FullName, type: out var metadata)
+                && metadata.Kind == TypeMetadataKind.Struct,
             "IsDate" => type.IsDateLike,
             "IsGuid" => type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal),
             "IsTimeSpan" => type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal),
@@ -2608,6 +2673,7 @@ public sealed class TemplateRenderer
         private readonly CompiledTemplateHelper? _compiledTemplateHelper;
         private readonly ProjectMetadata _metadata;
         private readonly IReadOnlyDictionary<string, MethodMetadata> _methodsByFullName;
+        private readonly IReadOnlyDictionary<string, PropertyMetadata> _propertiesByFullName;
         private readonly IReadOnlyDictionary<string, TypeMetadata> _typesByFullName;
         private readonly Stack<object> _parentContexts = new();
         private readonly HashSet<string> _reportedCompiledInvocationErrors = [];
@@ -2635,6 +2701,10 @@ public sealed class TemplateRenderer
             _methodsByFullName = metadata.Types
                 .SelectMany(selector: type => type.Methods)
                 .GroupBy(keySelector: method => method.FullName, comparer: StringComparer.Ordinal)
+                .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal);
+            _propertiesByFullName = metadata.Types
+                .SelectMany(selector: type => type.Properties)
+                .GroupBy(keySelector: property => property.FullName, comparer: StringComparer.Ordinal)
                 .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal);
             _compiledTemplateHelper = template.CodeBlocks.Count == 0
                 ? null
@@ -2701,6 +2771,14 @@ public sealed class TemplateRenderer
         {
             return !string.IsNullOrWhiteSpace(value: fullName)
                 && _methodsByFullName.TryGetValue(key: fullName, value: out var parent)
+                    ? parent
+                    : Unresolved.Value;
+        }
+
+        public object ResolveParentProperty(string fullName)
+        {
+            return !string.IsNullOrWhiteSpace(value: fullName)
+                && _propertiesByFullName.TryGetValue(key: fullName, value: out var parent)
                     ? parent
                     : Unresolved.Value;
         }

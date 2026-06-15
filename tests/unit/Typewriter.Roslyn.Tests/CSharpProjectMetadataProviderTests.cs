@@ -77,9 +77,25 @@ public sealed class CSharpProjectMetadataProviderTests
                               public IReadOnlyDictionary<string, User?> RelatedUsers { get; init; } = new Dictionary<string, User?>();
 
                               public OrderStatus DefaultStatus { get; init; }
+
+                              public string this[[FromRoute] int index, string? key]
+                              {
+                                  get => DisplayName;
+                                  set { }
+                              }
                           }
 
                           public sealed record Order(int Id, decimal Total);
+
+                          public struct Money
+                          {
+                              public decimal Amount { get; set; }
+
+                              public struct Token
+                              {
+                                  public int Value { get; set; }
+                              }
+                          }
 
                           [GenerateFrontendType]
                           public sealed class UsersController : ControllerBase
@@ -119,6 +135,22 @@ public sealed class CSharpProjectMetadataProviderTests
             var displayName = Assert.Single(collection: user.Properties.Where(predicate: property => property.Name == "DisplayName"));
             Assert.Equal(expected: "Name shown to users.", actual: displayName.Documentation);
             Assert.NotNull(@object: displayName.Location);
+            var indexer = Assert.Single(collection: user.Properties.Where(predicate: property => property.IsIndexer));
+            Assert.Collection(
+                collection: indexer.Parameters,
+                parameter =>
+                {
+                    Assert.Equal(expected: "index", actual: parameter.Name);
+                    Assert.Equal(expected: "Int32", actual: parameter.Type.Name);
+                    Assert.Contains(collection: parameter.Attributes, filter: attribute => attribute.Name == "FromRoute");
+                    Assert.Equal(expected: indexer.FullName, actual: parameter.ParentPropertyFullName);
+                },
+                parameter =>
+                {
+                    Assert.Equal(expected: "key", actual: parameter.Name);
+                    Assert.True(condition: parameter.Type.IsNullable);
+                    Assert.Equal(expected: indexer.FullName, actual: parameter.ParentPropertyFullName);
+                });
             var orders = Assert.Single(collection: user.Properties.Where(predicate: property => property.Name == "Orders"));
             Assert.True(condition: orders.Type.IsCollection);
             Assert.Equal(expected: "Order", actual: orders.Type.ElementType?.Name);
@@ -137,6 +169,10 @@ public sealed class CSharpProjectMetadataProviderTests
                 value => Assert.Equal(expected: (string?)"Paid", actual: (string?)value.Name));
             var order = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "Order"));
             Assert.Equal(expected: TypeMetadataKind.Record, actual: order.Kind);
+            var money = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "Money"));
+            Assert.Equal(expected: TypeMetadataKind.Struct, actual: money.Kind);
+            Assert.Contains(collection: money.Properties, filter: property => property.Name == "Amount");
+            Assert.Contains(collection: money.NestedStructs, filter: nested => nested.Name == "Token");
             var controller = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "UsersController"));
             Assert.False(condition: controller.IsStatic);
             var apiVersion = Assert.Single(collection: controller.Constants.Where(predicate: constant => constant.Name == "ApiVersion"));

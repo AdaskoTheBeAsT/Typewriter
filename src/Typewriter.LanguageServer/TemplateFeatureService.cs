@@ -31,6 +31,7 @@ internal sealed class TemplateFeatureService : IDisposable
         "public",
         "return",
         "static",
+        "struct",
         "string",
         "switch",
         "true",
@@ -57,6 +58,7 @@ internal sealed class TemplateFeatureService : IDisposable
         "Property",
         "Record",
         "Settings",
+        "Struct",
         "Type",
     ];
 
@@ -292,6 +294,7 @@ internal sealed class TemplateFeatureService : IDisposable
             insertText: "Types[$0]");
         AddTemplateMember(items: items, label: "Classes", detail: "Collection", documentation: "C# classes.", insertText: "Classes[$0]");
         AddTemplateMember(items: items, label: "Records", detail: "Collection", documentation: "C# records.", insertText: "Records[$0]");
+        AddTemplateMember(items: items, label: "Structs", detail: "Collection", documentation: "C# structs.", insertText: "Structs[$0]");
         AddTemplateMember(items: items, label: "Interfaces", detail: "Collection", documentation: "C# interfaces.", insertText: "Interfaces[$0]");
         AddTemplateMember(items: items, label: "Enums", detail: "Collection", documentation: "C# enums.", insertText: "Enums[$0]");
         AddTemplateMember(items: items, label: "Properties", detail: "Collection", documentation: "Properties on the current type.", insertText: "Properties[$0]");
@@ -330,6 +333,8 @@ internal sealed class TemplateFeatureService : IDisposable
         yield return Scalar(label: "IsStatic", documentation: "Whether the current type/member is static.");
         yield return Scalar(label: "IsAbstract", documentation: "Whether the current method is abstract.");
         yield return Scalar(label: "IsGeneric", documentation: "Whether the current method or type reference is generic.");
+        yield return Scalar(label: "IsStruct", documentation: "Whether the current type is a struct.");
+        yield return Scalar(label: "IsIndexer", documentation: "Whether the current property is an indexer.");
         yield return Scalar(label: "HasGetter", documentation: "Whether the current property has a getter.");
         yield return Scalar(label: "HasSetter", documentation: "Whether the current property has a setter.");
         yield return Scalar(label: "IsRequired", documentation: "Whether the current property is required.");
@@ -349,6 +354,7 @@ internal sealed class TemplateFeatureService : IDisposable
     {
         yield return Filter(label: "Class", documentation: "Keep only classes.");
         yield return Filter(label: "Record", documentation: "Keep only records.");
+        yield return Filter(label: "Struct", documentation: "Keep only structs.");
         yield return Filter(label: "Interface", documentation: "Keep only interfaces.");
         yield return Filter(label: "Enum", documentation: "Keep only enums.");
         yield return Filter(label: "HasProperties", documentation: "Keep types with properties.");
@@ -545,6 +551,7 @@ internal sealed class TemplateFeatureService : IDisposable
             documentation: "All public/internal C# types available to this template.");
         AddTypewriterSnippet(items: items, label: "$Classes", insertText: "Classes[$0]", documentation: "C# classes.");
         AddTypewriterSnippet(items: items, label: "$Records", insertText: "Records[$0]", documentation: "C# records.");
+        AddTypewriterSnippet(items: items, label: "$Structs", insertText: "Structs[$0]", documentation: "C# structs.");
         AddTypewriterSnippet(items: items, label: "$Interfaces", insertText: "Interfaces[$0]", documentation: "C# interfaces.");
         AddTypewriterSnippet(items: items, label: "$Enums", insertText: "Enums[$0]", documentation: "C# enums.");
         AddTypewriterSnippet(items: items, label: "$Properties", insertText: "Properties[$0]", documentation: "Properties on the current type.");
@@ -616,6 +623,18 @@ internal sealed class TemplateFeatureService : IDisposable
                     documentation: property.Documentation ?? $"C# property {property.FullName}.",
                     location: property.Location,
                     targetKind: TemplateAnalysisTargetKind.Property);
+
+                foreach (var parameter in property.Parameters)
+                {
+                    AddMember(
+                        items: items,
+                        label: parameter.Name,
+                        completionKind: CompletionKind.Variable,
+                        detail: $"Indexer parameter {property.Name}.{parameter.Name}: {parameter.Type.Name}",
+                        documentation: parameter.Documentation ?? $"C# indexer parameter {parameter.FullName}.",
+                        location: parameter.Location,
+                        targetKind: TemplateAnalysisTargetKind.Parameter);
+                }
             }
 
             foreach (var method in type.Methods)
@@ -899,6 +918,7 @@ internal sealed class TemplateFeatureService : IDisposable
             "Types" => item.TargetKind == TemplateAnalysisTargetKind.Type,
             "Classes" => item.TargetKind == TemplateAnalysisTargetKind.Type && item.Detail.StartsWith(value: "Class", comparisonType: StringComparison.OrdinalIgnoreCase),
             "Records" => item.TargetKind == TemplateAnalysisTargetKind.Type && item.Detail.StartsWith(value: "Record", comparisonType: StringComparison.OrdinalIgnoreCase),
+            "Structs" => item.TargetKind == TemplateAnalysisTargetKind.Type && item.Detail.StartsWith(value: "Struct", comparisonType: StringComparison.OrdinalIgnoreCase),
             "Interfaces" => item.TargetKind == TemplateAnalysisTargetKind.Type && item.Detail.StartsWith(value: "Interface", comparisonType: StringComparison.OrdinalIgnoreCase),
             "Enums" => item.TargetKind == TemplateAnalysisTargetKind.Type && item.Detail.StartsWith(value: "Enum", comparisonType: StringComparison.OrdinalIgnoreCase),
             "Properties" => item.TargetKind == TemplateAnalysisTargetKind.Property,
@@ -987,6 +1007,7 @@ internal sealed class TemplateFeatureService : IDisposable
         {
             TypeMetadataKind.Interface => CompletionKind.Interface,
             TypeMetadataKind.Enum => CompletionKind.Enum,
+            TypeMetadataKind.Struct => CompletionKind.Struct,
             _ => CompletionKind.Class,
         };
 
@@ -1104,6 +1125,7 @@ internal sealed class TemplateFeatureService : IDisposable
         public const int Snippet = 15;
         public const int EnumMember = 20;
         public const int Constant = 21;
+        public const int Struct = 22;
     }
 
     private static class InsertTextFormat

@@ -48,6 +48,8 @@ public sealed record TypeMetadata(
 
     public IReadOnlyList<TypeMetadata> NestedRecords { get; init; } = [];
 
+    public IReadOnlyList<TypeMetadata> NestedStructs { get; init; } = [];
+
     public IReadOnlyList<TypeMetadata> NestedEnums { get; init; } = [];
 
     public IReadOnlyList<TypeMetadata> NestedInterfaces { get; init; } = [];
