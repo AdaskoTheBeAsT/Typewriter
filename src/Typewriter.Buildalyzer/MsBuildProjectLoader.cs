@@ -133,6 +133,8 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             state.PreprocessorSymbols.UnionWith(other: result.PreprocessorSymbols);
         }
 
+        var currentProjectDirectory = Path.GetDirectoryName(path: result.ProjectFilePath) ?? Environment.CurrentDirectory;
+        currentProjectDirectory = Path.GetFullPath(path: currentProjectDirectory);
         var projectReferences = result.ProjectReferences
             .Select(selector: Path.GetFullPath)
             .Where(predicate: File.Exists)
@@ -141,6 +143,8 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             .Select(selector: Path.GetDirectoryName)
             .Where(predicate: directory => !string.IsNullOrWhiteSpace(value: directory))
             .Select(selector: directory => Path.GetFullPath(path: directory!))
+            .Where(predicate: directory => !PathEquals(left: directory, right: currentProjectDirectory))
+            .Distinct(comparer: PathComparer)
             .ToArray();
 
         state.SourceFiles.UnionWith(
@@ -308,6 +312,14 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             || (!relativePath.StartsWith(value: "..", comparisonType: StringComparison.Ordinal)
                 && !Path.IsPathRooted(path: relativePath));
     }
+
+    private static bool PathEquals(
+        string left,
+        string right) =>
+        string.Equals(
+            a: Path.TrimEndingDirectorySeparator(path: Path.GetFullPath(path: left)),
+            b: Path.TrimEndingDirectorySeparator(path: Path.GetFullPath(path: right)),
+            comparisonType: StringComparison.OrdinalIgnoreCase);
 
     private sealed class LoadState
     {
