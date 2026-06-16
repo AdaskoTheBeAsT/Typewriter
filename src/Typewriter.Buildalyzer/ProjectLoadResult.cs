@@ -13,4 +13,6 @@ public sealed record ProjectLoadResult(
     IReadOnlyList<string> GlobalUsings,
     IReadOnlyList<string> ProjectReferences,
     IReadOnlyList<string> ReferencePaths,
+    IReadOnlyList<string> AnalyzerReferences,
+    IReadOnlyList<string> AdditionalFiles,
     IReadOnlyList<GenerationDiagnostic> Diagnostics);

@@ -157,6 +157,16 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             other: result.References
                 .Where(predicate: File.Exists)
                 .Select(selector: Path.GetFullPath));
+        state.AnalyzerReferences.UnionWith(
+            other: result.AnalyzerReferences
+                .Select(selector: path => ResolveProjectRelativePath(projectPath: result.ProjectFilePath, path: path))
+                .Where(predicate: File.Exists)
+                .Select(selector: Path.GetFullPath));
+        state.AdditionalFiles.UnionWith(
+            other: result.AdditionalFiles
+                .Select(selector: path => ResolveProjectRelativePath(projectPath: result.ProjectFilePath, path: path))
+                .Where(predicate: File.Exists)
+                .Select(selector: Path.GetFullPath));
 
         foreach (var projectReference in projectReferences)
         {
@@ -248,6 +258,8 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             GlobalUsings: [],
             ProjectReferences: [],
             ReferencePaths: [],
+            AnalyzerReferences: [],
+            AdditionalFiles: [],
             Diagnostics:
             [
                 new GenerationDiagnostic(
@@ -284,6 +296,19 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         value is not null
         && (value.Equals(value: "enable", comparisonType: StringComparison.OrdinalIgnoreCase)
             || value.Equals(value: "true", comparisonType: StringComparison.OrdinalIgnoreCase));
+
+    private static string ResolveProjectRelativePath(
+        string projectPath,
+        string path)
+    {
+        if (Path.IsPathRooted(path: path))
+        {
+            return path;
+        }
+
+        var projectDirectory = Path.GetDirectoryName(path: projectPath) ?? Environment.CurrentDirectory;
+        return Path.GetFullPath(path: Path.Combine(path1: projectDirectory, path2: path));
+    }
 
     private static bool IsMetadataSourceFile(string path)
     {
@@ -351,6 +376,10 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
 
         public HashSet<string> ReferencePaths { get; } = new(comparer: PathComparer);
 
+        public HashSet<string> AnalyzerReferences { get; } = new(comparer: PathComparer);
+
+        public HashSet<string> AdditionalFiles { get; } = new(comparer: PathComparer);
+
         public List<GenerationDiagnostic> Diagnostics { get; } = [];
 
         public ProjectLoadResult ToResult() =>
@@ -365,6 +394,8 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
                 GlobalUsings: GlobalUsings.Order(comparer: StringComparer.Ordinal).ToArray(),
                 ProjectReferences: ProjectReferences.Order(comparer: StringComparer.OrdinalIgnoreCase).ToArray(),
                 ReferencePaths: ReferencePaths.Order(comparer: StringComparer.OrdinalIgnoreCase).ToArray(),
+                AnalyzerReferences: AnalyzerReferences.Order(comparer: StringComparer.OrdinalIgnoreCase).ToArray(),
+                AdditionalFiles: AdditionalFiles.Order(comparer: StringComparer.OrdinalIgnoreCase).ToArray(),
                 Diagnostics: Diagnostics.ToArray());
     }
 }

@@ -1,8 +1,14 @@
+using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Globalization;
+using System.Reflection;
+using System.Runtime.Loader;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Text;
 using Typewriter.Abstractions;
 using Typewriter.Buildalyzer;
 
@@ -167,7 +173,14 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 outputKind: OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: NullableContextOptions.Enable));
 
+        compilation = RunSourceGenerators(
+            compilation: compilation,
+            loadedProject: loadedProject,
+            parseOptions: parseOptions,
+            cancellationToken: cancellationToken,
+            diagnostics: out var generatorDiagnostics);
         var diagnostics = compilation.GetDiagnostics(cancellationToken: cancellationToken)
+            .Concat(second: generatorDiagnostics)
             .Where(predicate: diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .Select(selector: ToGenerationDiagnostic)
             .ToArray();
@@ -384,6 +397,52 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             .Split(separator: Path.PathSeparator, options: StringSplitOptions.RemoveEmptyEntries)
             .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
             .Select(selector: path => MetadataReference.CreateFromFile(path: path));
+    }
+
+    private static CSharpCompilation RunSourceGenerators(
+        CSharpCompilation compilation,
+        ProjectLoadResult loadedProject,
+        CSharpParseOptions parseOptions,
+        CancellationToken cancellationToken,
+        out ImmutableArray<Diagnostic> diagnostics)
+    {
+        using var loader = new AnalyzerAssemblyLoader();
+        var generators = CreateSourceGenerators(analyzerReferences: loadedProject.AnalyzerReferences, loader: loader).ToArray();
+        if (generators.Length == 0)
+        {
+            diagnostics = [];
+            return compilation;
+        }
+
+        var additionalTexts = loadedProject.AdditionalFiles
+            .Where(predicate: File.Exists)
+            .Select(selector: path => new FileAdditionalText(path: path))
+            .ToArray();
+        var driver = CSharpGeneratorDriver.Create(
+            generators: generators,
+            additionalTexts: additionalTexts,
+            parseOptions: parseOptions);
+        _ = driver.RunGeneratorsAndUpdateCompilation(
+            compilation: compilation,
+            outputCompilation: out var updatedCompilation,
+            diagnostics: out diagnostics,
+            cancellationToken: cancellationToken);
+
+        return (CSharpCompilation)updatedCompilation;
+    }
+
+    private static IEnumerable<ISourceGenerator> CreateSourceGenerators(
+        IEnumerable<string> analyzerReferences,
+        IAnalyzerAssemblyLoader loader)
+    {
+        foreach (var analyzerReference in analyzerReferences.Where(predicate: File.Exists).Distinct(comparer: StringComparer.OrdinalIgnoreCase))
+        {
+            var reference = new AnalyzerFileReference(fullPath: analyzerReference, assemblyLoader: loader);
+            foreach (var generator in reference.GetGenerators(language: LanguageNames.CSharp))
+            {
+                yield return generator;
+            }
+        }
     }
 
     private static IEnumerable<INamedTypeSymbol> GetSourceTypeSymbols(
@@ -1348,4 +1407,140 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
     private sealed record ProjectMetadataBuildResult(
         ProjectMetadata Metadata,
         CSharpCompilation? Compilation);
+
+    private sealed class FileAdditionalText(string path) : AdditionalText
+    {
+        public override string Path { get; } = path;
+
+        public override SourceText? GetText(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+#pragma warning disable SCS0018,SEC0116
+            return SourceText.From(text: File.ReadAllText(path: Path));
+#pragma warning restore SCS0018,SEC0116
+        }
+    }
+
+    private sealed class AnalyzerAssemblyLoader : IAnalyzerAssemblyLoader, IDisposable
+    {
+        private readonly AnalyzerAssemblyLoadContext _loadContext = new();
+
+        public void AddDependencyLocation(string fullPath)
+        {
+            _loadContext.AddDependencyLocation(fullPath: fullPath);
+        }
+
+        public Assembly LoadFromPath(string fullPath)
+        {
+            var analyzerPath = Path.GetFullPath(path: fullPath);
+            AddDependencyLocation(fullPath: analyzerPath);
+            return _loadContext.LoadAnalyzerAssembly(assemblyPath: analyzerPath);
+        }
+
+        public void Dispose()
+        {
+            _loadContext.Unload();
+        }
+
+        private sealed class AnalyzerAssemblyLoadContext : AssemblyLoadContext
+        {
+            private readonly ConcurrentDictionary<string, byte> _dependencyLocations = new(comparer: StringComparer.OrdinalIgnoreCase);
+            private readonly ConcurrentDictionary<string, string> _referencePaths = new(comparer: StringComparer.OrdinalIgnoreCase);
+
+            public AnalyzerAssemblyLoadContext()
+                : base(name: "Typewriter.SourceGenerators", isCollectible: true)
+            {
+            }
+
+            public void AddDependencyLocation(string fullPath)
+            {
+                var dependencyPath = Path.GetFullPath(path: fullPath);
+                _dependencyLocations.TryAdd(key: dependencyPath, value: 0);
+
+                var referencePath = TryCreateReferencePath(path: dependencyPath);
+                if (referencePath is not null)
+                {
+                    _referencePaths.TryAdd(key: referencePath.Value.Name, value: referencePath.Value.Path);
+                }
+
+                static (string Name, string Path)? TryCreateReferencePath(string path)
+                {
+                    try
+                    {
+                        var assemblyName = AssemblyName.GetAssemblyName(assemblyFile: path).Name;
+                        return string.IsNullOrWhiteSpace(value: assemblyName)
+                            ? null
+                            : (assemblyName, path);
+                    }
+                    catch (BadImageFormatException)
+                    {
+                        return null;
+                    }
+                    catch (FileLoadException)
+                    {
+                        return null;
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        return null;
+                    }
+                }
+            }
+
+            public Assembly LoadAnalyzerAssembly(string assemblyPath)
+            {
+#pragma warning disable SCS0018
+                return LoadFromAssemblyPath(assemblyPath: assemblyPath);
+#pragma warning restore SCS0018
+            }
+
+            protected override Assembly? Load(AssemblyName assemblyName)
+            {
+                var sharedAssembly = AssemblyLoadContext.Default.Assemblies.FirstOrDefault(
+                    predicate: assembly => AssemblyName.ReferenceMatchesDefinition(reference: assemblyName, definition: assembly.GetName()));
+                if (sharedAssembly is not null)
+                {
+                    return sharedAssembly;
+                }
+
+                if (assemblyName.Name is not null
+                    && _referencePaths.TryGetValue(key: assemblyName.Name, value: out var referencePath))
+                {
+#pragma warning disable SCS0018
+                    return LoadFromAssemblyPath(assemblyPath: referencePath);
+#pragma warning restore SCS0018
+                }
+
+                return LoadFromDependencyDirectory(assemblyName: assemblyName);
+            }
+
+            private Assembly? LoadFromDependencyDirectory(AssemblyName assemblyName)
+            {
+                if (assemblyName.Name is null)
+                {
+                    return null;
+                }
+
+                var assemblyFileName = assemblyName.Name + ".dll";
+                foreach (var dependencyLocation in _dependencyLocations.Keys.ToArray())
+                {
+                    var directory = Path.GetDirectoryName(path: dependencyLocation);
+                    if (string.IsNullOrWhiteSpace(value: directory))
+                    {
+                        continue;
+                    }
+
+                    var candidate = Path.Combine(path1: directory, path2: assemblyFileName);
+                    if (File.Exists(path: candidate))
+                    {
+#pragma warning disable SCS0018
+                        return LoadFromAssemblyPath(assemblyPath: candidate);
+#pragma warning restore SCS0018
+                    }
+                }
+
+                return null;
+            }
+        }
+    }
 }
