@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Core/Core.csproj" />
+  <Project Path="Leaf/Leaf.csproj" />
+</Solution>
