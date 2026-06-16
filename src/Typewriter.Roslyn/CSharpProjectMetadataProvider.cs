@@ -22,43 +22,122 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         _projectLoader = projectLoader;
     }
 
-#pragma warning disable MA0051 // Method is too long
-    public async Task<ProjectMetadata> GetMetadataAsync(
+    public Task<ProjectMetadata> GetMetadataAsync(
         ProjectContext project,
         CancellationToken cancellationToken)
-#pragma warning restore MA0051 // Method is too long
     {
         ArgumentNullException.ThrowIfNull(argument: project);
 
+        var loadedProjects = new Dictionary<string, ProjectMetadataBuildResult>(comparer: StringComparer.OrdinalIgnoreCase);
+        var loadingProjects = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+        return GetMergedMetadataAsync(
+            projectLoader: _projectLoader,
+            project: project,
+            loadedProjects: loadedProjects,
+            loadingProjects: loadingProjects,
+            cancellationToken: cancellationToken);
+    }
+
+    private static async Task<ProjectMetadata> GetMergedMetadataAsync(
+        IProjectWorkspaceLoader projectLoader,
+        ProjectContext project,
+        IDictionary<string, ProjectMetadataBuildResult> loadedProjects,
+        ISet<string> loadingProjects,
+        CancellationToken cancellationToken)
+    {
+        var result = await GetMetadataCoreAsync(
+            projectLoader: projectLoader,
+            project: project,
+            loadedProjects: loadedProjects,
+            loadingProjects: loadingProjects,
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        return result.Metadata;
+    }
+
+#pragma warning disable MA0051 // Method is too long
+    private static async Task<ProjectMetadataBuildResult> GetMetadataCoreAsync(
+        IProjectWorkspaceLoader projectLoader,
+        ProjectContext project,
+        IDictionary<string, ProjectMetadataBuildResult> loadedProjects,
+        ISet<string> loadingProjects,
+        CancellationToken cancellationToken)
+#pragma warning restore MA0051 // Method is too long
+    {
         var projectPath = Path.GetFullPath(path: project.ProjectPath);
+        if (loadedProjects.TryGetValue(key: projectPath, value: out var cachedResult))
+        {
+            return cachedResult;
+        }
+
+        if (!loadingProjects.Add(item: projectPath))
+        {
+            return new ProjectMetadataBuildResult(Metadata: CreateEmptyProjectMetadata(projectPath: projectPath), Compilation: null);
+        }
+
         if (!File.Exists(path: projectPath))
         {
-            return new ProjectMetadata(
-                ProjectPath: projectPath,
-                SourceFiles: [],
-                Types: [],
-                Diagnostics:
-                [
-                    new GenerationDiagnostic(
-                        File: projectPath,
-                        Line: null,
-                        Column: null,
-                        Severity: Typewriter.Abstractions.DiagnosticSeverity.Error,
-                        Message: $"Project file does not exist: {projectPath}.",
-                        Code: "TW0003"),
-                ]);
+            return CacheResult(
+                projectPath: projectPath,
+                result: new ProjectMetadataBuildResult(Metadata: CreateProjectFileMissingMetadata(projectPath: projectPath), Compilation: null),
+                loadedProjects: loadedProjects,
+                loadingProjects: loadingProjects);
         }
 
-        var loadedProject = await _projectLoader.LoadAsync(project: project, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        var loadedProject = await projectLoader.LoadAsync(project: project, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         if (loadedProject.Diagnostics.Any(predicate: diagnostic => diagnostic.Severity == Typewriter.Abstractions.DiagnosticSeverity.Error))
         {
-            return new ProjectMetadata(
-                ProjectPath: projectPath,
-                SourceFiles: [],
-                Types: [],
-                Diagnostics: loadedProject.Diagnostics);
+            return CacheResult(
+                projectPath: projectPath,
+                result: new ProjectMetadataBuildResult(Metadata: CreateProjectLoadFailedMetadata(projectPath: projectPath, diagnostics: loadedProject.Diagnostics), Compilation: null),
+                loadedProjects: loadedProjects,
+                loadingProjects: loadingProjects);
         }
 
+        var referencedProjects = new List<ProjectMetadataBuildResult>();
+        foreach (var projectReference in loadedProject.ProjectReferences)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            referencedProjects.Add(
+                item: await GetMetadataCoreAsync(
+                    projectLoader: projectLoader,
+                    project: new ProjectContext(
+                        ProjectPath: projectReference,
+                        WorkspacePath: project.WorkspacePath,
+                        TargetFramework: project.TargetFramework ?? loadedProject.TargetFramework),
+                    loadedProjects: loadedProjects,
+                    loadingProjects: loadingProjects,
+                    cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false));
+        }
+
+        var projectReferences = referencedProjects
+            .Select(selector: reference => reference.Compilation)
+            .Where(predicate: compilation => compilation is not null)
+            .Select(selector: compilation => compilation!.ToMetadataReference())
+            .ToArray();
+        var currentProject = await CreateCurrentProjectMetadataAsync(
+            projectPath: projectPath,
+            loadedProject: loadedProject,
+            projectReferences: projectReferences,
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        return CacheResult(
+            projectPath: projectPath,
+            result: new ProjectMetadataBuildResult(
+                Metadata: MergeProjectMetadata(
+                    project: currentProject.Metadata,
+                    referencedProjects: referencedProjects.Select(selector: reference => reference.Metadata).ToArray()),
+                Compilation: currentProject.Compilation),
+            loadedProjects: loadedProjects,
+            loadingProjects: loadingProjects);
+    }
+
+#pragma warning disable MA0051 // Method is too long
+    private static async Task<ProjectMetadataBuildResult> CreateCurrentProjectMetadataAsync(
+        string projectPath,
+        ProjectLoadResult loadedProject,
+        IReadOnlyList<MetadataReference> projectReferences,
+        CancellationToken cancellationToken)
+#pragma warning restore MA0051 // Method is too long
+    {
         var sourcePaths = loadedProject.SourceFiles.ToArray();
         var parseOptions = CSharpParseOptions.Default
             .WithLanguageVersion(version: LanguageVersion.Preview)
@@ -83,7 +162,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         var compilation = CSharpCompilation.Create(
             assemblyName: Path.GetFileNameWithoutExtension(path: projectPath),
             syntaxTrees: syntaxTrees,
-            references: CreateReferences(referencePaths: loadedProject.ReferencePaths),
+            references: CreateReferences(referencePaths: loadedProject.ReferencePaths).Concat(second: projectReferences),
             options: new CSharpCompilationOptions(
                 outputKind: OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: NullableContextOptions.Enable));
@@ -161,7 +240,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 })
             .ToArray();
 
-        return new ProjectMetadata(
+        var metadata = new ProjectMetadata(
             ProjectPath: projectPath,
             SourceFiles: sourceFiles,
             Types: symbolMetadata
@@ -175,7 +254,98 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 .OrderBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
                 .ToArray(),
         };
+
+        return new ProjectMetadataBuildResult(Metadata: metadata, Compilation: compilation);
     }
+
+    private static ProjectMetadataBuildResult CacheResult(
+        string projectPath,
+        ProjectMetadataBuildResult result,
+        IDictionary<string, ProjectMetadataBuildResult> loadedProjects,
+        ISet<string> loadingProjects)
+    {
+        loadingProjects.Remove(item: projectPath);
+        loadedProjects[key: projectPath] = result;
+        return result;
+    }
+
+    private static ProjectMetadata MergeProjectMetadata(
+        ProjectMetadata project,
+        IReadOnlyList<ProjectMetadata> referencedProjects)
+    {
+        if (referencedProjects.Count == 0)
+        {
+            return project;
+        }
+
+        var sourceFiles = project.SourceFiles
+            .Concat(second: referencedProjects.SelectMany(selector: reference => reference.SourceFiles))
+            .GroupBy(keySelector: sourceFile => Path.GetFullPath(path: sourceFile.Path), comparer: StringComparer.OrdinalIgnoreCase)
+            .Select(selector: group => group.First())
+            .OrderBy(keySelector: sourceFile => sourceFile.Path, comparer: StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var types = project.Types
+            .Concat(second: referencedProjects.SelectMany(selector: reference => reference.Types))
+            .GroupBy(keySelector: GetMetadataIdentity, comparer: StringComparer.Ordinal)
+            .Select(selector: group => group.First())
+            .OrderBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
+            .ThenBy(keySelector: type => type.AssemblyName, comparer: StringComparer.Ordinal)
+            .ToArray();
+        var delegates = project.Delegates
+            .Concat(second: referencedProjects.SelectMany(selector: reference => reference.Delegates))
+            .GroupBy(keySelector: GetMetadataIdentity, comparer: StringComparer.Ordinal)
+            .Select(selector: group => group.First())
+            .OrderBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
+            .ThenBy(keySelector: type => type.AssemblyName, comparer: StringComparer.Ordinal)
+            .ToArray();
+
+        return new ProjectMetadata(
+            ProjectPath: project.ProjectPath,
+            SourceFiles: sourceFiles,
+            Types: types,
+            Diagnostics: project.Diagnostics.Concat(second: referencedProjects.SelectMany(selector: reference => reference.Diagnostics)).ToArray())
+        {
+            Delegates = delegates,
+        };
+    }
+
+    private static ProjectMetadata CreateEmptyProjectMetadata(string projectPath) =>
+        new(
+            ProjectPath: projectPath,
+            SourceFiles: [],
+            Types: [],
+            Diagnostics: []);
+
+    private static ProjectMetadata CreateProjectFileMissingMetadata(string projectPath) =>
+        new(
+            ProjectPath: projectPath,
+            SourceFiles: [],
+            Types: [],
+            Diagnostics:
+            [
+                new GenerationDiagnostic(
+                    File: projectPath,
+                    Line: null,
+                    Column: null,
+                    Severity: Typewriter.Abstractions.DiagnosticSeverity.Error,
+                    Message: $"Project file does not exist: {projectPath}.",
+                    Code: "TW0003"),
+            ]);
+
+    private static ProjectMetadata CreateProjectLoadFailedMetadata(
+        string projectPath,
+        IReadOnlyList<GenerationDiagnostic> diagnostics) =>
+        new(
+            ProjectPath: projectPath,
+            SourceFiles: [],
+            Types: [],
+            Diagnostics: diagnostics);
+
+    private static string GetMetadataIdentity(TypeMetadata type) =>
+        string.Concat(str0: type.FullName, str1: "\u001F", str2: type.AssemblyName);
+
+    private static string GetMetadataIdentity(DelegateMetadata type) =>
+        string.Concat(str0: type.FullName, str1: "\u001F", str2: type.AssemblyName);
 
     private static SyntaxTree CreateDefaultGlobalUsingsTree(
         IEnumerable<string> globalUsings,
@@ -1174,4 +1344,8 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             Message: diagnostic.GetMessage(formatProvider: CultureInfo.InvariantCulture),
             Code: "TW0004");
     }
+
+    private sealed record ProjectMetadataBuildResult(
+        ProjectMetadata Metadata,
+        CSharpCompilation? Compilation);
 }
