@@ -660,6 +660,63 @@ public sealed class CSharpProjectMetadataProviderTests
         }
     }
 
+    [Fact]
+    public async Task GetMetadataRunsSourceGeneratorsBeforeCollectingDiagnostics()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Validator.cs"),
+                contents: """
+                          using System.Text.RegularExpressions;
+
+                          namespace Sample;
+
+                          public partial class Validator
+                          {
+                              [GeneratedRegex(@"\d+")]
+                              public static partial Regex Digits();
+                          }
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "MyModel.cs"),
+                contents: """
+                          namespace Sample;
+
+                          public sealed class MyModel
+                          {
+                              public string Name { get; set; } = string.Empty;
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            Assert.Empty(collection: metadata.Diagnostics);
+            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "Sample.MyModel");
+            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "Sample.Validator");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(

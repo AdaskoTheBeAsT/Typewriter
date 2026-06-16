@@ -108,6 +108,20 @@ public sealed class MsBuildProjectLoaderTests
         var directory = CreateProjectDirectory();
         try
         {
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Directory.Build.props"),
+                contents: """
+                          <Project>
+                            <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Referenced'">
+                              <BaseIntermediateOutputPath>obj\Referenced\</BaseIntermediateOutputPath>
+                              <BaseOutputPath>bin\Referenced\</BaseOutputPath>
+                            </PropertyGroup>
+                            <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Sample'">
+                              <BaseIntermediateOutputPath>obj\Sample\</BaseIntermediateOutputPath>
+                              <BaseOutputPath>bin\Sample\</BaseOutputPath>
+                            </PropertyGroup>
+                          </Project>
+                          """);
             var referencedProjectPath = Path.Combine(path1: directory, path2: "Referenced.csproj");
             await File.WriteAllTextAsync(
                 path: referencedProjectPath,
@@ -116,7 +130,6 @@ public sealed class MsBuildProjectLoaderTests
                             <PropertyGroup>
                               <TargetFramework>net10.0</TargetFramework>
                               <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-                              <BaseIntermediateOutputPath>obj\Referenced\</BaseIntermediateOutputPath>
                             </PropertyGroup>
                             <ItemGroup>
                               <Compile Include="ReferencedModel.cs" />
@@ -133,7 +146,6 @@ public sealed class MsBuildProjectLoaderTests
                             <PropertyGroup>
                               <TargetFramework>net10.0</TargetFramework>
                               <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-                              <BaseIntermediateOutputPath>obj\Sample\</BaseIntermediateOutputPath>
                             </PropertyGroup>
                             <ItemGroup>
                               <Compile Include="Model.cs" />

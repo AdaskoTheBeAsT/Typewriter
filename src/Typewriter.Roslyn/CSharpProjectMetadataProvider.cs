@@ -1,8 +1,14 @@
+using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Globalization;
+using System.Reflection;
+using System.Runtime.Loader;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Text;
 using Typewriter.Abstractions;
 using Typewriter.Buildalyzer;
 
@@ -167,7 +173,14 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 outputKind: OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: NullableContextOptions.Enable));
 
+        compilation = RunSourceGenerators(
+            compilation: compilation,
+            loadedProject: loadedProject,
+            parseOptions: parseOptions,
+            cancellationToken: cancellationToken,
+            diagnostics: out var generatorDiagnostics);
         var diagnostics = compilation.GetDiagnostics(cancellationToken: cancellationToken)
+            .Concat(second: generatorDiagnostics)
             .Where(predicate: diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .Select(selector: ToGenerationDiagnostic)
             .ToArray();
@@ -384,6 +397,50 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             .Split(separator: Path.PathSeparator, options: StringSplitOptions.RemoveEmptyEntries)
             .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
             .Select(selector: path => MetadataReference.CreateFromFile(path: path));
+    }
+
+    private static CSharpCompilation RunSourceGenerators(
+        CSharpCompilation compilation,
+        ProjectLoadResult loadedProject,
+        CSharpParseOptions parseOptions,
+        CancellationToken cancellationToken,
+        out ImmutableArray<Diagnostic> diagnostics)
+    {
+        var generators = CreateSourceGenerators(analyzerReferences: loadedProject.AnalyzerReferences).ToArray();
+        if (generators.Length == 0)
+        {
+            diagnostics = [];
+            return compilation;
+        }
+
+        var additionalTexts = loadedProject.AdditionalFiles
+            .Where(predicate: File.Exists)
+            .Select(selector: path => new FileAdditionalText(path: path))
+            .ToArray();
+        var driver = CSharpGeneratorDriver.Create(
+            generators: generators,
+            additionalTexts: additionalTexts,
+            parseOptions: parseOptions);
+        _ = driver.RunGeneratorsAndUpdateCompilation(
+            compilation: compilation,
+            outputCompilation: out var updatedCompilation,
+            diagnostics: out diagnostics,
+            cancellationToken: cancellationToken);
+
+        return (CSharpCompilation)updatedCompilation;
+    }
+
+    private static IEnumerable<ISourceGenerator> CreateSourceGenerators(IEnumerable<string> analyzerReferences)
+    {
+        var loader = AnalyzerAssemblyLoader.Instance;
+        foreach (var analyzerReference in analyzerReferences.Where(predicate: File.Exists).Distinct(comparer: StringComparer.OrdinalIgnoreCase))
+        {
+            var reference = new AnalyzerFileReference(fullPath: analyzerReference, assemblyLoader: loader);
+            foreach (var generator in reference.GetGenerators(language: LanguageNames.CSharp))
+            {
+                yield return generator;
+            }
+        }
     }
 
     private static IEnumerable<INamedTypeSymbol> GetSourceTypeSymbols(
@@ -1348,4 +1405,68 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
     private sealed record ProjectMetadataBuildResult(
         ProjectMetadata Metadata,
         CSharpCompilation? Compilation);
+
+    private sealed class FileAdditionalText(string path) : AdditionalText
+    {
+        public override string Path { get; } = path;
+
+        public override SourceText? GetText(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+#pragma warning disable SCS0018,SEC0116
+            return SourceText.From(text: File.ReadAllText(path: Path));
+#pragma warning restore SCS0018,SEC0116
+        }
+    }
+
+    private sealed class AnalyzerAssemblyLoader : IAnalyzerAssemblyLoader
+    {
+        private readonly ConcurrentDictionary<string, byte> _dependencyLocations = new(comparer: StringComparer.OrdinalIgnoreCase);
+
+        private AnalyzerAssemblyLoader()
+        {
+            AssemblyLoadContext.Default.Resolving += ResolveAssembly;
+        }
+
+        public static AnalyzerAssemblyLoader Instance { get; } = new();
+
+        public void AddDependencyLocation(string fullPath)
+        {
+            _dependencyLocations.TryAdd(key: Path.GetFullPath(path: fullPath), value: 0);
+        }
+
+        public Assembly LoadFromPath(string fullPath)
+        {
+            AddDependencyLocation(fullPath: fullPath);
+#pragma warning disable SCS0018
+            return AssemblyLoadContext.Default.LoadFromAssemblyPath(assemblyPath: Path.GetFullPath(path: fullPath));
+#pragma warning restore SCS0018
+        }
+
+        private Assembly? ResolveAssembly(
+            AssemblyLoadContext context,
+            AssemblyName assemblyName)
+        {
+            var dependencyLocations = _dependencyLocations.Keys.ToArray();
+            var assemblyFileName = assemblyName.Name + ".dll";
+            foreach (var dependencyLocation in dependencyLocations)
+            {
+                var directory = Path.GetDirectoryName(path: dependencyLocation);
+                if (string.IsNullOrWhiteSpace(value: directory))
+                {
+                    continue;
+                }
+
+                var candidate = Path.Combine(path1: directory, path2: assemblyFileName);
+                if (File.Exists(path: candidate))
+                {
+#pragma warning disable SCS0018
+                    return context.LoadFromAssemblyPath(assemblyPath: candidate);
+#pragma warning restore SCS0018
+                }
+            }
+
+            return null;
+        }
+    }
 }
