@@ -100,7 +100,7 @@ $Classes($IncludeClass)[
 export class $ServiceName {
   readonly url = '$GetHubRouteValue';
 $Methods($IncludeHubMethod)[
-  $MethodName($SkipParameters[$name: $Type][, ]): $IsStreamingMethod[Observable<$StreamReturnType>]$IsInvokeMethod[Promise<$InvokeReturnType>] {
+  $MethodName$IsStreamingMethod[$$]($SkipParameters[$name: $Type][, ]): $IsStreamingMethod[Observable<$StreamReturnType>]$IsInvokeMethod[Promise<$InvokeReturnType>] {
     return '$SignalRMethodName'$InvocationArguments;
   }]
 }]

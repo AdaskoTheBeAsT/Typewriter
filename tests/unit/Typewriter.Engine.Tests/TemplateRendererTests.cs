@@ -144,6 +144,88 @@ public sealed class TemplateRendererTests
     }
 
     [Fact]
+    public void RenderContainingTypeAccessorsAreKindFiltered()
+    {
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                CreateType(name: "ClassContainer", kind: TypeMetadataKind.Class),
+                CreateType(name: "RecordContainer", kind: TypeMetadataKind.Record),
+                CreateType(name: "StructContainer", kind: TypeMetadataKind.Struct),
+                CreateType(name: "NestedInClass", kind: TypeMetadataKind.Struct, containingTypeFullName: "Sample.ClassContainer"),
+                CreateType(name: "NestedInRecord", kind: TypeMetadataKind.Struct, containingTypeFullName: "Sample.RecordContainer"),
+                CreateType(name: "NestedInStruct", kind: TypeMetadataKind.Struct, containingTypeFullName: "Sample.StructContainer"),
+            ],
+            Diagnostics: []);
+        const string template = "$Types(Struct)[$Name:C=$ContainingClass[$Name];R=$ContainingRecord[$Name];S=$ContainingStruct[$Name];]";
+        var document = new TemplateDocument(Path: "models.tst", Content: template, OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        Assert.Empty(collection: diagnostics);
+        Assert.Contains(expectedSubstring: "NestedInClass:C=ClassContainer;R=;S=;", actualString: output, comparisonType: StringComparison.Ordinal);
+        Assert.Contains(expectedSubstring: "NestedInRecord:C=;R=RecordContainer;S=;", actualString: output, comparisonType: StringComparison.Ordinal);
+        Assert.Contains(expectedSubstring: "NestedInStruct:C=;R=;S=StructContainer;", actualString: output, comparisonType: StringComparison.Ordinal);
+
+        static TypeMetadata CreateType(
+            string name,
+            TypeMetadataKind kind,
+            string containingTypeFullName = "")
+        {
+            return new TypeMetadata(
+                Name: name,
+                FullName: "Sample." + name,
+                Namespace: "Sample",
+                Kind: kind,
+                Accessibility: MetadataAccessibility.Public,
+                Properties: [],
+                Attributes: [],
+                BaseTypes: [],
+                EnumValues: [],
+                IsNullableAware: true)
+            {
+                ContainingTypeFullName = containingTypeFullName,
+            };
+        }
+    }
+
+    [Fact]
+    public void RenderEscapedDollarSignsAsLiterals()
+    {
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "User",
+                    FullName: "Sample.User",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties: [],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+            ],
+            Diagnostics: []);
+        const string template = "$Classes[$$type $$Name $${environment.apiBaseUrl} $$$Name]";
+        var document = new TemplateDocument(Path: "models.tst", Content: template, OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        Assert.Empty(collection: diagnostics);
+        Assert.Equal(expected: "$type $Name ${environment.apiBaseUrl} $User", actual: output);
+    }
+
+    [Fact]
     public void RenderExposesIndexerPropertiesAndParameters()
     {
         var metadata = new ProjectMetadata(

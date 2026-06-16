@@ -149,8 +149,8 @@ choose a tag, expand **Assets**, then install the matching package.
 The CLI and language server are also published to NuGet as dotnet tools:
 
 ```bash
-dotnet tool install --global AdaskoTheBeAsT.Typewriter.Cli --prerelease
-dotnet tool install --global AdaskoTheBeAsT.Typewriter.LanguageServer --prerelease
+dotnet tool install --global AdaskoTheBeAsT.Typewriter.Cli
+dotnet tool install --global AdaskoTheBeAsT.Typewriter.LanguageServer
 typewriter --help
 ```
 
@@ -352,6 +352,7 @@ Templates are `.tst` files using the original Typewriter dialect — existing te
 | `$Classes(filter)[...]`                              | Render block for every matching class (also `$Records`, `$Structs`, `$Interfaces`, `$Enums`, `$Delegates`)          |
 | `$Properties[...][separator]`                        | Iterate members, including indexers (also `$Methods`, `$Parameters`, `$Fields`, `$Constants`, `$Events`, `$Values`) |
 | `$Name`, `$name`, `$FullName`, `$Namespace`, `$Type` | Scalar substitutions (lowercase first letter via `$name`)                                                           |
+| `$$`                                                 | Render one literal `$`, for example `$$type` outputs `$type` without treating it as a template member               |
 | `(*Model)`, `([Attribute])`, `(c => c.IsPublic)`     | Wildcard, attribute, and lambda filters                                                                             |
 | `$IsNullable[yes][no]`                               | Conditional true/false blocks                                                                                       |
 | `${ ... }`                                           | Compiled C# helper block — write real C# methods used by the template                                               |
@@ -828,6 +829,7 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 
 - Added struct metadata and template rendering through `$Structs[...]`, `$Types(Struct)[...]`, CodeModel `Struct`, and LSP/editor completions.
 - Added indexer metadata through `Property.IsIndexer` and property-level `$Parameters[...]`, intended for lookup-style API generation rather than JSON DTO payloads.
+- Added literal dollar escaping with `$$`, so templates can emit `$type`, `${...}`, and other TypeScript dollar syntax without triggering template member lookup.
 - Added tests that cover Roslyn extraction, template rendering, CodeModel parity, and language-server completions for structs and indexers.
 
 ---

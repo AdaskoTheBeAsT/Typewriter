@@ -1488,6 +1488,25 @@ public sealed class TemplateRenderer
         return string.Join(separator: '\n', values: output);
     }
 
+    private static object? ResolveContainingType(
+        TypeMetadata type,
+        TypeMetadataKind kind,
+        RenderState? state)
+    {
+        if (string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName))
+        {
+            return null;
+        }
+
+        if (state is null
+            || !state.TryResolveType(fullName: type.ContainingTypeFullName, type: out var containingType))
+        {
+            return Unresolved.Value;
+        }
+
+        return containingType.Kind == kind ? containingType : null;
+    }
+
     private string RenderCore(
         string template,
         object context,
@@ -1499,6 +1518,16 @@ public sealed class TemplateRenderer
             if (template[index: index] != '$')
             {
                 output.Append(value: template[index: index]);
+                continue;
+            }
+
+            if (index + 1 < template.Length
+                && template[index: index + 1] == '$')
+            {
+                output.Append(value: '$');
+#pragma warning disable S127 // "for" loop stop conditions should be invariant
+                index++;
+#pragma warning restore S127 // "for" loop stop conditions should be invariant
                 continue;
             }
 
@@ -2328,15 +2357,9 @@ public sealed class TemplateRenderer
             "BaseClass" => type.BaseTypes.FirstOrDefault(),
             "BaseRecord" => type.BaseTypes.FirstOrDefault(),
             "BaseTypes" => type.BaseTypes,
-            "ContainingClass" => string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)
-                ? null
-                : state?.ResolveParentType(fullName: type.ContainingTypeFullName) ?? Unresolved.Value,
-            "ContainingRecord" => string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)
-                ? null
-                : state?.ResolveParentType(fullName: type.ContainingTypeFullName) ?? Unresolved.Value,
-            "ContainingStruct" => string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)
-                ? null
-                : state?.ResolveParentType(fullName: type.ContainingTypeFullName) ?? Unresolved.Value,
+            "ContainingClass" => ResolveContainingType(type: type, kind: TypeMetadataKind.Class, state: state),
+            "ContainingRecord" => ResolveContainingType(type: type, kind: TypeMetadataKind.Record, state: state),
+            "ContainingStruct" => ResolveContainingType(type: type, kind: TypeMetadataKind.Struct, state: state),
             "NestedClasses" => type.NestedClasses,
             "NestedRecords" => type.NestedRecords,
             "NestedStructs" => type.NestedStructs,
