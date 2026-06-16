@@ -12,9 +12,13 @@ public class Property : Item
 
     public virtual bool IsAbstract { get; init; }
 
+    public virtual bool IsIndexer { get; init; }
+
     public virtual bool IsRequired { get; init; }
 
     public virtual bool IsVirtual { get; init; }
+
+    public virtual IParameterCollection Parameters { get; init; } = new ParameterCollection();
 
     public virtual Type Type { get; init; } = new();
 

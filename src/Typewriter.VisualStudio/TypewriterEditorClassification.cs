@@ -130,6 +130,7 @@ internal sealed class TypewriterClassifier : IClassifier
     {
         "Classes",
         "Records",
+        "Structs",
         "Interfaces",
         "Enums",
         "Properties",
@@ -165,6 +166,7 @@ internal sealed class TypewriterClassifier : IClassifier
         "public",
         "return",
         "static",
+        "struct",
         "string",
         "switch",
         "Template",

@@ -87,6 +87,216 @@ public sealed class TemplateRendererTests
     }
 
     [Fact]
+    public void RenderExpandsStructsAndStructFilter()
+    {
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "User",
+                    FullName: "Sample.User",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties: [],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+                new TypeMetadata(
+                    Name: "Point",
+                    FullName: "Sample.Point",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Struct,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties:
+                    [
+                        new PropertyMetadata(
+                            Name: "X",
+                            FullName: "Sample.Point.X",
+                            Type: TypeReference(name: "Int32", fullName: "System.Int32", isNullable: false),
+                            Accessibility: MetadataAccessibility.Public,
+                            HasGetter: true,
+                            HasSetter: true,
+                            IsRequired: false,
+                            Attributes: []),
+                    ],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+            ],
+            Diagnostics: []);
+        const string template = "$Structs[struct $Name {$Properties[$name:$Type;]}] filtered:$Types(Struct)[$Name][,]";
+        var document = new TemplateDocument(Path: "models.tst", Content: template, OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        Assert.Empty(collection: diagnostics);
+        Assert.Contains(expectedSubstring: "struct Point", actualString: output, comparisonType: StringComparison.Ordinal);
+        Assert.Contains(expectedSubstring: "x:number;", actualString: output, comparisonType: StringComparison.Ordinal);
+        Assert.Contains(expectedSubstring: "filtered:Point", actualString: output, comparisonType: StringComparison.Ordinal);
+        Assert.DoesNotContain(expectedSubstring: "filtered:User", actualString: output, comparisonType: StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RenderContainingTypeAccessorsAreKindFiltered()
+    {
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                CreateType(name: "ClassContainer", kind: TypeMetadataKind.Class),
+                CreateType(name: "RecordContainer", kind: TypeMetadataKind.Record),
+                CreateType(name: "StructContainer", kind: TypeMetadataKind.Struct),
+                CreateType(name: "NestedInClass", kind: TypeMetadataKind.Struct, containingTypeFullName: "Sample.ClassContainer"),
+                CreateType(name: "NestedInRecord", kind: TypeMetadataKind.Struct, containingTypeFullName: "Sample.RecordContainer"),
+                CreateType(name: "NestedInStruct", kind: TypeMetadataKind.Struct, containingTypeFullName: "Sample.StructContainer"),
+            ],
+            Diagnostics: []);
+        const string template = "$Types(Struct)[$Name:C=$ContainingClass[$Name];R=$ContainingRecord[$Name];S=$ContainingStruct[$Name];]";
+        var document = new TemplateDocument(Path: "models.tst", Content: template, OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        Assert.Empty(collection: diagnostics);
+        Assert.Contains(expectedSubstring: "NestedInClass:C=ClassContainer;R=;S=;", actualString: output, comparisonType: StringComparison.Ordinal);
+        Assert.Contains(expectedSubstring: "NestedInRecord:C=;R=RecordContainer;S=;", actualString: output, comparisonType: StringComparison.Ordinal);
+        Assert.Contains(expectedSubstring: "NestedInStruct:C=;R=;S=StructContainer;", actualString: output, comparisonType: StringComparison.Ordinal);
+
+        static TypeMetadata CreateType(
+            string name,
+            TypeMetadataKind kind,
+            string containingTypeFullName = "")
+        {
+            return new TypeMetadata(
+                Name: name,
+                FullName: "Sample." + name,
+                Namespace: "Sample",
+                Kind: kind,
+                Accessibility: MetadataAccessibility.Public,
+                Properties: [],
+                Attributes: [],
+                BaseTypes: [],
+                EnumValues: [],
+                IsNullableAware: true)
+            {
+                ContainingTypeFullName = containingTypeFullName,
+            };
+        }
+    }
+
+    [Fact]
+    public void RenderEscapedDollarSignsAsLiterals()
+    {
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "User",
+                    FullName: "Sample.User",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties: [],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+            ],
+            Diagnostics: []);
+        const string template = "$Classes[$$type $$Name $${environment.apiBaseUrl} $$$Name]";
+        var document = new TemplateDocument(Path: "models.tst", Content: template, OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        Assert.Empty(collection: diagnostics);
+        Assert.Equal(expected: "$type $Name ${environment.apiBaseUrl} $User", actual: output);
+    }
+
+    [Fact]
+    public void RenderExposesIndexerPropertiesAndParameters()
+    {
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "Lookup",
+                    FullName: "Sample.Lookup",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties:
+                    [
+                        new PropertyMetadata(
+                            Name: "Item",
+                            FullName: "Sample.Lookup.Item",
+                            Type: TypeReference(name: "String", fullName: "System.String", isNullable: false),
+                            Accessibility: MetadataAccessibility.Public,
+                            HasGetter: true,
+                            HasSetter: true,
+                            IsRequired: false,
+                            Attributes: [])
+                        {
+                            IsIndexer = true,
+                            Parameters =
+                            [
+                                new ParameterMetadata(
+                                    Name: "index",
+                                    FullName: "Sample.Lookup.Item.index",
+                                    Type: TypeReference(name: "Int32", fullName: "System.Int32", isNullable: false),
+                                    HasDefaultValue: false,
+                                    DefaultValue: null,
+                                    Attributes: [],
+                                    ParentMethodFullName: string.Empty)
+                                {
+                                    ParentPropertyFullName = "Sample.Lookup.Item",
+                                },
+                                new ParameterMetadata(
+                                    Name: "key",
+                                    FullName: "Sample.Lookup.Item.key",
+                                    Type: TypeReference(name: "String", fullName: "System.String", isNullable: true),
+                                    HasDefaultValue: false,
+                                    DefaultValue: null,
+                                    Attributes: [],
+                                    ParentMethodFullName: string.Empty)
+                                {
+                                    ParentPropertyFullName = "Sample.Lookup.Item",
+                                },
+                            ],
+                        },
+                    ],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+            ],
+            Diagnostics: []);
+        const string template = "$Classes[$Properties[$IsIndexer[$Parameters[$name:$Type][, ]->$Type;]]]";
+        var document = new TemplateDocument(Path: "models.tst", Content: template, OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        Assert.Empty(collection: diagnostics);
+        Assert.Contains(expectedSubstring: "index:number, key:string | null->string;", actualString: output, comparisonType: StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RenderPreservesNullableDictionaryWhenValueTypeIsNullable()
     {
         var keyType = TypeReference(name: "String", fullName: "System.String", isNullable: false);

@@ -6,6 +6,7 @@ using Delegate = Typewriter.CodeModel.Delegate;
 using Enum = Typewriter.CodeModel.Enum;
 using File = Typewriter.CodeModel.File;
 using Record = Typewriter.CodeModel.Record;
+using Struct = Typewriter.CodeModel.Struct;
 using Type = Typewriter.CodeModel.Type;
 
 namespace Typewriter.Engine.Tests;
@@ -18,7 +19,7 @@ public sealed class CodeModelParityTests
         {
             { typeof(Attribute), ["Arguments", "AssemblyName", "FullName", "Name", "Parent", "Type", "Value", "name"] },
             { typeof(AttributeArgument), ["Type", "TypeValue", "Value"] },
-            { typeof(Class), ["AssemblyName", "Attributes", "BaseClass", "Constants", "ContainingClass", "Delegates", "DocComment", "Events", "Fields", "FullName", "Interfaces", "IsAbstract", "IsGeneric", "IsStatic", "Methods", "Name", "Namespace", "NestedClasses", "NestedEnums", "NestedInterfaces", "Parent", "Properties", "StaticReadOnlyFields", "TypeArguments", "TypeParameters", "name"] },
+            { typeof(Class), ["AssemblyName", "Attributes", "BaseClass", "Constants", "ContainingClass", "Delegates", "DocComment", "Events", "Fields", "FullName", "Interfaces", "IsAbstract", "IsGeneric", "IsStatic", "Methods", "Name", "Namespace", "NestedClasses", "NestedEnums", "NestedInterfaces", "NestedStructs", "Parent", "Properties", "StaticReadOnlyFields", "TypeArguments", "TypeParameters", "name"] },
             { typeof(Constant), ["AssemblyName", "Attributes", "DocComment", "FullName", "Name", "Parent", "Type", "Value", "name"] },
             { typeof(Delegate), ["AssemblyName", "Attributes", "DocComment", "FullName", "IsGeneric", "Name", "Parameters", "Parent", "Type", "TypeParameters", "name"] },
             { typeof(DocComment), ["Parameters", "Parent", "Returns", "Summary"] },
@@ -26,15 +27,16 @@ public sealed class CodeModelParityTests
             { typeof(EnumValue), ["AssemblyName", "Attributes", "DocComment", "FullName", "Name", "Parent", "Value", "name"] },
             { typeof(Event), ["AssemblyName", "Attributes", "DocComment", "FullName", "Name", "Parent", "Type", "name"] },
             { typeof(Field), ["AssemblyName", "Attributes", "DocComment", "FullName", "Name", "Parent", "Type", "name"] },
-            { typeof(File), ["Classes", "Delegates", "Enums", "FullName", "Interfaces", "Name", "Records"] },
-            { typeof(Interface), ["AssemblyName", "Attributes", "ContainingClass", "DocComment", "Events", "FullName", "Interfaces", "IsGeneric", "Methods", "Name", "Namespace", "Parent", "Properties", "Type", "TypeArguments", "TypeParameters", "name"] },
+            { typeof(File), ["Classes", "Delegates", "Enums", "FullName", "Interfaces", "Name", "Records", "Structs"] },
+            { typeof(Interface), ["AssemblyName", "Attributes", "ContainingClass", "DocComment", "Events", "FullName", "Interfaces", "IsGeneric", "Methods", "Name", "Namespace", "NestedStructs", "Parent", "Properties", "Type", "TypeArguments", "TypeParameters", "name"] },
             { typeof(Method), ["AssemblyName", "Attributes", "DocComment", "FullName", "IsAbstract", "IsGeneric", "Name", "Parameters", "Parent", "Type", "TypeParameters", "name"] },
             { typeof(Parameter), ["AssemblyName", "Attributes", "DefaultValue", "FullName", "HasDefaultValue", "Name", "Parent", "Type", "name"] },
             { typeof(ParameterComment), ["Description", "Name", "Parent"] },
-            { typeof(Property), ["AssemblyName", "Attributes", "DocComment", "FullName", "HasGetter", "HasSetter", "IsAbstract", "IsVirtual", "Name", "Parent", "Type", "name"] },
-            { typeof(Record), ["AssemblyName", "Attributes", "BaseRecord", "Constants", "ContainingRecord", "Delegates", "DocComment", "Events", "Fields", "FullName", "Interfaces", "IsAbstract", "IsGeneric", "Methods", "Name", "Namespace", "Parent", "Properties", "StaticReadOnlyFields", "TypeArguments", "TypeParameters", "name"] },
+            { typeof(Property), ["AssemblyName", "Attributes", "DocComment", "FullName", "HasGetter", "HasSetter", "IsAbstract", "IsIndexer", "IsVirtual", "Name", "Parameters", "Parent", "Type", "name"] },
+            { typeof(Record), ["AssemblyName", "Attributes", "BaseRecord", "Constants", "ContainingRecord", "Delegates", "DocComment", "Events", "Fields", "FullName", "Interfaces", "IsAbstract", "IsGeneric", "Methods", "Name", "Namespace", "NestedStructs", "Parent", "Properties", "StaticReadOnlyFields", "TypeArguments", "TypeParameters", "name"] },
             { typeof(StaticReadOnlyField), ["AssemblyName", "Attributes", "DocComment", "FullName", "Name", "Parent", "Type", "Value", "name"] },
-            { typeof(Type), ["AssemblyName", "Attributes", "BaseClass", "Constants", "ContainingClass", "DefaultValue", "Delegates", "DocComment", "ElementType", "Fields", "FileLocations", "FullName", "Interfaces", "IsDate", "IsDefined", "IsDictionary", "IsDynamic", "IsEnum", "IsEnumerable", "IsGeneric", "IsGuid", "IsNullable", "IsPrimitive", "IsTask", "IsTimeSpan", "IsValueTuple", "Methods", "Name", "Namespace", "NestedClasses", "NestedEnums", "NestedInterfaces", "OriginalName", "Parent", "Properties", "Settings", "StaticReadOnlyFields", "TupleElements", "TypeArguments", "TypeParameters", "name"] },
+            { typeof(Struct), ["AssemblyName", "Attributes", "Constants", "ContainingClass", "ContainingStruct", "Delegates", "DocComment", "Events", "Fields", "FullName", "Interfaces", "IsGeneric", "IsStatic", "Methods", "Name", "Namespace", "NestedClasses", "NestedEnums", "NestedInterfaces", "NestedRecords", "NestedStructs", "Parent", "Properties", "StaticReadOnlyFields", "Type", "TypeArguments", "TypeParameters", "name"] },
+            { typeof(Type), ["AssemblyName", "Attributes", "BaseClass", "Constants", "ContainingClass", "DefaultValue", "Delegates", "DocComment", "ElementType", "Fields", "FileLocations", "FullName", "Interfaces", "IsDate", "IsDefined", "IsDictionary", "IsDynamic", "IsEnum", "IsEnumerable", "IsGeneric", "IsGuid", "IsNullable", "IsPrimitive", "IsStruct", "IsTask", "IsTimeSpan", "IsValueTuple", "Methods", "Name", "Namespace", "NestedClasses", "NestedEnums", "NestedInterfaces", "NestedStructs", "OriginalName", "Parent", "Properties", "Settings", "StaticReadOnlyFields", "TupleElements", "TypeArguments", "TypeParameters", "name"] },
             { typeof(TypeParameter), ["Name", "Parent", "name"] },
         };
 #pragma warning restore CC0021 // Use nameof
@@ -63,6 +65,7 @@ public sealed class CodeModelParityTests
         var record = new Record { Name = "WidgetRecord", Type = type };
         var @interface = new Interface { Name = "IWidget", Type = type };
         var @enum = new Enum { Name = "WidgetKind", Type = type };
+        var @struct = new Struct { Name = "WidgetStruct", Type = type };
 
         string attributeName = new Attribute { Name = "Generate" };
         string className = @class;
@@ -84,6 +87,8 @@ public sealed class CodeModelParityTests
         string recordName = record;
         Type? recordType = record;
         string staticReadOnlyFieldName = new StaticReadOnlyField { Name = "StaticLabel" };
+        string structName = @struct;
+        Type? structType = @struct;
         string typeName = type;
 
         Assert.Equal(expected: "Generate", actual: attributeName);
@@ -106,6 +111,8 @@ public sealed class CodeModelParityTests
         Assert.Equal(expected: "WidgetRecord", actual: recordName);
         Assert.Same(expected: type, actual: recordType);
         Assert.Equal(expected: "StaticLabel", actual: staticReadOnlyFieldName);
+        Assert.Equal(expected: "WidgetStruct", actual: structName);
+        Assert.Same(expected: type, actual: structType);
         Assert.Equal(expected: "Widget", actual: typeName);
     }
 

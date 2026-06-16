@@ -18,6 +18,8 @@ public class Interface : Item
 
     public virtual string Namespace { get; init; } = string.Empty;
 
+    public virtual IStructCollection NestedStructs { get; init; } = new StructCollection();
+
     public virtual IPropertyCollection Properties { get; init; } = new PropertyCollection();
 
     public virtual Type Type { get; init; } = new();

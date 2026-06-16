@@ -8,7 +8,7 @@ export class SignalRChatService {
   invokeSendAsync(message: string): Promise<void> {
     return 'SendMessage', message;
   }
-  streamStreamMessages(room: string): Observable<ChatMessage> {
+  streamStreamMessages$(room: string): Observable<ChatMessage> {
     return 'StreamMessages', room;
   }
 }

@@ -38,6 +38,8 @@ public class Class : Item
 
     public virtual IRecordCollection NestedRecords { get; init; } = new RecordCollection();
 
+    public virtual IStructCollection NestedStructs { get; init; } = new StructCollection();
+
     public virtual IPropertyCollection Properties { get; init; } = new PropertyCollection();
 
     public virtual IStaticReadOnlyFieldCollection StaticReadOnlyFields { get; init; } = new StaticReadOnlyFieldCollection();

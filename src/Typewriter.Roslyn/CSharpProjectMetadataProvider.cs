@@ -289,6 +289,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             Microsoft.CodeAnalysis.TypeKind.Class when symbol.IsRecord => TypeMetadataKind.Record,
             Microsoft.CodeAnalysis.TypeKind.Class => TypeMetadataKind.Class,
+            Microsoft.CodeAnalysis.TypeKind.Struct => TypeMetadataKind.Struct,
             Microsoft.CodeAnalysis.TypeKind.Interface => TypeMetadataKind.Interface,
             Microsoft.CodeAnalysis.TypeKind.Enum => TypeMetadataKind.Enum,
             _ => (TypeMetadataKind?)null,
@@ -340,6 +341,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 .ToArray(),
             NestedClasses = GetNestedTypes(symbol: symbol, kind: TypeMetadataKind.Class, compilation: compilation).ToArray(),
             NestedRecords = GetNestedTypes(symbol: symbol, kind: TypeMetadataKind.Record, compilation: compilation).ToArray(),
+            NestedStructs = GetNestedTypes(symbol: symbol, kind: TypeMetadataKind.Struct, compilation: compilation).ToArray(),
             NestedEnums = GetNestedTypes(symbol: symbol, kind: TypeMetadataKind.Enum, compilation: compilation).ToArray(),
             NestedInterfaces = GetNestedTypes(symbol: symbol, kind: TypeMetadataKind.Interface, compilation: compilation).ToArray(),
         };
@@ -356,10 +358,11 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             .Select(
                 selector: property =>
                 {
+                    var fullName = property.ToDisplayString(format: SymbolDisplayFormat.CSharpErrorMessageFormat);
                     var docComment = GetDocComment(symbol: property);
                     return new PropertyMetadata(
                         Name: property.Name,
-                        FullName: property.ToDisplayString(format: SymbolDisplayFormat.CSharpErrorMessageFormat),
+                        FullName: fullName,
                         Type: CreateTypeReference(symbol: property.Type, nullableAnnotation: property.NullableAnnotation),
                         Accessibility: MapAccessibility(accessibility: property.DeclaredAccessibility),
                         HasGetter: property.GetMethod is not null,
@@ -373,7 +376,9 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                         Documentation = docComment?.Summary,
                         DocComment = docComment,
                         IsAbstract = property.IsAbstract,
+                        IsIndexer = property.IsIndexer,
                         IsVirtual = property.IsVirtual,
+                        Parameters = GetParameters(parameters: property.Parameters, parentFullName: fullName, parentPropertyFullName: fullName).ToArray(),
                     };
                 });
     }
@@ -413,9 +418,16 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
     private static IEnumerable<ParameterMetadata> GetParameters(
         IMethodSymbol method,
-        string methodFullName)
+        string methodFullName) =>
+        GetParameters(parameters: method.Parameters, parentFullName: methodFullName, parentMethodFullName: methodFullName);
+
+    private static IEnumerable<ParameterMetadata> GetParameters(
+        IEnumerable<IParameterSymbol> parameters,
+        string parentFullName,
+        string parentMethodFullName = "",
+        string parentPropertyFullName = "")
     {
-        return method.Parameters.Select(
+        return parameters.Select(
             selector: parameter =>
             {
                 var defaultValue = parameter.HasExplicitDefaultValue
@@ -425,17 +437,18 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
                 return new ParameterMetadata(
                     Name: parameter.Name,
-                    FullName: methodFullName + "." + parameter.Name,
+                    FullName: parentFullName + "." + parameter.Name,
                     Type: CreateTypeReference(symbol: parameter.Type, nullableAnnotation: parameter.NullableAnnotation),
                     HasDefaultValue: parameter.HasExplicitDefaultValue,
                     DefaultValue: defaultValue,
                     Attributes: GetAttributes(attributes: parameter.GetAttributes()).ToArray(),
-                    ParentMethodFullName: methodFullName)
+                    ParentMethodFullName: parentMethodFullName)
                 {
                     AssemblyName = GetAssemblyName(symbol: parameter),
                     Location = GetSourceLocation(symbol: parameter),
                     Documentation = docComment?.Summary,
                     DocComment = docComment,
+                    ParentPropertyFullName = parentPropertyFullName,
                 };
             });
     }
@@ -639,7 +652,9 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
     private static IEnumerable<TypeMetadataReference> GetBaseTypes(INamedTypeSymbol symbol)
     {
         if (symbol.BaseType is not null
-            && !symbol.BaseType.SpecialType.Equals(obj: SpecialType.System_Object))
+            && symbol.BaseType.SpecialType is not SpecialType.System_Object
+                and not SpecialType.System_ValueType
+                and not SpecialType.System_Enum)
         {
             yield return CreateTypeReference(symbol: symbol.BaseType, nullableAnnotation: NullableAnnotation.NotAnnotated);
         }

@@ -171,6 +171,7 @@ internal static class TemplateRuntimeCompiler
             "using Parameter = Typewriter.CodeModel.Parameter;",
             "using Property = Typewriter.CodeModel.Property;",
             "using Record = Typewriter.CodeModel.Record;",
+            "using Struct = Typewriter.CodeModel.Struct;",
             "using Type = Typewriter.CodeModel.Type;",
         };
         var references = new List<string>();

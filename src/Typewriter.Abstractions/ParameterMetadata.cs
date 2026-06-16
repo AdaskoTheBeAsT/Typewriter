@@ -16,4 +16,6 @@ public sealed record ParameterMetadata(
     public string? Documentation { get; init; }
 
     public DocCommentMetadata? DocComment { get; init; }
+
+    public string ParentPropertyFullName { get; init; } = string.Empty;
 }

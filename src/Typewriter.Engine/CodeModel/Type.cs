@@ -44,6 +44,8 @@ public class Type : Item
 
     public virtual bool IsPrimitive { get; init; }
 
+    public virtual bool IsStruct { get; init; }
+
     public virtual bool IsTask { get; init; }
 
     public virtual bool IsTimeSpan { get; init; }
@@ -61,6 +63,8 @@ public class Type : Item
     public virtual IInterfaceCollection NestedInterfaces { get; init; } = new InterfaceCollection();
 
     public virtual IRecordCollection NestedRecords { get; init; } = new RecordCollection();
+
+    public virtual IStructCollection NestedStructs { get; init; } = new StructCollection();
 
     public virtual string OriginalName { get; init; } = string.Empty;
 

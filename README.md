@@ -45,6 +45,7 @@
     - [🌱 Environment variables](#-environment-variables)
   - [📝 Template Authoring](#-template-authoring)
     - [Core syntax](#core-syntax)
+    - [Struct and indexer templates](#struct-and-indexer-templates)
     - [Sharing logic between templates: `#load` vs `#r`](#sharing-logic-between-templates-load-vs-r)
     - [Compiled C# helpers](#compiled-c-helpers)
     - [Shared helpers and render completion hooks](#shared-helpers-and-render-completion-hooks)
@@ -62,6 +63,8 @@
   - [🏗️ Architecture](#️-architecture)
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
+  - [Changelog](#changelog)
+    - [4.1.0](#410)
   - [🤝 Contributing](#-contributing)
   - [🐛 Issues and Support](#-issues-and-support)
   - [🙏 Acknowledgments](#-acknowledgments)
@@ -146,8 +149,8 @@ choose a tag, expand **Assets**, then install the matching package.
 The CLI and language server are also published to NuGet as dotnet tools:
 
 ```bash
-dotnet tool install --global AdaskoTheBeAsT.Typewriter.Cli --prerelease
-dotnet tool install --global AdaskoTheBeAsT.Typewriter.LanguageServer --prerelease
+dotnet tool install --global AdaskoTheBeAsT.Typewriter.Cli
+dotnet tool install --global AdaskoTheBeAsT.Typewriter.LanguageServer
 typewriter --help
 ```
 
@@ -344,16 +347,85 @@ Templates are `.tst` files using the original Typewriter dialect — existing te
 
 ### Core syntax
 
-| Construct                                            | Meaning                                                                                          |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `$Classes(filter)[...]`                              | Render block for every matching class (also `$Records`, `$Interfaces`, `$Enums`, `$Delegates`)   |
-| `$Properties[...][separator]`                        | Iterate members (also `$Methods`, `$Parameters`, `$Fields`, `$Constants`, `$Events`, `$Values`)  |
-| `$Name`, `$name`, `$FullName`, `$Namespace`, `$Type` | Scalar substitutions (lowercase first letter via `$name`)                                        |
-| `(*Model)`, `([Attribute])`, `(c => c.IsPublic)`     | Wildcard, attribute, and lambda filters                                                          |
-| `$IsNullable[yes][no]`                               | Conditional true/false blocks                                                                    |
-| `${ ... }`                                           | Compiled C# helper block — write real C# methods used by the template                            |
-| `#r "nuget: PackageId, 1.2.3"`                       | Reference DLLs or NuGet packages (restored automatically) from helper code                       |
-| `#load "shared-helpers.cs"`                          | Include shared C# source helper members from a file relative to the current template/helper file |
+| Construct                                            | Meaning                                                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `$Classes(filter)[...]`                              | Render block for every matching class (also `$Records`, `$Structs`, `$Interfaces`, `$Enums`, `$Delegates`)          |
+| `$Properties[...][separator]`                        | Iterate members, including indexers (also `$Methods`, `$Parameters`, `$Fields`, `$Constants`, `$Events`, `$Values`) |
+| `$Name`, `$name`, `$FullName`, `$Namespace`, `$Type` | Scalar substitutions (lowercase first letter via `$name`)                                                           |
+| `$$`                                                 | Render one literal `$`, for example `$$type` outputs `$type` without treating it as a template member               |
+| `(*Model)`, `([Attribute])`, `(c => c.IsPublic)`     | Wildcard, attribute, and lambda filters                                                                             |
+| `$IsNullable[yes][no]`                               | Conditional true/false blocks                                                                                       |
+| `${ ... }`                                           | Compiled C# helper block — write real C# methods used by the template                                               |
+| `#r "nuget: PackageId, 1.2.3"`                       | Reference DLLs or NuGet packages (restored automatically) from helper code                                          |
+| `#load "shared-helpers.cs"`                          | Include shared C# source helper members from a file relative to the current template/helper file                    |
+
+### Struct and indexer templates
+
+Version `4.1.0` adds first-class struct and indexer support. Structs are useful for DTO generation when your serializer can read and write them. Indexers are exposed for template completeness and lookup-style TypeScript APIs, but they are not JSON payload properties.
+
+Use `$Structs[...]` when value types should be generated separately from classes and records:
+
+```typescript
+$Structs[
+export interface $Name {
+$Properties[
+    $name: $Type;]
+}
+]
+```
+
+You can also filter all available types to structs:
+
+```typescript
+$Types(Struct)[
+export type $NameValue = $Properties[$Type][ | ];
+]
+```
+
+Indexer properties are included in `$Properties[...]`. Use `$IsIndexer` to distinguish them from normal properties, and render indexer parameters through `$Parameters[...]`:
+
+```typescript
+$Classes[
+export interface $NameLookup {
+$Properties[
+    $IsIndexer[
+    get($Parameters[$name: $Type][, ]): $Type;
+    ][
+    $name: $Type;
+    ]]
+}
+]
+```
+
+For this C# type:
+
+```csharp
+public sealed class LocalizedText
+{
+    public string Default { get; init; } = string.Empty;
+
+    public string this[string culture] => Default;
+}
+
+public readonly struct Money
+{
+    public decimal Amount { get; init; }
+    public string Currency { get; init; }
+}
+```
+
+Templates can now generate both the `Money` value shape and a typed lookup signature for `LocalizedText`.
+
+> Indexer note: `System.Text.Json` and Newtonsoft.Json do not deserialize indexers as normal object properties. If the lookup values must round-trip through JSON, expose a real property and generate from that instead:
+
+```csharp
+public sealed class LocalizedTextDto
+{
+    public Dictionary<string, string> Values { get; init; } = [];
+}
+```
+
+Then generate the TypeScript dictionary shape from `Values`, for example `Record<string, string>`.
 
 ### Sharing logic between templates: `#load` vs `#r`
 
@@ -748,6 +820,17 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 - 📗 [`implemented.md`](implemented.md) — everything that is done, in detail
 - 📙 [`to_implement.md`](to_implement.md) — roadmap and backlog
 - 📕 [`compatibility.md`](compatibility.md) — original-Typewriter parity status
+
+---
+
+## Changelog
+
+### 4.1.0
+
+- Added struct metadata and template rendering through `$Structs[...]`, `$Types(Struct)[...]`, CodeModel `Struct`, and LSP/editor completions.
+- Added indexer metadata through `Property.IsIndexer` and property-level `$Parameters[...]`, intended for lookup-style API generation rather than JSON DTO payloads.
+- Added literal dollar escaping with `$$`, so templates can emit `$type`, `${...}`, and other TypeScript dollar syntax without triggering template member lookup.
+- Added tests that cover Roslyn extraction, template rendering, CodeModel parity, and language-server completions for structs and indexers.
 
 ---
 
