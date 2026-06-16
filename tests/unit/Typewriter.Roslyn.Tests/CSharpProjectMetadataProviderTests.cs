@@ -542,6 +542,124 @@ public sealed class CSharpProjectMetadataProviderTests
         }
     }
 
+    [Fact]
+    public async Task GetMetadataCompilesProjectReferencesSeparatelyBeforeMergingMetadata()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Directory.Build.props"),
+                contents: """
+                          <Project>
+                            <PropertyGroup>
+                              <NuGetAudit>false</NuGetAudit>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            var libADirectory = Path.Combine(path1: directory, path2: "LibA");
+            var libBDirectory = Path.Combine(path1: directory, path2: "LibB");
+            var appDirectory = Path.Combine(path1: directory, path2: "App");
+            Directory.CreateDirectory(path: libADirectory);
+            Directory.CreateDirectory(path: libBDirectory);
+            Directory.CreateDirectory(path: appDirectory);
+
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: libADirectory, path2: "LibA.csproj"),
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+                            </ItemGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: libADirectory, path2: "HelperA.cs"),
+                contents: """
+                          using Newtonsoft.Json;
+
+                          namespace LibA;
+
+                          public static class HelperA
+                          {
+                              public static string Serialize(object value) => JsonConvert.SerializeObject(value);
+                          }
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: libBDirectory, path2: "LibB.csproj"),
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+                            </ItemGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: libBDirectory, path2: "HelperB.cs"),
+                contents: """
+                          using Newtonsoft.Json;
+
+                          namespace LibB;
+
+                          public static class HelperB
+                          {
+                              public static string Serialize(object value) => JsonConvert.SerializeObject(value);
+                          }
+                          """);
+
+            var appProjectPath = Path.Combine(path1: appDirectory, path2: "App.csproj");
+            await File.WriteAllTextAsync(
+                path: appProjectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <ProjectReference Include="..\LibA\LibA.csproj" />
+                              <ProjectReference Include="..\LibB\LibB.csproj" />
+                            </ItemGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: appDirectory, path2: "MyModel.cs"),
+                contents: """
+                          namespace App;
+
+                          public sealed class MyModel
+                          {
+                              public int Id { get; set; }
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: appProjectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            Assert.Empty(collection: metadata.Diagnostics);
+            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "App.MyModel");
+            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "LibA.HelperA");
+            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "LibB.HelperB");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(

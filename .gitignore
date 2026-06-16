@@ -176,3 +176,6 @@ rider/build/
 rider/out/
 
 artifacts/
+issues/
+tmp/
+add_features.md

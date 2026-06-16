@@ -60,7 +60,7 @@ public sealed class MsBuildProjectLoaderTests
             Assert.Contains(expected: "System.Collections.Generic", collection: result.GlobalUsings);
             Assert.Contains(collection: result.SourceFiles, filter: path => path.EndsWith(value: "Model.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
             Assert.DoesNotContain(collection: result.SourceFiles, filter: path => path.EndsWith(value: "Excluded.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
-            Assert.Contains(collection: result.SourceFiles, filter: path => path.EndsWith(value: "ReferencedModel.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(collection: result.SourceFiles, filter: path => path.EndsWith(value: "ReferencedModel.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
             Assert.Contains(expected: referencedProjectPath, collection: result.ProjectReferences);
         }
         finally

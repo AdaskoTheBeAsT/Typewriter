@@ -133,27 +133,30 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             state.PreprocessorSymbols.UnionWith(other: result.PreprocessorSymbols);
         }
 
+        var projectReferences = result.ProjectReferences
+            .Select(selector: Path.GetFullPath)
+            .Where(predicate: File.Exists)
+            .ToArray();
+        var projectReferenceDirectories = projectReferences
+            .Select(selector: Path.GetDirectoryName)
+            .Where(predicate: directory => !string.IsNullOrWhiteSpace(value: directory))
+            .Select(selector: directory => Path.GetFullPath(path: directory!))
+            .ToArray();
+
         state.SourceFiles.UnionWith(
             other: result.SourceFiles
                 .Where(predicate: File.Exists)
                 .Where(predicate: IsMetadataSourceFile)
-                .Select(selector: Path.GetFullPath));
+                .Select(selector: Path.GetFullPath)
+                .Where(predicate: path => !IsInAnyDirectory(path: path, directories: projectReferenceDirectories)));
         state.ReferencePaths.UnionWith(
             other: result.References
                 .Where(predicate: File.Exists)
                 .Select(selector: Path.GetFullPath));
 
-        foreach (var projectReference in result.ProjectReferences.Select(selector: Path.GetFullPath).Where(predicate: File.Exists))
+        foreach (var projectReference in projectReferences)
         {
             state.ProjectReferences.Add(item: projectReference);
-            LoadProject(
-                manager: manager,
-                projectPath: projectReference,
-                requestedTargetFramework: requestedTargetFramework ?? result.TargetFramework,
-                isRootProject: false,
-                state: state,
-                solutionProperties: solutionProperties,
-                cancellationToken: cancellationToken);
         }
     }
 
@@ -289,6 +292,21 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         var fileName = Path.GetFileName(path: fullPath);
         return !fileName.EndsWith(value: ".AssemblyInfo.cs", comparisonType: StringComparison.OrdinalIgnoreCase)
             && !fileName.EndsWith(value: ".AssemblyAttributes.cs", comparisonType: StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsInAnyDirectory(
+        string path,
+        IEnumerable<string> directories) =>
+        directories.Any(predicate: directory => IsSameOrChildPath(path: path, root: directory));
+
+    private static bool IsSameOrChildPath(
+        string path,
+        string root)
+    {
+        var relativePath = Path.GetRelativePath(relativeTo: root, path: path);
+        return string.Equals(a: relativePath, b: ".", comparisonType: StringComparison.Ordinal)
+            || (!relativePath.StartsWith(value: "..", comparisonType: StringComparison.Ordinal)
+                && !Path.IsPathRooted(path: relativePath));
     }
 
     private sealed class LoadState
