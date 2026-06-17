@@ -4,6 +4,8 @@ namespace Typewriter.Buildalyzer;
 
 public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
 {
+    private const string CreateSatelliteAssembliesDependsOnPropertyName = "CreateSatelliteAssembliesDependsOn";
+    private const string PrepareForRunDependsOnPropertyName = "PrepareForRunDependsOn";
     private static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
 
     public Task<ProjectLoadResult> LoadAsync(
@@ -238,6 +240,8 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
     {
         var environmentOptions = new global::Buildalyzer.Environment.EnvironmentOptions();
         environmentOptions.Arguments.Add(item: "/nodeReuse:false");
+        environmentOptions.GlobalProperties[key: CreateSatelliteAssembliesDependsOnPropertyName] = string.Empty;
+        environmentOptions.GlobalProperties[key: PrepareForRunDependsOnPropertyName] = string.Empty;
         environmentOptions.GlobalProperties[key: "UseSharedCompilation"] = "false";
         environmentOptions.EnvironmentVariables[key: "MSBUILDDISABLENODEREUSE"] = "1";
 
