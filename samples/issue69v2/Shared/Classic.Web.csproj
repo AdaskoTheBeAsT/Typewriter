@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ProjectGuid>{93A29D7C-49A5-4B41-89DF-9FC0E4E1AE92}</ProjectGuid>
+    <FileAlignment>512</FileAlignment>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Dtos\CustomerDto.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="_Resources\_Services.tst" />
+  </ItemGroup>
+  <Target Name="SimulateLegacyDesignTimeTargetFailure" AfterTargets="CoreCompile" Condition=" '$(DesignTimeBuild)' == 'true' ">
+    <Error Text="Simulated legacy TypeScript design-time target failure." />
+  </Target>
+</Project>

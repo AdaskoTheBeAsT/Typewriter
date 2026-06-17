@@ -110,7 +110,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             return;
         }
 
-        if (!result.Succeeded)
+        if (!result.Succeeded && result.SourceFiles.Length == 0)
         {
             state.Diagnostics.Add(
                 item: new GenerationDiagnostic(
