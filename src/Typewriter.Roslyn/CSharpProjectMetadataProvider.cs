@@ -77,14 +77,20 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
         if (!loadingProjects.Add(item: projectPath))
         {
-            return new ProjectMetadataBuildResult(Metadata: CreateEmptyProjectMetadata(projectPath: projectPath), Compilation: null);
+            return new ProjectMetadataBuildResult(
+                Metadata: CreateEmptyProjectMetadata(projectPath: projectPath),
+                Compilation: null,
+                CompilationReferences: []);
         }
 
         if (!File.Exists(path: projectPath))
         {
             return CacheResult(
                 projectPath: projectPath,
-                result: new ProjectMetadataBuildResult(Metadata: CreateProjectFileMissingMetadata(projectPath: projectPath), Compilation: null),
+                result: new ProjectMetadataBuildResult(
+                    Metadata: CreateProjectFileMissingMetadata(projectPath: projectPath),
+                    Compilation: null,
+                    CompilationReferences: []),
                 loadedProjects: loadedProjects,
                 loadingProjects: loadingProjects);
         }
@@ -94,7 +100,10 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             return CacheResult(
                 projectPath: projectPath,
-                result: new ProjectMetadataBuildResult(Metadata: CreateProjectLoadFailedMetadata(projectPath: projectPath, diagnostics: loadedProject.Diagnostics), Compilation: null),
+                result: new ProjectMetadataBuildResult(
+                    Metadata: CreateProjectLoadFailedMetadata(projectPath: projectPath, diagnostics: loadedProject.Diagnostics),
+                    Compilation: null,
+                    CompilationReferences: []),
                 loadedProjects: loadedProjects,
                 loadingProjects: loadingProjects);
         }
@@ -116,9 +125,12 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         }
 
         var projectReferences = referencedProjects
-            .Select(selector: reference => reference.Compilation)
-            .Where(predicate: compilation => compilation is not null)
-            .Select(selector: compilation => compilation!.ToMetadataReference())
+            .SelectMany(selector: reference => reference.CompilationReferences)
+            .GroupBy(
+                keySelector: reference => Path.GetFullPath(path: reference.ProjectPath),
+                comparer: StringComparer.OrdinalIgnoreCase)
+            .Select(selector: group => group.First())
+            .Select(selector: reference => reference.Compilation.ToMetadataReference())
             .ToArray();
         var currentProject = await CreateCurrentProjectMetadataAsync(
             projectPath: projectPath,
@@ -131,7 +143,11 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 Metadata: MergeProjectMetadata(
                     project: currentProject.Metadata,
                     referencedProjects: referencedProjects.Select(selector: reference => reference.Metadata).ToArray()),
-                Compilation: currentProject.Compilation),
+                Compilation: currentProject.Compilation,
+                CompilationReferences: CreateCompilationReferences(
+                    projectPath: projectPath,
+                    compilation: currentProject.Compilation,
+                    referencedProjects: referencedProjects)),
             loadedProjects: loadedProjects,
             loadingProjects: loadingProjects);
     }
@@ -268,7 +284,43 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 .ToArray(),
         };
 
-        return new ProjectMetadataBuildResult(Metadata: metadata, Compilation: compilation);
+        return new ProjectMetadataBuildResult(
+            Metadata: metadata,
+            Compilation: compilation,
+            CompilationReferences:
+            [
+                new ProjectCompilationReference(ProjectPath: projectPath, Compilation: compilation),
+            ]);
+    }
+
+    private static IReadOnlyList<ProjectCompilationReference> CreateCompilationReferences(
+        string projectPath,
+        CSharpCompilation? compilation,
+        IEnumerable<ProjectMetadataBuildResult> referencedProjects)
+    {
+        var references = new List<ProjectCompilationReference>();
+        var seenProjectPaths = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+
+        if (compilation is not null)
+        {
+            AddReference(reference: new ProjectCompilationReference(ProjectPath: projectPath, Compilation: compilation));
+        }
+
+        foreach (var reference in referencedProjects.SelectMany(selector: referencedProject => referencedProject.CompilationReferences))
+        {
+            AddReference(reference: reference);
+        }
+
+        return references;
+
+        void AddReference(ProjectCompilationReference reference)
+        {
+            var referenceProjectPath = Path.GetFullPath(path: reference.ProjectPath);
+            if (seenProjectPaths.Add(item: referenceProjectPath))
+            {
+                references.Add(item: new ProjectCompilationReference(ProjectPath: referenceProjectPath, Compilation: reference.Compilation));
+            }
+        }
     }
 
     private static ProjectMetadataBuildResult CacheResult(
@@ -1406,7 +1458,12 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
     private sealed record ProjectMetadataBuildResult(
         ProjectMetadata Metadata,
-        CSharpCompilation? Compilation);
+        CSharpCompilation? Compilation,
+        IReadOnlyList<ProjectCompilationReference> CompilationReferences);
+
+    private sealed record ProjectCompilationReference(
+        string ProjectPath,
+        CSharpCompilation Compilation);
 
     private sealed class FileAdditionalText(string path) : AdditionalText
     {
