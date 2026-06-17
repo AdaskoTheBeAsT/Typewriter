@@ -116,40 +116,21 @@ internal static class TypewriterCli
     {
         while (true)
         {
-            using var generationCancellation = CancellationTokenSource.CreateLinkedTokenSource(token: cancellationToken);
             using var changeCancellation = CancellationTokenSource.CreateLinkedTokenSource(token: cancellationToken);
 
-            var generationTask = GenerateAndWriteAsync(options: options, cancellationToken: generationCancellation.Token);
             var changeTask = watcher.WaitForChangeAsync(cancellationToken: changeCancellation.Token);
-            var completedTask = await Task.WhenAny(task1: generationTask, task2: changeTask).ConfigureAwait(continueOnCapturedContext: false);
+            await GenerateAndWriteAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
 
-            if (completedTask == generationTask)
+            await changeCancellation.CancelAsync().ConfigureAwait(continueOnCapturedContext: false);
+            try
             {
-                await changeCancellation.CancelAsync().ConfigureAwait(continueOnCapturedContext: false);
-                try
-                {
-                    await changeTask.ConfigureAwait(continueOnCapturedContext: false);
-                }
-                catch (OperationCanceledException) when (changeCancellation.IsCancellationRequested)
-                {
-                    _ = changeCancellation.IsCancellationRequested;
-                }
-
-                await generationTask.ConfigureAwait(continueOnCapturedContext: false);
+                await changeTask.ConfigureAwait(continueOnCapturedContext: false);
+            }
+            catch (OperationCanceledException) when (changeCancellation.IsCancellationRequested)
+            {
                 return;
             }
 
-            await generationCancellation.CancelAsync().ConfigureAwait(continueOnCapturedContext: false);
-            try
-            {
-                await generationTask.ConfigureAwait(continueOnCapturedContext: false);
-            }
-            catch (OperationCanceledException) when (generationCancellation.IsCancellationRequested)
-            {
-                _ = generationCancellation.IsCancellationRequested;
-            }
-
-            await changeTask.ConfigureAwait(continueOnCapturedContext: false);
             await watcher.WaitForQuietPeriodAsync(quietPeriod: WatchDebounceDelay, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         }
     }

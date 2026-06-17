@@ -661,6 +661,110 @@ public sealed class CSharpProjectMetadataProviderTests
     }
 
     [Fact]
+    public async Task GetMetadataCompilesWithTransitivelyReferencedProject()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var leafDirectory = Path.Combine(path1: directory, path2: "Leaf");
+            var midDirectory = Path.Combine(path1: directory, path2: "Mid");
+            var appDirectory = Path.Combine(path1: directory, path2: "App");
+            Directory.CreateDirectory(path: leafDirectory);
+            Directory.CreateDirectory(path: midDirectory);
+            Directory.CreateDirectory(path: appDirectory);
+
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: leafDirectory, path2: "Leaf.csproj"),
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: leafDirectory, path2: "Widget.cs"),
+                contents: """
+                          namespace Leaf;
+
+                          public sealed class Widget
+                          {
+                              public int Id { get; set; }
+                          }
+                          """);
+
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: midDirectory, path2: "Mid.csproj"),
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <ProjectReference Include="..\Leaf\Leaf.csproj" />
+                            </ItemGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: midDirectory, path2: "MidMarker.cs"),
+                contents: """
+                          namespace Mid;
+
+                          public sealed class MidMarker
+                          {
+                          }
+                          """);
+
+            var appProjectPath = Path.Combine(path1: appDirectory, path2: "App.csproj");
+            await File.WriteAllTextAsync(
+                path: appProjectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <ProjectReference Include="..\Mid\Mid.csproj" />
+                            </ItemGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: appDirectory, path2: "MyModel.cs"),
+                contents: """
+                          using Leaf;
+
+                          namespace App;
+
+                          public sealed class MyModel
+                          {
+                              public Widget Thing { get; set; } = new();
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: appProjectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            Assert.Empty(collection: metadata.Diagnostics);
+            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "Leaf.Widget");
+            var model = Assert.Single(collection: metadata.Types.Where(predicate: type => type.FullName == "App.MyModel"));
+            var thing = Assert.Single(collection: model.Properties.Where(predicate: property => property.Name == "Thing"));
+            Assert.Equal(expected: "Leaf.Widget", actual: thing.Type.FullName);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GetMetadataDoesNotLeakReferencedProjectImplicitGlobalUsings()
     {
         var directory = CreateProjectDirectory();
