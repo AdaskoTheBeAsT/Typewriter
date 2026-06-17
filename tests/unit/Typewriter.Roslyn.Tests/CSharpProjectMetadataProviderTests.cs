@@ -661,6 +661,91 @@ public sealed class CSharpProjectMetadataProviderTests
     }
 
     [Fact]
+    public async Task GetMetadataDoesNotLeakReferencedProjectImplicitGlobalUsings()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var leafDirectory = Path.Combine(path1: directory, path2: "Leaf");
+            var coreDirectory = Path.Combine(path1: directory, path2: "Core");
+            Directory.CreateDirectory(path: leafDirectory);
+            Directory.CreateDirectory(path: Path.Combine(path1: coreDirectory, path2: "Models"));
+
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: leafDirectory, path2: "Leaf.csproj"),
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: leafDirectory, path2: "LeafMarker.cs"),
+                contents: """
+                          namespace Leaf;
+
+                          public sealed class LeafMarker
+                          {
+                          }
+                          """);
+
+            var coreProjectPath = Path.Combine(path1: coreDirectory, path2: "Core.csproj");
+            await File.WriteAllTextAsync(
+                path: coreProjectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <ImplicitUsings>disable</ImplicitUsings>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <ProjectReference Include="..\Leaf\Leaf.csproj" />
+                            </ItemGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: coreDirectory, path2: "Models", path3: "File.cs"),
+                contents: """
+                          namespace Core.Models;
+
+                          public sealed class File
+                          {
+                          }
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: coreDirectory, path2: "MyModel.cs"),
+                contents: """
+                          using Core.Models;
+
+                          namespace Core;
+
+                          public sealed class MyModel
+                          {
+                              public File Attachment { get; set; } = new();
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: coreProjectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            Assert.Empty(collection: metadata.Diagnostics);
+            var model = Assert.Single(collection: metadata.Types.Where(predicate: type => type.FullName == "Core.MyModel"));
+            var attachment = Assert.Single(collection: model.Properties.Where(predicate: property => property.Name == "Attachment"));
+            Assert.Equal(expected: "Core.Models.File", actual: attachment.Type.FullName);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GetMetadataRunsSourceGeneratorsBeforeCollectingDiagnostics()
     {
         var directory = CreateProjectDirectory();
