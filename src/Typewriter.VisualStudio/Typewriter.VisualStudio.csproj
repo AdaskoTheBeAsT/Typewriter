@@ -19,7 +19,9 @@
     <DeployExtension>false</DeployExtension>
     <VsixType>v3</VsixType>
     <TypewriterPackagedCliPublishDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\typewriter-cli\</TypewriterPackagedCliPublishDir>
+    <TypewriterPackagedCliBuildOutputDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\typewriter-cli-build\</TypewriterPackagedCliBuildOutputDir>
     <TypewriterPackagedLanguageServerPublishDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\typewriter-lsp\</TypewriterPackagedLanguageServerPublishDir>
+    <TypewriterPackagedLanguageServerBuildOutputDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\typewriter-lsp-build\</TypewriterPackagedLanguageServerBuildOutputDir>
     <RunAnalyzers>false</RunAnalyzers>
   </PropertyGroup>
 
@@ -44,6 +46,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="MessagePack" Version="2.5.302" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
     <PackageReference Include="Microsoft.VisualStudio.LanguageServer.Client" Version="17.14.60" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" PrivateAssets="all" ExcludeAssets="runtime" />
@@ -52,13 +55,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Typewriter.Cli\Typewriter.Cli.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" />
-    <ProjectReference Include="..\Typewriter.LanguageServer\Typewriter.LanguageServer.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" />
+    <ProjectReference Include="..\Typewriter.Cli\Typewriter.Cli.csproj" ReferenceOutputAssembly="false" BuildReference="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" />
+    <ProjectReference Include="..\Typewriter.LanguageServer\Typewriter.LanguageServer.csproj" ReferenceOutputAssembly="false" BuildReference="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" />
   </ItemGroup>
 
   <Target Name="PublishTypewriterCliForVsix" BeforeTargets="GetVsixSourceItems">
     <RemoveDir Directories="$(TypewriterPackagedCliPublishDir)" />
-    <MSBuild Projects="..\Typewriter.Cli\Typewriter.Cli.csproj" Targets="Restore;Publish" Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(TypewriterPackagedCliPublishDir);SelfContained=false;UseAppHost=false;SatelliteResourceLanguages=en;RunAnalyzers=false" />
+    <RemoveDir Directories="$(TypewriterPackagedCliBuildOutputDir)" />
+    <MSBuild Projects="..\Typewriter.Cli\Typewriter.Cli.csproj" Targets="Restore;Publish" Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(TypewriterPackagedCliPublishDir);BaseOutputPath=$(TypewriterPackagedCliBuildOutputDir);SelfContained=false;UseAppHost=false;SatelliteResourceLanguages=en;RunAnalyzers=false;BuildingInsideVisualStudio=false;BuildProjectReferences=true" BuildInParallel="false" />
     <ItemGroup>
       <TypewriterPackagedCliFile Include="$(TypewriterPackagedCliPublishDir)**\*.*" Exclude="$(TypewriterPackagedCliPublishDir)**\*.pdb;$(TypewriterPackagedCliPublishDir)**\*.xml" />
       <Content Include="@(TypewriterPackagedCliFile)">
@@ -70,7 +74,8 @@
 
   <Target Name="PublishTypewriterLanguageServerForVsix" BeforeTargets="GetVsixSourceItems">
     <RemoveDir Directories="$(TypewriterPackagedLanguageServerPublishDir)" />
-    <MSBuild Projects="..\Typewriter.LanguageServer\Typewriter.LanguageServer.csproj" Targets="Restore;Publish" Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(TypewriterPackagedLanguageServerPublishDir);SelfContained=false;UseAppHost=false;SatelliteResourceLanguages=en;RunAnalyzers=false" />
+    <RemoveDir Directories="$(TypewriterPackagedLanguageServerBuildOutputDir)" />
+    <MSBuild Projects="..\Typewriter.LanguageServer\Typewriter.LanguageServer.csproj" Targets="Restore;Publish" Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(TypewriterPackagedLanguageServerPublishDir);BaseOutputPath=$(TypewriterPackagedLanguageServerBuildOutputDir);SelfContained=false;UseAppHost=false;SatelliteResourceLanguages=en;RunAnalyzers=false;BuildingInsideVisualStudio=false;BuildProjectReferences=true" BuildInParallel="false" />
     <ItemGroup>
       <TypewriterPackagedLanguageServerFile Include="$(TypewriterPackagedLanguageServerPublishDir)**\*.*" Exclude="$(TypewriterPackagedLanguageServerPublishDir)**\*.pdb;$(TypewriterPackagedLanguageServerPublishDir)**\*.xml" />
       <Content Include="@(TypewriterPackagedLanguageServerFile)">
