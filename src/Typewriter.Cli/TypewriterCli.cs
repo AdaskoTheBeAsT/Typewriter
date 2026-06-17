@@ -119,14 +119,26 @@ internal static class TypewriterCli
             using var changeCancellation = CancellationTokenSource.CreateLinkedTokenSource(token: cancellationToken);
 
             var changeTask = watcher.WaitForChangeAsync(cancellationToken: changeCancellation.Token);
-            await GenerateAndWriteAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
-
-            await changeCancellation.CancelAsync().ConfigureAwait(continueOnCapturedContext: false);
+            var changeObserved = false;
             try
             {
-                await changeTask.ConfigureAwait(continueOnCapturedContext: false);
+                await GenerateAndWriteAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             }
-            catch (OperationCanceledException) when (changeCancellation.IsCancellationRequested)
+            finally
+            {
+                await changeCancellation.CancelAsync().ConfigureAwait(continueOnCapturedContext: false);
+                try
+                {
+                    await changeTask.ConfigureAwait(continueOnCapturedContext: false);
+                    changeObserved = true;
+                }
+                catch (OperationCanceledException) when (changeCancellation.IsCancellationRequested)
+                {
+                    changeObserved = false;
+                }
+            }
+
+            if (!changeObserved)
             {
                 return;
             }
