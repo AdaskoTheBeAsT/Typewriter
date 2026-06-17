@@ -172,6 +172,43 @@ public sealed class MsBuildProjectLoaderTests
     }
 
     [Fact]
+    public async Task LoadAsyncUsesCompilerInputsWhenDesignTimeTargetFails()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <DesignTimeBuild>true</DesignTimeBuild>
+                            </PropertyGroup>
+                            <Target Name="FailLegacyDesignTimeTarget" AfterTargets="CoreCompile" Condition=" '$(DesignTimeBuild)' == 'true' ">
+                              <Error Text="Simulated legacy design-time target failure." />
+                            </Target>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(path: Path.Combine(path1: directory, path2: "Model.cs"), contents: "namespace Sample; public sealed class Model { }");
+
+            var loader = new MsBuildProjectLoader();
+
+            var result = await loader.LoadAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory, TargetFramework: "net10.0"),
+                cancellationToken: CancellationToken.None);
+
+            Assert.Empty(collection: result.Diagnostics);
+            Assert.Contains(collection: result.SourceFiles, filter: path => path.EndsWith(value: "Model.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task LoadAsyncUsesSolutionPropertiesFromSlnxWorkspace()
     {
         var directory = CreateProjectDirectory();
