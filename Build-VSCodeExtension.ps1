@@ -80,7 +80,8 @@ function Publish-FrameworkDependentTool {
         "-p:UseAppHost=false",
         "-p:SatelliteResourceLanguages=en",
         "-p:RunAnalyzers=false",
-        "-p:BaseOutputPath=$buildOutputPath"
+        "-p:BaseOutputPath=$buildOutputPath",
+        "-m:1"
     )
 
     foreach ($requiredFile in @("$AssemblyName.dll", "$AssemblyName.deps.json", "$AssemblyName.runtimeconfig.json")) {
@@ -207,9 +208,13 @@ try {
         "extension/tools/typewriter-cli/Typewriter.Cli.dll",
         "extension/tools/typewriter-cli/Typewriter.Cli.deps.json",
         "extension/tools/typewriter-cli/Typewriter.Cli.runtimeconfig.json",
+        "extension/tools/typewriter-cli/Buildalyzer.Logger.dll",
+        "extension/tools/typewriter-cli/Buildalyzer.Logger/net472/Buildalyzer.Logger.dll",
         "extension/tools/typewriter-lsp/Typewriter.LanguageServer.dll",
         "extension/tools/typewriter-lsp/Typewriter.LanguageServer.deps.json",
-        "extension/tools/typewriter-lsp/Typewriter.LanguageServer.runtimeconfig.json"
+        "extension/tools/typewriter-lsp/Typewriter.LanguageServer.runtimeconfig.json",
+        "extension/tools/typewriter-lsp/Buildalyzer.Logger.dll",
+        "extension/tools/typewriter-lsp/Buildalyzer.Logger/net472/Buildalyzer.Logger.dll"
     )) {
         if ($requiredEntry -notin $entries) {
             throw "VS Code VSIX is missing expected entry: $requiredEntry"

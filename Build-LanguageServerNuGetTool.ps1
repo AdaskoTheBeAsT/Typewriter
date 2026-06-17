@@ -20,6 +20,11 @@ $directoryBuildPropsPath = Join-Path $repoRoot "Directory.Build.props"
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $repoRoot "artifacts"
 }
+elseif (-not [System.IO.Path]::IsPathRooted($OutputDirectory)) {
+    $OutputDirectory = Join-Path $repoRoot $OutputDirectory
+}
+
+$OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 
 function Invoke-ExternalCommand {
     param(
@@ -93,6 +98,16 @@ if ($NoRestore) {
 if ($NoBuild) {
     $packArguments += "--no-build"
 }
+else {
+    $buildOutputPath = Join-Path $OutputDirectory "build-output/$assemblyName/"
+    if (Test-Path -LiteralPath $buildOutputPath) {
+        Remove-Item -LiteralPath $buildOutputPath -Recurse -Force
+    }
+
+    $packArguments += "-p:BaseOutputPath=$buildOutputPath"
+}
+
+$packArguments += "-m:1"
 
 Invoke-ExternalCommand "dotnet" $packArguments
 
@@ -113,7 +128,9 @@ try {
 
     foreach ($requiredEntry in @(
         "tools/$targetFramework/any/DotnetToolSettings.xml",
-        "tools/$targetFramework/any/$assemblyName.dll"
+        "tools/$targetFramework/any/$assemblyName.dll",
+        "tools/$targetFramework/any/Buildalyzer.Logger.dll",
+        "tools/$targetFramework/any/Buildalyzer.Logger/net472/Buildalyzer.Logger.dll"
     )) {
         if ($requiredEntry -notin $entries) {
             throw "Language server NuGet tool package is missing expected entry: $requiredEntry"

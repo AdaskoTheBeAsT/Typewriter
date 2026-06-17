@@ -70,8 +70,11 @@ function Publish-FrameworkDependentTool {
         [string] $AssemblyName
     )
 
-    if (Test-Path -LiteralPath $OutputPath) {
-        Remove-Item -LiteralPath $OutputPath -Recurse -Force
+    $buildOutputPath = Join-Path $toolRoot "build-output/$AssemblyName/"
+    foreach ($pathToReset in @($OutputPath, $buildOutputPath)) {
+        if (Test-Path -LiteralPath $pathToReset) {
+            Remove-Item -LiteralPath $pathToReset -Recurse -Force
+        }
     }
 
     New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
@@ -85,7 +88,9 @@ function Publish-FrameworkDependentTool {
         "--output", $OutputPath,
         "-p:UseAppHost=false",
         "-p:SatelliteResourceLanguages=en",
-        "-p:RunAnalyzers=false"
+        "-p:RunAnalyzers=false",
+        "-p:BaseOutputPath=$buildOutputPath",
+        "-m:1"
     )
 
     foreach ($requiredFile in @("$AssemblyName.dll", "$AssemblyName.deps.json", "$AssemblyName.runtimeconfig.json")) {
@@ -201,9 +206,13 @@ try {
         "typewriter-rider/tools/typewriter-cli/Typewriter.Cli.dll",
         "typewriter-rider/tools/typewriter-cli/Typewriter.Cli.deps.json",
         "typewriter-rider/tools/typewriter-cli/Typewriter.Cli.runtimeconfig.json",
+        "typewriter-rider/tools/typewriter-cli/Buildalyzer.Logger.dll",
+        "typewriter-rider/tools/typewriter-cli/Buildalyzer.Logger/net472/Buildalyzer.Logger.dll",
         "typewriter-rider/tools/typewriter-lsp/Typewriter.LanguageServer.dll",
         "typewriter-rider/tools/typewriter-lsp/Typewriter.LanguageServer.deps.json",
-        "typewriter-rider/tools/typewriter-lsp/Typewriter.LanguageServer.runtimeconfig.json"
+        "typewriter-rider/tools/typewriter-lsp/Typewriter.LanguageServer.runtimeconfig.json",
+        "typewriter-rider/tools/typewriter-lsp/Buildalyzer.Logger.dll",
+        "typewriter-rider/tools/typewriter-lsp/Buildalyzer.Logger/net472/Buildalyzer.Logger.dll"
     )) {
         if ($requiredEntry -notin $entries) {
             throw "Rider plugin ZIP is missing expected entry: $requiredEntry"

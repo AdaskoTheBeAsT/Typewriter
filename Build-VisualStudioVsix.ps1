@@ -92,9 +92,13 @@ try {
         "tools/typewriter-cli/Typewriter.Cli.dll",
         "tools/typewriter-cli/Typewriter.Cli.deps.json",
         "tools/typewriter-cli/Typewriter.Cli.runtimeconfig.json",
+        "tools/typewriter-cli/Buildalyzer.Logger.dll",
+        "tools/typewriter-cli/Buildalyzer.Logger/net472/Buildalyzer.Logger.dll",
         "tools/typewriter-lsp/Typewriter.LanguageServer.dll",
         "tools/typewriter-lsp/Typewriter.LanguageServer.deps.json",
-        "tools/typewriter-lsp/Typewriter.LanguageServer.runtimeconfig.json"
+        "tools/typewriter-lsp/Typewriter.LanguageServer.runtimeconfig.json",
+        "tools/typewriter-lsp/Buildalyzer.Logger.dll",
+        "tools/typewriter-lsp/Buildalyzer.Logger/net472/Buildalyzer.Logger.dll"
     )) {
         if ($requiredEntry -notin $entries) {
             throw "Visual Studio VSIX is missing expected entry: $requiredEntry"
