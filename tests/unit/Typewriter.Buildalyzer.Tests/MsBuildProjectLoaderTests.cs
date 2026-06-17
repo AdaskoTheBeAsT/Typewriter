@@ -184,6 +184,7 @@ public sealed class MsBuildProjectLoaderTests
                           <Project Sdk="Microsoft.NET.Sdk">
                             <PropertyGroup>
                               <TargetFramework>net10.0</TargetFramework>
+                              <DesignTimeBuild>true</DesignTimeBuild>
                             </PropertyGroup>
                             <Target Name="FailLegacyDesignTimeTarget" AfterTargets="CoreCompile" Condition=" '$(DesignTimeBuild)' == 'true' ">
                               <Error Text="Simulated legacy design-time target failure." />
