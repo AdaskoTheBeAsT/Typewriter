@@ -103,6 +103,43 @@ public sealed class MsBuildProjectLoaderTests
     }
 
     [Fact]
+    public async Task LoadAsyncParsesSdkProjectWithLocalizedResources()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "App.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(path: Path.Combine(path1: directory, path2: "MyModel.cs"), contents: "namespace App; public sealed class MyModel { public int Id { get; set; } }");
+            await File.WriteAllTextAsync(path: Path.Combine(path1: directory, path2: "Strings.resx"), contents: CreateResxContent(value: "Hello"));
+            await File.WriteAllTextAsync(path: Path.Combine(path1: directory, path2: "Strings.de.resx"), contents: CreateResxContent(value: "Hallo"));
+
+            var loader = new MsBuildProjectLoader();
+
+            var result = await loader.LoadAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory, TargetFramework: "net10.0"),
+                cancellationToken: CancellationToken.None);
+
+            Assert.Empty(collection: result.Diagnostics);
+            Assert.Contains(collection: result.SourceFiles, filter: path => path.EndsWith(value: "MyModel.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task LoadAsyncKeepsCurrentProjectSourcesWhenProjectReferenceSharesDirectory()
     {
         var directory = CreateProjectDirectory();
@@ -266,6 +303,28 @@ public sealed class MsBuildProjectLoaderTests
         Directory.CreateDirectory(path: directory);
         return directory;
     }
+
+    private static string CreateResxContent(string value) =>
+        $"""
+         <?xml version="1.0" encoding="utf-8"?>
+         <root>
+           <resheader name="resmimetype">
+             <value>text/microsoft-resx</value>
+           </resheader>
+           <resheader name="version">
+             <value>2.0</value>
+           </resheader>
+           <resheader name="reader">
+             <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+           </resheader>
+           <resheader name="writer">
+             <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+           </resheader>
+           <data name="Greeting" xml:space="preserve">
+             <value>{value}</value>
+           </data>
+         </root>
+         """;
 
     private static async Task DeleteDirectoryWithRetryAsync(string directory)
     {
