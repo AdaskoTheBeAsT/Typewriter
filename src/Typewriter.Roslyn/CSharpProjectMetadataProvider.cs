@@ -470,10 +470,14 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             .Where(predicate: File.Exists)
             .Select(selector: path => new FileAdditionalText(path: path))
             .ToArray();
+        var analyzerConfigOptionsProvider = CreateAnalyzerConfigOptionsProvider(
+            analyzerConfigFiles: loadedProject.AnalyzerConfigFiles,
+            cancellationToken: cancellationToken);
         var driver = CSharpGeneratorDriver.Create(
             generators: generators,
             additionalTexts: additionalTexts,
-            parseOptions: parseOptions);
+            parseOptions: parseOptions,
+            optionsProvider: analyzerConfigOptionsProvider);
         _ = driver.RunGeneratorsAndUpdateCompilation(
             compilation: compilation,
             outputCompilation: out var updatedCompilation,
@@ -481,6 +485,79 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             cancellationToken: cancellationToken);
 
         return (CSharpCompilation)updatedCompilation;
+    }
+
+    private static AnalyzerConfigOptionsProvider CreateAnalyzerConfigOptionsProvider(
+        IReadOnlyList<string> analyzerConfigFiles,
+        CancellationToken cancellationToken) =>
+        new ProjectAnalyzerConfigOptionsProvider(
+            globalOptions: LoadGlobalAnalyzerConfigOptions(
+                analyzerConfigFiles: analyzerConfigFiles,
+                cancellationToken: cancellationToken));
+
+    private static IReadOnlyDictionary<string, string> LoadGlobalAnalyzerConfigOptions(
+        IEnumerable<string> analyzerConfigFiles,
+        CancellationToken cancellationToken)
+    {
+        var options = new Dictionary<string, string>(comparer: StringComparer.OrdinalIgnoreCase);
+        foreach (var analyzerConfigFile in analyzerConfigFiles.Where(predicate: File.Exists).Distinct(comparer: StringComparer.OrdinalIgnoreCase))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var fileOptions = new Dictionary<string, string>(comparer: StringComparer.OrdinalIgnoreCase);
+            var isGlobal = false;
+
+#pragma warning disable SCS0018,SEC0116
+            foreach (var line in File.ReadLines(path: analyzerConfigFile))
+#pragma warning restore SCS0018,SEC0116
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var trimmedLine = line.Trim();
+                if (trimmedLine.Length == 0
+                    || trimmedLine.StartsWith(value: '#')
+                    || trimmedLine.StartsWith(value: ';'))
+                {
+                    continue;
+                }
+
+                if (trimmedLine.StartsWith(value: '['))
+                {
+                    break;
+                }
+
+                var separatorIndex = trimmedLine.IndexOf(value: '=');
+                if (separatorIndex < 0)
+                {
+                    continue;
+                }
+
+                var key = trimmedLine[..separatorIndex].Trim();
+                if (key.Length == 0)
+                {
+                    continue;
+                }
+
+                var value = trimmedLine[(separatorIndex + 1)..].Trim();
+                if (key.Equals(value: "is_global", comparisonType: StringComparison.OrdinalIgnoreCase))
+                {
+                    isGlobal = value.Equals(value: "true", comparisonType: StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+
+                fileOptions[key: key] = value;
+            }
+
+            if (!isGlobal)
+            {
+                continue;
+            }
+
+            foreach (var option in fileOptions)
+            {
+                options[key: option.Key] = option.Value;
+            }
+        }
+
+        return options;
     }
 
     private static IEnumerable<ISourceGenerator> CreateSourceGenerators(
@@ -1537,6 +1614,36 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 #pragma warning disable SCS0018,SEC0116
             return SourceText.From(text: File.ReadAllText(path: Path));
 #pragma warning restore SCS0018,SEC0116
+        }
+    }
+
+    private sealed class ProjectAnalyzerConfigOptionsProvider(IReadOnlyDictionary<string, string> globalOptions) : AnalyzerConfigOptionsProvider
+    {
+        private readonly AnalyzerConfigOptions _globalOptions = new ProjectAnalyzerConfigOptions(options: globalOptions);
+
+        public override AnalyzerConfigOptions GlobalOptions => _globalOptions;
+
+        public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => _globalOptions;
+
+        public override AnalyzerConfigOptions GetOptions(AdditionalText textFile) => _globalOptions;
+    }
+
+    private sealed class ProjectAnalyzerConfigOptions(IReadOnlyDictionary<string, string> options) : AnalyzerConfigOptions
+    {
+        public override IEnumerable<string> Keys => options.Keys;
+
+        public override bool TryGetValue(
+            string key,
+            out string value)
+        {
+            if (options.TryGetValue(key: key, value: out var optionValue))
+            {
+                value = optionValue;
+                return true;
+            }
+
+            value = string.Empty;
+            return false;
         }
     }
 

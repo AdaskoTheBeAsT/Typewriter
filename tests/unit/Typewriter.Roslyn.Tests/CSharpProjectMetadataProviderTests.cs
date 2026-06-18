@@ -221,6 +221,48 @@ public sealed class CSharpProjectMetadataProviderTests
     }
 
     [Fact]
+    public async Task GetMetadataLoadsWebSdkProjectWithRazorSourceGenerators()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "WebSample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk.Web">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Model.cs"),
+                contents: """
+                          namespace WebSample;
+
+                          public sealed class WeatherForecast
+                          {
+                              public string? Summary { get; init; }
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().BeEmpty();
+            metadata.Types.Should().ContainSingle(type => type.Name == "WeatherForecast");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GetMetadataUsesNullableContextAtDeclarationPosition()
     {
         var directory = CreateProjectDirectory();

@@ -1,7 +1,7 @@
 package com.adaskothebeast.typewriter.rider
 
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.fileTypes.LanguageFileType
+import com.intellij.openapi.util.IconLoader
 import javax.swing.Icon
 
 class TypewriterFileType private constructor() : LanguageFileType(TypewriterLanguage) {
@@ -11,7 +11,7 @@ class TypewriterFileType private constructor() : LanguageFileType(TypewriterLang
 
     override fun getDefaultExtension(): String = "tst"
 
-    override fun getIcon(): Icon = AllIcons.FileTypes.Text
+    override fun getIcon(): Icon = IconLoader.getIcon("/icons/typewriter.svg", TypewriterFileType::class.java)
 
     companion object {
         @JvmField

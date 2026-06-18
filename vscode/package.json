@@ -42,7 +42,11 @@
         "extensions": [
           ".tst"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/tst-light.png",
+          "dark": "./images/tst-dark.png"
+        }
       }
     ],
     "grammars": [

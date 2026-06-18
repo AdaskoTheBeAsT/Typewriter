@@ -27,7 +27,14 @@
 
   <ItemGroup>
     <None Include="source.extension.vsixmanifest" SubType="Designer" />
-    <VSCTCompile Include="TypewriterPackage.vsct" />
+    <VSCTCompile Include="TypewriterPackage.vsct">
+      <ResourceName>Menus.ctmenu</ResourceName>
+    </VSCTCompile>
+    <EmbeddedResource Update="VSPackage.resx">
+      <MergeWithCTO>true</MergeWithCTO>
+      <ManifestResourceName>Menus.ctmenu</ManifestResourceName>
+      <GenerateSource>false</GenerateSource>
+    </EmbeddedResource>
   </ItemGroup>
   
   <ItemGroup>
@@ -35,6 +42,21 @@
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
     <Content Include="vsix-preview-200.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="Resources\TypewriterIcons.imagemanifest" />
+    <None Remove="Resources\typewriter-light-16.png" />
+    <None Remove="Resources\typewriter-light-32.png" />
+    <None Remove="Resources\typewriter-dark-16.png" />
+    <None Remove="Resources\typewriter-dark-32.png" />
+    <Resource Include="Resources\typewriter-light-16.png" />
+    <Resource Include="Resources\typewriter-light-32.png" />
+    <Resource Include="Resources\typewriter-dark-16.png" />
+    <Resource Include="Resources\typewriter-dark-32.png" />
+    <Content Include="Resources\TypewriterIcons.imagemanifest">
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
   </ItemGroup>

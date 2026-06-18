@@ -169,6 +169,11 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
                 .Select(selector: path => ResolveProjectRelativePath(projectPath: result.ProjectFilePath, path: path))
                 .Where(predicate: File.Exists)
                 .Select(selector: Path.GetFullPath));
+        state.AnalyzerConfigFiles.UnionWith(
+            other: result.AnalyzerConfigFiles
+                .Select(selector: path => ResolveProjectRelativePath(projectPath: result.ProjectFilePath, path: path))
+                .Where(predicate: File.Exists)
+                .Select(selector: Path.GetFullPath));
 
         foreach (var projectReference in projectReferences)
         {
@@ -264,6 +269,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             ReferencePaths: [],
             AnalyzerReferences: [],
             AdditionalFiles: [],
+            AnalyzerConfigFiles: [],
             Diagnostics:
             [
                 new GenerationDiagnostic(
@@ -384,6 +390,8 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
 
         public HashSet<string> AdditionalFiles { get; } = new(comparer: PathComparer);
 
+        public HashSet<string> AnalyzerConfigFiles { get; } = new(comparer: PathComparer);
+
         public List<GenerationDiagnostic> Diagnostics { get; } = [];
 
         public ProjectLoadResult ToResult() =>
@@ -400,6 +408,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
                 ReferencePaths: ReferencePaths.Order(comparer: StringComparer.OrdinalIgnoreCase).ToArray(),
                 AnalyzerReferences: AnalyzerReferences.Order(comparer: StringComparer.OrdinalIgnoreCase).ToArray(),
                 AdditionalFiles: AdditionalFiles.Order(comparer: StringComparer.OrdinalIgnoreCase).ToArray(),
+                AnalyzerConfigFiles: AnalyzerConfigFiles.Order(comparer: StringComparer.OrdinalIgnoreCase).ToArray(),
                 Diagnostics: Diagnostics.ToArray());
     }
 }

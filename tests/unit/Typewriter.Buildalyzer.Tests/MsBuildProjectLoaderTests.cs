@@ -294,6 +294,43 @@ public sealed class MsBuildProjectLoaderTests
         }
     }
 
+    [Fact]
+    public async Task LoadAsyncIncludesGeneratedAnalyzerConfigFiles()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "WebSample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk.Web">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(path: Path.Combine(path1: directory, path2: "Model.cs"), contents: "namespace WebSample; public sealed class Model { }");
+
+            var loader = new MsBuildProjectLoader();
+
+            var result = await loader.LoadAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory, TargetFramework: "net10.0"),
+                cancellationToken: CancellationToken.None);
+
+            result.Diagnostics.Should().BeEmpty();
+            var analyzerConfigFile = result.AnalyzerConfigFiles.Should()
+                .ContainSingle(path => path.EndsWith(value: ".GeneratedMSBuildEditorConfig.editorconfig", comparisonType: StringComparison.OrdinalIgnoreCase))
+                .Which;
+            var analyzerConfig = await File.ReadAllTextAsync(path: analyzerConfigFile);
+            analyzerConfig.Should().Contain("build_property.RazorLangVersion");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(
