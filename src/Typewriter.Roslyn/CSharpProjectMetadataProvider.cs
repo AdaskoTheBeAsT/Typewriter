@@ -1075,25 +1075,60 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
     private static TypeMetadataReference CreateTypeReference(
         ITypeSymbol symbol,
-        NullableAnnotation nullableAnnotation)
+        NullableAnnotation nullableAnnotation) =>
+        CreateTypeReference(
+            symbol: symbol,
+            nullableAnnotation: nullableAnnotation,
+            visitedSymbols: new HashSet<ITypeSymbol>(comparer: SymbolEqualityComparer.Default));
+
+    private static TypeMetadataReference CreateTypeReference(
+        ITypeSymbol symbol,
+        NullableAnnotation nullableAnnotation,
+        ISet<ITypeSymbol> visitedSymbols)
+    {
+        if (!visitedSymbols.Add(item: symbol))
+        {
+            return CreateShallowTypeReference(symbol: symbol, nullableAnnotation: nullableAnnotation);
+        }
+
+        try
+        {
+            return CreateTypeReferenceCore(symbol: symbol, nullableAnnotation: nullableAnnotation, visitedSymbols: visitedSymbols);
+        }
+        finally
+        {
+            visitedSymbols.Remove(item: symbol);
+        }
+    }
+
+    private static TypeMetadataReference CreateTypeReferenceCore(
+        ITypeSymbol symbol,
+        NullableAnnotation nullableAnnotation,
+        ISet<ITypeSymbol> visitedSymbols)
     {
         if (symbol is INamedTypeSymbol namedType
             && IsNullableValueType(symbol: namedType)
             && namedType.TypeArguments.Length == 1)
         {
-            var inner = CreateTypeReference(symbol: namedType.TypeArguments[index: 0], nullableAnnotation: NullableAnnotation.Annotated);
+            var inner = CreateTypeReference(
+                symbol: namedType.TypeArguments[index: 0],
+                nullableAnnotation: NullableAnnotation.Annotated,
+                visitedSymbols: visitedSymbols);
             return inner with
             {
                 IsNullable = true,
             };
         }
 
-        var elementType = GetElementType(symbol: symbol);
+        var elementType = GetElementType(symbol: symbol, visitedSymbols: visitedSymbols);
         var typeArguments = symbol is INamedTypeSymbol genericType
             ? genericType.TypeArguments
                 .Zip(
                     second: genericType.TypeArgumentNullableAnnotations,
-                    resultSelector: static (argument, annotation) => CreateTypeReference(symbol: argument, nullableAnnotation: annotation))
+                    resultSelector: (argument, annotation) => CreateTypeReference(
+                        symbol: argument,
+                        nullableAnnotation: annotation,
+                        visitedSymbols: visitedSymbols))
                 .ToArray()
             : [];
 
@@ -1112,14 +1147,39 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             AssemblyName = GetAssemblyName(symbol: symbol),
             IsValueTuple = IsValueTuple(symbol: symbol),
-            TupleElements = GetTupleElements(symbol: symbol).ToArray(),
+            TupleElements = GetTupleElements(symbol: symbol, visitedSymbols: visitedSymbols).ToArray(),
             EnumValues = symbol is INamedTypeSymbol enumType
                 ? GetEnumValues(symbol: enumType).ToArray()
                 : [],
         };
     }
 
-    private static TypeMetadataReference? GetElementType(ITypeSymbol symbol)
+    private static TypeMetadataReference CreateShallowTypeReference(
+        ITypeSymbol symbol,
+        NullableAnnotation nullableAnnotation) =>
+        new(
+            Name: GetDisplayName(symbol: symbol),
+            FullName: GetFullName(symbol: symbol),
+            Namespace: GetNamespace(symbol: symbol),
+            IsNullable: nullableAnnotation == NullableAnnotation.Annotated,
+            IsCollection: false,
+            IsDictionary: IsDictionary(symbol: symbol),
+            IsEnum: IsEnum(symbol: symbol),
+            IsPrimitive: IsPrimitive(symbol: symbol),
+            IsDateLike: IsDateLike(symbol: symbol),
+            ElementType: null,
+            TypeArguments: [])
+        {
+            AssemblyName = GetAssemblyName(symbol: symbol),
+            IsValueTuple = IsValueTuple(symbol: symbol),
+            EnumValues = symbol is INamedTypeSymbol enumType
+                ? GetEnumValues(symbol: enumType).ToArray()
+                : [],
+        };
+
+    private static TypeMetadataReference? GetElementType(
+        ITypeSymbol symbol,
+        ISet<ITypeSymbol> visitedSymbols)
     {
         if (symbol.SpecialType == SpecialType.System_String)
         {
@@ -1128,7 +1188,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
         if (symbol is IArrayTypeSymbol arrayType)
         {
-            return CreateTypeReference(symbol: arrayType.ElementType, nullableAnnotation: arrayType.ElementNullableAnnotation);
+            return CreateTypeReference(symbol: arrayType.ElementType, nullableAnnotation: arrayType.ElementNullableAnnotation, visitedSymbols: visitedSymbols);
         }
 
         if (symbol is not INamedTypeSymbol namedType)
@@ -1151,7 +1211,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         var annotation = enumerable.TypeArgumentNullableAnnotations.Length > 0
             ? enumerable.TypeArgumentNullableAnnotations[index: 0]
             : NullableAnnotation.NotAnnotated;
-        return CreateTypeReference(symbol: enumerable.TypeArguments[index: 0], nullableAnnotation: annotation);
+        return CreateTypeReference(symbol: enumerable.TypeArguments[index: 0], nullableAnnotation: annotation, visitedSymbols: visitedSymbols);
     }
 
     private static bool IsDictionary(ITypeSymbol symbol)
@@ -1184,7 +1244,9 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         return symbol is INamedTypeSymbol { IsTupleType: true };
     }
 
-    private static IEnumerable<FieldMetadata> GetTupleElements(ITypeSymbol symbol)
+    private static IEnumerable<FieldMetadata> GetTupleElements(
+        ITypeSymbol symbol,
+        ISet<ITypeSymbol> visitedSymbols)
     {
         if (symbol is not INamedTypeSymbol { IsTupleType: true } tupleType)
         {
@@ -1196,7 +1258,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 Name: field.Name,
                 FullName: field.ToDisplayString(format: SymbolDisplayFormat.CSharpErrorMessageFormat),
                 Accessibility: MapAccessibility(accessibility: field.DeclaredAccessibility),
-                Type: CreateTypeReference(symbol: field.Type, nullableAnnotation: field.NullableAnnotation),
+                Type: CreateTypeReference(symbol: field.Type, nullableAnnotation: field.NullableAnnotation, visitedSymbols: visitedSymbols),
                 Attributes: GetAttributes(attributes: field.GetAttributes()).ToArray(),
                 ParentTypeFullName: GetFullName(symbol: tupleType))
             {

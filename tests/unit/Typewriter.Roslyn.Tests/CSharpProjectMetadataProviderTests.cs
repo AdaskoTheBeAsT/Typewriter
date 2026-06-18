@@ -906,6 +906,85 @@ public sealed class CSharpProjectMetadataProviderTests
         }
     }
 
+    [Fact]
+    public async Task GetMetadataTruncatesCircularEnumerableTypeReferences()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Models.cs"),
+                contents: """
+                          using System.Collections;
+                          using System.Collections.Generic;
+
+                          namespace Sample;
+
+                          public sealed class SelfEnumerable : IEnumerable<SelfEnumerable>
+                          {
+                              public IEnumerator<SelfEnumerable> GetEnumerator() => throw new System.NotImplementedException();
+
+                              IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+                          }
+
+                          public sealed class Holder
+                          {
+                              public SelfEnumerable Property { get; init; } = new();
+
+                              public SelfEnumerable Field = new();
+
+                              public SelfEnumerable Create() => new();
+
+                              public void Handle(SelfEnumerable parameter)
+                              {
+                              }
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            Assert.Empty(collection: metadata.Diagnostics);
+            var holder = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "Holder"));
+            var property = Assert.Single(collection: holder.Properties.Where(predicate: item => item.Name == "Property"));
+            AssertTruncatedSelfEnumerable(type: property.Type);
+            var field = Assert.Single(collection: holder.Fields.Where(predicate: item => item.Name == "Field"));
+            AssertTruncatedSelfEnumerable(type: field.Type);
+            var create = Assert.Single(collection: holder.Methods.Where(predicate: item => item.Name == "Create"));
+            AssertTruncatedSelfEnumerable(type: create.ReturnType);
+            var handle = Assert.Single(collection: holder.Methods.Where(predicate: item => item.Name == "Handle"));
+            var parameter = Assert.Single(collection: handle.Parameters.Where(predicate: item => item.Name == "parameter"));
+            AssertTruncatedSelfEnumerable(type: parameter.Type);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+
+        static void AssertTruncatedSelfEnumerable(TypeMetadataReference type)
+        {
+            Assert.Equal(expected: "SelfEnumerable", actual: type.Name);
+            Assert.True(condition: type.IsCollection);
+            Assert.Equal(expected: "SelfEnumerable", actual: type.ElementType?.Name);
+            Assert.False(condition: type.ElementType?.IsCollection);
+            Assert.Null(@object: type.ElementType?.ElementType);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(
