@@ -66,18 +66,16 @@ public sealed class ExternalRecipeSnapshotTests
                     Configuration: configuration),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: FormatDiagnostics(diagnostics: result.Diagnostics));
-            Assert.NotEmpty(collection: result.GeneratedFiles);
+            result.Success.Should().BeTrue(because: FormatDiagnostics(diagnostics: result.Diagnostics));
+            result.GeneratedFiles.Should().NotBeEmpty();
 
             var actualFiles = new Dictionary<string, string>(comparer: StringComparer.Ordinal);
             foreach (var generatedFile in result.GeneratedFiles)
             {
-                Assert.Equal(expected: workspace, actual: Path.GetDirectoryName(path: generatedFile.Path));
-                Assert.DoesNotContain(expectedSubstring: "\r\n", actualString: generatedFile.Content, comparisonType: StringComparison.Ordinal);
+                Path.GetDirectoryName(path: generatedFile.Path).Should().Be(workspace);
+                generatedFile.Content.Should().NotContain("\r\n");
                 var fileName = Path.GetFileName(path: generatedFile.Path);
-                Assert.False(
-                    condition: actualFiles.ContainsKey(key: fileName),
-                    userMessage: $"Duplicate generated file name: {fileName}");
+                actualFiles.Should().NotContainKey(fileName, because: $"Duplicate generated file name: {fileName}");
                 actualFiles.Add(key: fileName, value: generatedFile.Content);
             }
 
@@ -104,9 +102,7 @@ public sealed class ExternalRecipeSnapshotTests
                 }
             }
 
-            Assert.True(
-                condition: Directory.Exists(path: snapshotDirectory),
-                userMessage: $"Snapshot directory does not exist: {snapshotDirectory}");
+            Directory.Exists(path: snapshotDirectory).Should().BeTrue(because: $"Snapshot directory does not exist: {snapshotDirectory}");
             var expectedFiles = new Dictionary<string, string>(comparer: StringComparer.Ordinal);
             foreach (var expectedPath in Directory.GetFiles(path: snapshotDirectory))
             {
@@ -115,14 +111,10 @@ public sealed class ExternalRecipeSnapshotTests
                     value: await File.ReadAllTextAsync(path: expectedPath));
             }
 
-            Assert.Equal(
-                expected: expectedFiles.Keys.Order(comparer: StringComparer.Ordinal).ToArray(),
-                actual: actualFiles.Keys.Order(comparer: StringComparer.Ordinal).ToArray());
+            actualFiles.Keys.Order(comparer: StringComparer.Ordinal).Should().Equal(expectedFiles.Keys.Order(comparer: StringComparer.Ordinal));
             foreach (var (fileName, expectedContent) in expectedFiles)
             {
-                Assert.Equal(
-                    expected: NormalizeLineEndings(value: expectedContent),
-                    actual: NormalizeLineEndings(value: actualFiles[key: fileName]));
+                NormalizeLineEndings(value: actualFiles[key: fileName]).Should().Be(NormalizeLineEndings(value: expectedContent));
             }
         }
         finally

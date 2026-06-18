@@ -51,15 +51,15 @@ public sealed class SampleSnapshotTests
                 Configuration: configuration),
             cancellationToken: CancellationToken.None);
 
-        Assert.True(condition: result.Success, userMessage: FormatDiagnostics(diagnostics: result.Diagnostics));
+        result.Success.Should().BeTrue(because: FormatDiagnostics(diagnostics: result.Diagnostics));
 
-        var generatedFile = Assert.Single(collection: result.GeneratedFiles);
-        Assert.Equal(expected: expectedOutputPath, actual: generatedFile.Path);
-        Assert.StartsWith(expectedStartString: GeneratedFileHeader.Value, actualString: generatedFile.Content, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "\r\n", actualString: generatedFile.Content, comparisonType: StringComparison.Ordinal);
+        var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+        generatedFile.Path.Should().Be(expectedOutputPath);
+        generatedFile.Content.Should().StartWith(GeneratedFileHeader.Value);
+        generatedFile.Content.Should().NotContain("\r\n");
 
         var expected = await File.ReadAllTextAsync(path: expectedOutputPath);
-        Assert.Equal(expected: NormalizeLineEndings(value: expected), actual: NormalizeLineEndings(value: generatedFile.Content));
+        NormalizeLineEndings(value: generatedFile.Content).Should().Be(NormalizeLineEndings(value: expected));
     }
 
     private static string FindRepositoryRoot()

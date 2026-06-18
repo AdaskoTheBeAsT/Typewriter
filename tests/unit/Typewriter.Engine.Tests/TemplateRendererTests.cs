@@ -78,12 +78,12 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "export interface User", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "displayName: string;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "email: string | null;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "export enum OrderStatus", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "Paid = 1", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("export interface User");
+        output.Should().Contain("displayName: string;");
+        output.Should().Contain("email: string | null;");
+        output.Should().Contain("export enum OrderStatus");
+        output.Should().Contain("Paid = 1");
     }
 
     [Fact]
@@ -136,11 +136,11 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "struct Point", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "x:number;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "filtered:Point", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "filtered:User", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("struct Point");
+        output.Should().Contain("x:number;");
+        output.Should().Contain("filtered:Point");
+        output.Should().NotContain("filtered:User");
     }
 
     [Fact]
@@ -166,10 +166,10 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "NestedInClass:C=ClassContainer;R=;S=;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "NestedInRecord:C=;R=RecordContainer;S=;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "NestedInStruct:C=;R=;S=StructContainer;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("NestedInClass:C=ClassContainer;R=;S=;");
+        output.Should().Contain("NestedInRecord:C=;R=RecordContainer;S=;");
+        output.Should().Contain("NestedInStruct:C=;R=;S=StructContainer;");
 
         static TypeMetadata CreateType(
             string name,
@@ -221,8 +221,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Equal(expected: "$type $Name ${environment.apiBaseUrl} $User", actual: output);
+        diagnostics.Should().BeEmpty();
+        output.Should().Be("$type $Name ${environment.apiBaseUrl} $User");
     }
 
     [Fact]
@@ -292,8 +292,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "index:number, key:string | null->string;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("index:number, key:string | null->string;");
     }
 
     [Fact]
@@ -346,8 +346,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "dictionary4: Record<string, string | null> | null;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("dictionary4: Record<string, string | null> | null;");
     }
 
     [Fact]
@@ -396,8 +396,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "status=Status.Draft;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("status=Status.Draft;");
     }
 
     [Fact]
@@ -461,9 +461,9 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "list3: (string | null)[];", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "list4: (string | null)[] | null;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("list3: (string | null)[];");
+        output.Should().Contain("list4: (string | null)[] | null;");
     }
 
     [Fact]
@@ -529,9 +529,9 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "pseudoEnum;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "name;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("pseudoEnum;");
+        output.Should().NotContain("name;");
     }
 
     [Fact]
@@ -573,8 +573,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Equal(expected: "URL_VALUE_2_MODEL|url-value-2-model|urlValue2Model|IP_ADDRESS_VALUE:ip-address-value;", actual: output);
+        diagnostics.Should().BeEmpty();
+        output.Should().Be("URL_VALUE_2_MODEL|url-value-2-model|urlValue2Model|IP_ADDRESS_VALUE:ip-address-value;");
     }
 
     [Fact]
@@ -623,8 +623,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Equal(expected: "url-value-2-model|url.value.2.model|IP_ADDRESS_VALUE;", actual: output.Trim());
+        diagnostics.Should().BeEmpty();
+        output.Trim().Should().Be("url-value-2-model|url.value.2.model|IP_ADDRESS_VALUE;");
     }
 
     [Fact]
@@ -665,8 +665,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: new TemplateDocument(Path: "models.tst", Content: template, OutputPath: null), metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Equal(expected: "Customer,Customer,", actual: output);
+        diagnostics.Should().BeEmpty();
+        output.Should().Be("Customer,Customer,");
     }
 
     [Fact]
@@ -698,12 +698,12 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: new TemplateDocument(Path: "models.tst", Content: "$Classes[$Name$TypeParameters]", OutputPath: null), metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Equal(expected: "Box<T, TResult>", actual: output);
+        diagnostics.Should().BeEmpty();
+        output.Should().Be("Box<T, TResult>");
 
         _ = renderer.Render(template: new TemplateDocument(Path: "invalid.tst", Content: "$Classes", OutputPath: null), metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Contains(collection: diagnostics, filter: diagnostic => diagnostic.Code == "TW0002");
+        diagnostics.Should().Contain(diagnostic => diagnostic.Code == "TW0002");
     }
 
     [Fact]
@@ -723,10 +723,10 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: new TemplateDocument(Path: "services.tst", Content: template, OutputPath: null), metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "UsersController:false;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "ApiVersion=v1;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "GetAsync:id:number:false:;filter:string | null:true:null;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("UsersController:false;");
+        output.Should().Contain("ApiVersion=v1;");
+        output.Should().Contain("GetAsync:id:number:false:;filter:string | null:true:null;");
     }
 
     [Fact]
@@ -756,9 +756,9 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "UsersController;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "UsersController:GetAsync;GetAsync;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("UsersController;");
+        output.Should().Contain("UsersController:GetAsync;GetAsync;");
     }
 
     [Fact]
@@ -801,9 +801,9 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "recipe-User|get|api/Users/items/${id}?search=${encodeURIComponent(search ?? '')}|User|Task", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "id:False:number:Int32, search:True:string:String", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("recipe-User|get|api/Users/items/${id}?search=${encodeURIComponent(search ?? '')}|User|Task");
+        output.Should().Contain("id:False:number:Int32, search:True:string:String");
     }
 
     [Fact]
@@ -872,10 +872,10 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "api/Users", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "ListFoo", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "Order", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("api/Users");
+        output.Should().NotContain("ListFoo");
+        output.Should().NotContain("Order");
     }
 
     [Fact]
@@ -894,8 +894,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "User.DisplayName;User.Email;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("User.DisplayName;User.Email;");
     }
 
     [Fact]
@@ -956,10 +956,10 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "Total: 2", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "CustomerDto;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "Ignored;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("Total: 2");
+        output.Should().Contain("CustomerDto;");
+        output.Should().NotContain("Ignored;");
     }
 
     [Fact]
@@ -981,11 +981,11 @@ public sealed class TemplateRendererTests
 
         _ = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        var diagnostic = Assert.Single(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "InvalidOperationException: boom", actualString: diagnostic.Message, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "Boom(Class)", actualString: diagnostic.Message, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "models.tst:line 4", actualString: diagnostic.Message, comparisonType: StringComparison.Ordinal);
-        Assert.Equal(expected: 4, actual: diagnostic.Line);
+        var diagnostic = diagnostics.Should().ContainSingle().Which;
+        diagnostic.Message.Should().Contain("InvalidOperationException: boom");
+        diagnostic.Message.Should().Contain("Boom(Class)");
+        diagnostic.Message.Should().Contain("models.tst:line 4");
+        diagnostic.Line.Should().Be(4);
     }
 
     [Fact]
@@ -1014,8 +1014,8 @@ public sealed class TemplateRendererTests
 
             var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-            Assert.Empty(collection: diagnostics);
-            Assert.Contains(expectedSubstring: "shared-User", actualString: output, comparisonType: StringComparison.Ordinal);
+            diagnostics.Should().BeEmpty();
+            output.Should().Contain("shared-User");
         }
         finally
         {
@@ -1047,8 +1047,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "remote-User", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("remote-User");
     }
 
     [Fact]
@@ -1077,10 +1077,10 @@ public sealed class TemplateRendererTests
         diagnostics.Clear();
         var secondOutput = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "uncached-User", actualString: firstOutput, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "uncached-User", actualString: secondOutput, comparisonType: StringComparison.Ordinal);
-        Assert.Equal(expected: 2, actual: server.RequestCount(path: "/shared.cs"));
+        diagnostics.Should().BeEmpty();
+        firstOutput.Should().Contain("uncached-User");
+        secondOutput.Should().Contain("uncached-User");
+        server.RequestCount(path: "/shared.cs").Should().Be(2);
     }
 
     [Fact]
@@ -1109,10 +1109,10 @@ public sealed class TemplateRendererTests
         diagnostics.Clear();
         var secondOutput = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "cached-User", actualString: firstOutput, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "cached-User", actualString: secondOutput, comparisonType: StringComparison.Ordinal);
-        Assert.Equal(expected: 1, actual: server.RequestCount(path: "/shared.cs"));
+        diagnostics.Should().BeEmpty();
+        firstOutput.Should().Contain("cached-User");
+        secondOutput.Should().Contain("cached-User");
+        server.RequestCount(path: "/shared.cs").Should().Be(1);
     }
 
     [Fact]
@@ -1139,10 +1139,8 @@ public sealed class TemplateRendererTests
 
         _ = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Contains(
-            collection: diagnostics,
-            filter: diagnostic => diagnostic.Message.Contains(value: "#load cache duration is invalid", comparisonType: StringComparison.Ordinal));
-        Assert.Equal(expected: 0, actual: server.RequestCount(path: "/shared.cs"));
+        diagnostics.Should().Contain(diagnostic => diagnostic.Message.Contains(value: "#load cache duration is invalid", comparisonType: StringComparison.Ordinal));
+        server.RequestCount(path: "/shared.cs").Should().Be(0);
     }
 
     [Fact]
@@ -1173,8 +1171,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "nested-remote-User", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("nested-remote-User");
     }
 
     [Fact]
@@ -1195,10 +1193,9 @@ public sealed class TemplateRendererTests
 
         _ = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Contains(
-            collection: diagnostics,
-            filter: diagnostic => diagnostic.Message.Contains(value: "#load URL returned HTTP 404", comparisonType: StringComparison.Ordinal)
-                                  && diagnostic.Message.Contains(value: helperUrl, comparisonType: StringComparison.Ordinal));
+        diagnostics.Should().Contain(
+            diagnostic => diagnostic.Message.Contains(value: "#load URL returned HTTP 404", comparisonType: StringComparison.Ordinal)
+                          && diagnostic.Message.Contains(value: helperUrl, comparisonType: StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1217,10 +1214,9 @@ public sealed class TemplateRendererTests
 
         _ = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Contains(
-            collection: diagnostics,
-            filter: diagnostic => diagnostic.Message.Contains(value: "#load file was not found", comparisonType: StringComparison.Ordinal)
-                                  && diagnostic.Message.Contains(value: "missing-helpers.cs", comparisonType: StringComparison.Ordinal));
+        diagnostics.Should().Contain(
+            diagnostic => diagnostic.Message.Contains(value: "#load file was not found", comparisonType: StringComparison.Ordinal)
+                          && diagnostic.Message.Contains(value: "missing-helpers.cs", comparisonType: StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1246,10 +1242,10 @@ public sealed class TemplateRendererTests
         {
             var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-            Assert.Empty(collection: diagnostics);
-            Assert.Contains(expectedSubstring: "User", actualString: output, comparisonType: StringComparison.Ordinal);
-            Assert.True(condition: File.Exists(path: markerPath));
-            Assert.Equal(expected: "classes:1", actual: await File.ReadAllTextAsync(path: markerPath));
+            diagnostics.Should().BeEmpty();
+            output.Should().Contain("User");
+            File.Exists(path: markerPath).Should().BeTrue();
+            (await File.ReadAllTextAsync(path: markerPath)).Should().Be("classes:1");
         }
         finally
         {
@@ -1276,9 +1272,9 @@ public sealed class TemplateRendererTests
 
         _ = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        var diagnostic = Assert.Single(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "OnRenderComplete", actualString: diagnostic.Message, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "hook failed", actualString: diagnostic.Message, comparisonType: StringComparison.Ordinal);
+        var diagnostic = diagnostics.Should().ContainSingle().Which;
+        diagnostic.Message.Should().Contain("OnRenderComplete");
+        diagnostic.Message.Should().Contain("hook failed");
     }
 
     [Fact]
@@ -1364,8 +1360,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Equal(expected: "hubs/Chat|SendMessage:false:true:, message;StreamMessages:true:false:, room;", actual: output.TrimEnd());
+        diagnostics.Should().BeEmpty();
+        output.TrimEnd().Should().Be("hubs/Chat|SendMessage:false:true:, message;StreamMessages:true:false:, room;");
     }
 
     [Fact]
@@ -1478,12 +1474,12 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "export interface ICustomer", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "CustomerController", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "name: string = \"\";", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "nickname?: string | null = null;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "secret", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("export interface ICustomer");
+        output.Should().NotContain("CustomerController");
+        output.Should().Contain("name: string = \"\";");
+        output.Should().Contain("nickname?: string | null = null;");
+        output.Should().NotContain("secret");
     }
 
     [Fact]
@@ -1593,12 +1589,12 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "id=0;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "name='';", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "middleName=null;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "aliases=[];", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "status=Status.Draft;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("id=0;");
+        output.Should().Contain("name='';");
+        output.Should().Contain("middleName=null;");
+        output.Should().Contain("aliases=[];");
+        output.Should().Contain("status=Status.Draft;");
     }
 
     [Fact]
@@ -1653,9 +1649,9 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: new TemplateDocument(Path: "models.tst", Content: template, OutputPath: null), metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "CustomerDto:Name;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "IgnoredDto", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("CustomerDto:Name;");
+        output.Should().NotContain("IgnoredDto");
     }
 
     [Fact]
@@ -1730,8 +1726,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Equal(expected: "NAME;", actual: output.TrimEnd());
+        diagnostics.Should().BeEmpty();
+        output.TrimEnd().Should().Be("NAME;");
     }
 
     [Fact]
@@ -1792,8 +1788,8 @@ public sealed class TemplateRendererTests
 
             var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-            Assert.Empty(collection: diagnostics);
-            Assert.Equal(expected: "FactAttributeName;", actual: output.TrimEnd());
+            diagnostics.Should().BeEmpty();
+            output.TrimEnd().Should().Be("FactAttributeName;");
         }
         finally
         {
@@ -1808,9 +1804,9 @@ public sealed class TemplateRendererTests
         const string PackageId = "xunit.v3.extensibility.core";
         const string PackageVersion = "3.2.2";
         var sourcePackageRoot = GetCurrentNuGetPackageRoot();
-        Assert.True(
-            condition: Directory.Exists(path: Path.Combine(path1: sourcePackageRoot, path2: PackageId, path3: PackageVersion)),
-            userMessage: $"Expected package source '{sourcePackageRoot}' to contain {PackageId} {PackageVersion}.");
+        Directory.Exists(path: Path.Combine(path1: sourcePackageRoot, path2: PackageId, path3: PackageVersion))
+            .Should()
+            .BeTrue(because: $"package source '{sourcePackageRoot}' should contain {PackageId} {PackageVersion}.");
 
         var testRoot = Path.Combine(path1: Path.GetTempPath(), path2: "Typewriter.Engine.Tests", path3: Guid.NewGuid().ToString(format: "N"));
         var templateDirectory = Path.Combine(path1: testRoot, path2: "template");
@@ -1881,9 +1877,9 @@ public sealed class TemplateRendererTests
 
             var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-            Assert.Empty(collection: diagnostics);
-            Assert.True(condition: Directory.Exists(path: Path.Combine(path1: restoredPackageRoot, path2: PackageId, path3: PackageVersion)));
-            Assert.Equal(expected: "FactAttributeName;", actual: output.TrimEnd());
+            diagnostics.Should().BeEmpty();
+            Directory.Exists(path: Path.Combine(path1: restoredPackageRoot, path2: PackageId, path3: PackageVersion)).Should().BeTrue();
+            output.TrimEnd().Should().Be("FactAttributeName;");
         }
         finally
         {
@@ -1900,7 +1896,7 @@ public sealed class TemplateRendererTests
 
         ForceCollectibleContextCollection(contextReference: contextReference);
 
-        Assert.False(condition: contextReference.IsAlive);
+        contextReference.IsAlive.Should().BeFalse();
     }
 
     [Fact]
@@ -2019,13 +2015,13 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "Widget summary.|<T>|Field summary.|ready|Changed|<TResult>", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "InstanceField:Field summary.;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "StaticLabel=ready;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "Changed;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "Factory:value:string;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "Nested;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("Widget summary.|<T>|Field summary.|ready|Changed|<TResult>");
+        output.Should().Contain("InstanceField:Field summary.;");
+        output.Should().Contain("StaticLabel=ready;");
+        output.Should().Contain("Changed;");
+        output.Should().Contain("Factory:value:string;");
+        output.Should().Contain("Nested;");
     }
 
     [Fact]
@@ -2056,8 +2052,8 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "${environment.apiBaseUrl}User", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("${environment.apiBaseUrl}User");
     }
 
     [Fact]
@@ -2137,9 +2133,9 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "InnerRecord;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "DeepRecord;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("InnerRecord;");
+        output.Should().Contain("DeepRecord;");
     }
 
     [Fact]
@@ -2189,9 +2185,9 @@ public sealed class TemplateRendererTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "InstanceChanged;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "StaticChanged;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("InstanceChanged;");
+        output.Should().Contain("StaticChanged;");
     }
 
     [Fact]
@@ -2211,7 +2207,7 @@ public sealed class TemplateRendererTests
 
         var result = mapper.Map(type: dictionaryType);
 
-        Assert.Equal(expected: "Record<string, string>", actual: result);
+        result.Should().Be("Record<string, string>");
     }
 
     [Fact]
@@ -2232,7 +2228,7 @@ public sealed class TemplateRendererTests
 
         var result = mapper.Map(type: dictionaryType);
 
-        Assert.Equal(expected: "Record<string, string | null> | null", actual: result);
+        result.Should().Be("Record<string, string | null> | null");
     }
 
     [Fact]
@@ -2256,8 +2252,8 @@ public sealed class TemplateRendererTests
         var listResult = mapper.Map(type: listType);
         var nullableListResult = mapper.Map(type: nullableListType);
 
-        Assert.Equal(expected: "(string | null)[]", actual: listResult);
-        Assert.Equal(expected: "(string | null)[] | null", actual: nullableListResult);
+        listResult.Should().Be("(string | null)[]");
+        nullableListResult.Should().Be("(string | null)[] | null");
     }
 
     private static TypeMetadataReference TypeReference(
@@ -2356,10 +2352,10 @@ public sealed class TemplateRendererTests
         var diagnostics = new List<GenerationDiagnostic>();
         var document = TemplateDocument.Parse(template: new TemplateFile(Path: "models.tst", Content: template), diagnostics: diagnostics);
         using var helper = TemplateRuntimeCompiler.Compile(template: document, metadata: metadata, diagnostics: diagnostics);
-        Assert.Empty(collection: diagnostics);
-        Assert.NotNull(@object: helper);
+        diagnostics.Should().BeEmpty();
+        helper.Should().NotBeNull();
 
-        return helper.AssemblyLoadContextReference;
+        return helper!.AssemblyLoadContextReference;
     }
 
     private static void ForceCollectibleContextCollection(WeakReference contextReference)

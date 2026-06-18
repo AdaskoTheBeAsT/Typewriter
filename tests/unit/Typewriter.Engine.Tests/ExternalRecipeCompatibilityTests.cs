@@ -29,17 +29,17 @@ public sealed class ExternalRecipeCompatibilityTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.DoesNotContain(collection: diagnostics, filter: diagnostic => diagnostic.Severity != DiagnosticSeverity.Info);
-        Assert.Contains(expectedSubstring: "import { UserDto } from '../models/UserDto';", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "import { CreateUserRequest } from '../models/CreateUserRequest';", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "export interface IApiUsersService", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "export class ApiUsersService implements IApiUsersService", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "getItemAsyncnumberstring(id: number, search: string)", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "getItemAsyncnumberstring | null", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "this.usersServiceUrl", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "items/{id}", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "items", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "request,", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity != DiagnosticSeverity.Info);
+        output.Should().Contain("import { UserDto } from '../models/UserDto';");
+        output.Should().Contain("import { CreateUserRequest } from '../models/CreateUserRequest';");
+        output.Should().Contain("export interface IApiUsersService");
+        output.Should().Contain("export class ApiUsersService implements IApiUsersService");
+        output.Should().Contain("getItemAsyncnumberstring(id: number, search: string)");
+        output.Should().NotContain("getItemAsyncnumberstring | null");
+        output.Should().Contain("this.usersServiceUrl");
+        output.Should().Contain("items/{id}");
+        output.Should().Contain("items");
+        output.Should().Contain("request,");
     }
 
     [Fact]
@@ -70,16 +70,16 @@ public sealed class ExternalRecipeCompatibilityTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.DoesNotContain(collection: diagnostics, filter: diagnostic => diagnostic.Severity != DiagnosticSeverity.Info);
-        Assert.Contains(expectedSubstring: "import { SimpleModel } from './SimpleModel';", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "middleName?: string | null;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "this.id = initObj.id ?? 0;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "this.simpleModels = initObj.simpleModels ?? [];", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "this.firstName = initObj.firstName ?? '';", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "this.middleName = initObj.middleName ?? null;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "this.lastName = initObj.lastName ?? '';", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "this.firstSet = initObj.firstSet ?? FirstSet.ValA;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "this.secondSet = initObj.secondSet ?? SecondSet.ValA;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity != DiagnosticSeverity.Info);
+        output.Should().Contain("import { SimpleModel } from './SimpleModel';");
+        output.Should().Contain("middleName?: string | null;");
+        output.Should().Contain("this.id = initObj.id ?? 0;");
+        output.Should().Contain("this.simpleModels = initObj.simpleModels ?? [];");
+        output.Should().Contain("this.firstName = initObj.firstName ?? '';");
+        output.Should().Contain("this.middleName = initObj.middleName ?? null;");
+        output.Should().Contain("this.lastName = initObj.lastName ?? '';");
+        output.Should().Contain("this.firstSet = initObj.firstSet ?? FirstSet.ValA;");
+        output.Should().Contain("this.secondSet = initObj.secondSet ?? SecondSet.ValA;");
     }
 
     private static string ResolveExternalRecipePath(params string[] relativeParts)

@@ -106,13 +106,14 @@ public sealed class LanguageServerHostTests
 
             var messages = ReadOutputMessages(output: output);
             var initializeResponse = FindResponse(messages: messages, id: 1);
-            Assert.True(
-                condition: initializeResponse
-                    .GetProperty(propertyName: "result")
-                    .GetProperty(propertyName: "capabilities")
-                    .GetProperty(propertyName: "completionProvider")
-                    .GetProperty(propertyName: "resolveProvider")
-                    .ValueKind is JsonValueKind.False);
+            initializeResponse
+                .GetProperty(propertyName: "result")
+                .GetProperty(propertyName: "capabilities")
+                .GetProperty(propertyName: "completionProvider")
+                .GetProperty(propertyName: "resolveProvider")
+                .ValueKind
+                .Should()
+                .Be(JsonValueKind.False);
             var semanticLegend = new List<string?>();
             var legendEnumerator = initializeResponse
                 .GetProperty(propertyName: "result")
@@ -129,8 +130,8 @@ public sealed class LanguageServerHostTests
                 }
             }
 
-            Assert.Contains(expected: "macro", collection: semanticLegend);
-            Assert.Contains(expected: "keyword", collection: semanticLegend);
+            semanticLegend.Should().Contain("macro");
+            semanticLegend.Should().Contain("keyword");
 
             var completionResponse = FindResponse(messages: messages, id: 2);
             var labels = new List<string?>();
@@ -143,8 +144,8 @@ public sealed class LanguageServerHostTests
                 }
             }
 
-            Assert.Contains(expected: "Classes", collection: labels);
-            Assert.Contains(expected: "FormatName", collection: labels);
+            labels.Should().Contain("Classes");
+            labels.Should().Contain("FormatName");
 
             var semanticTokensResponse = FindResponse(messages: messages, id: 3);
             var semanticTokensEnumerator = semanticTokensResponse
@@ -153,11 +154,11 @@ public sealed class LanguageServerHostTests
                 .EnumerateArray();
             using (semanticTokensEnumerator)
             {
-                Assert.True(condition: semanticTokensEnumerator.MoveNext());
+                semanticTokensEnumerator.MoveNext().Should().BeTrue();
             }
 
             var shutdownResponse = FindResponse(messages: messages, id: 4);
-            Assert.True(condition: shutdownResponse.TryGetProperty(propertyName: "result", value: out _));
+            shutdownResponse.TryGetProperty(propertyName: "result", value: out _).Should().BeTrue();
         }
         finally
         {
@@ -175,9 +176,7 @@ public sealed class LanguageServerHostTests
 
         var path = FileUriPath.TryGetPath(uri: "file:///d%3A/Github/Test/Models.tst");
 
-        Assert.Equal(
-            expected: Path.GetFullPath(path: @"d:\Github\Test\Models.tst"),
-            actual: Path.GetFullPath(path: path!));
+        Path.GetFullPath(path: path!).Should().Be(Path.GetFullPath(path: @"d:\Github\Test\Models.tst"));
     }
 
     private static MemoryStream CreateInput(params object[] messages)

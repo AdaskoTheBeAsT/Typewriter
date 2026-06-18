@@ -21,9 +21,9 @@ public sealed class TemplateDocumentTests
 
         var document = TemplateDocument.Parse(template: new TemplateFile(Path: "models.tst", Content: content), diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Equal(expected: "index.d.ts", actual: document.OutputPath);
-        Assert.Equal(expected: "export interface Marker {}", actual: document.Content.Trim());
+        diagnostics.Should().BeEmpty();
+        document.OutputPath.Should().Be("index.d.ts");
+        document.Content.Trim().Should().Be("export interface Marker {}");
     }
 
     [Fact]
@@ -40,8 +40,8 @@ public sealed class TemplateDocumentTests
 
         var document = TemplateDocument.Parse(template: new TemplateFile(Path: "services.tst", Content: content), diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "`${environment.apiBaseUrl}/api`", actualString: document.Content, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "string Name", actualString: document.Content, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        document.Content.Should().Contain("`${environment.apiBaseUrl}/api`");
+        document.Content.Should().NotContain("string Name");
     }
 }

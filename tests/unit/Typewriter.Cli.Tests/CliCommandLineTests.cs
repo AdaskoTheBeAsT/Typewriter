@@ -31,15 +31,15 @@ public sealed class CliCommandLineTests
                 "--all-projects",
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
-        Assert.Equal(expected: 42, actual: exitCode);
-        Assert.NotNull(@object: capturedOptions);
-        Assert.Equal(expected: CliCommand.Generate, actual: capturedOptions.Command);
-        Assert.Equal(expected: "sample.csproj", actual: capturedOptions.ProjectPath);
-        Assert.Equal(expected: "models.tst", actual: capturedOptions.TemplatePath);
-        Assert.Equal(expected: "net10.0", actual: capturedOptions.Framework);
-        Assert.Equal(expected: "json", actual: capturedOptions.Output);
-        Assert.True(condition: capturedOptions.DryRun);
-        Assert.True(condition: capturedOptions.AllProjects);
+        exitCode.Should().Be(42);
+        capturedOptions.Should().NotBeNull();
+        capturedOptions!.Command.Should().Be(CliCommand.Generate);
+        capturedOptions.ProjectPath.Should().Be("sample.csproj");
+        capturedOptions.TemplatePath.Should().Be("models.tst");
+        capturedOptions.Framework.Should().Be("net10.0");
+        capturedOptions.Output.Should().Be("json");
+        capturedOptions.DryRun.Should().BeTrue();
+        capturedOptions.AllProjects.Should().BeTrue();
     }
 
     [Fact]
@@ -62,10 +62,10 @@ public sealed class CliCommandLineTests
                 "models.tst",
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
-        Assert.NotNull(@object: capturedOptions);
-        Assert.Equal(expected: CliCommand.Generate, actual: capturedOptions.Command);
-        Assert.Equal(expected: "sample.csproj", actual: capturedOptions.ProjectPath);
-        Assert.Equal(expected: "models.tst", actual: capturedOptions.TemplatePath);
+        capturedOptions.Should().NotBeNull();
+        capturedOptions!.Command.Should().Be(CliCommand.Generate);
+        capturedOptions.ProjectPath.Should().Be("sample.csproj");
+        capturedOptions.TemplatePath.Should().Be("models.tst");
     }
 
     [Fact]
@@ -88,10 +88,10 @@ public sealed class CliCommandLineTests
                 "--force",
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
-        Assert.NotNull(@object: capturedOptions);
-        Assert.Equal(expected: CliCommand.Init, actual: capturedOptions.Command);
-        Assert.Equal(expected: "src", actual: capturedOptions.WorkspacePath);
-        Assert.True(condition: capturedOptions.Force);
+        capturedOptions.Should().NotBeNull();
+        capturedOptions!.Command.Should().Be(CliCommand.Init);
+        capturedOptions.WorkspacePath.Should().Be("src");
+        capturedOptions.Force.Should().BeTrue();
     }
 
     [Fact]
@@ -115,10 +115,10 @@ public sealed class CliCommandLineTests
                 "text",
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
-        Assert.NotNull(@object: capturedOptions);
-        Assert.Equal(expected: CliCommand.ListTemplates, actual: capturedOptions.Command);
-        Assert.Equal(expected: "src", actual: capturedOptions.WorkspacePath);
-        Assert.Equal(expected: "text", actual: capturedOptions.Output);
+        capturedOptions.Should().NotBeNull();
+        capturedOptions!.Command.Should().Be(CliCommand.ListTemplates);
+        capturedOptions.WorkspacePath.Should().Be("src");
+        capturedOptions.Output.Should().Be("text");
     }
 
     [Fact]
@@ -141,9 +141,9 @@ public sealed class CliCommandLineTests
                 "--all-projects",
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
-        Assert.NotNull(@object: capturedOptions);
-        Assert.Equal(expected: CliCommand.Watch, actual: capturedOptions.Command);
-        Assert.Equal(expected: "src", actual: capturedOptions.WorkspacePath);
-        Assert.True(condition: capturedOptions.AllProjects);
+        capturedOptions.Should().NotBeNull();
+        capturedOptions!.Command.Should().Be(CliCommand.Watch);
+        capturedOptions.WorkspacePath.Should().Be("src");
+        capturedOptions.AllProjects.Should().BeTrue();
     }
 }

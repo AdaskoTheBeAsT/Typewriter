@@ -17,9 +17,9 @@ public sealed class ConfigurationDefaultsTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics, defaults: defaults);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "email: string;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "| null", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("email: string;");
+        output.Should().NotContain("| null");
     }
 
     [Fact]
@@ -32,8 +32,8 @@ public sealed class ConfigurationDefaultsTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "email: string | null;", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("email: string | null;");
     }
 
     [Fact]
@@ -59,9 +59,9 @@ public sealed class ConfigurationDefaultsTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics, defaults: defaults);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "email: string;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "| null", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("email: string;");
+        output.Should().NotContain("| null");
     }
 
     [Fact]
@@ -87,9 +87,9 @@ public sealed class ConfigurationDefaultsTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics, defaults: TemplateRenderDefaults.FromConfiguration(configuration: CreateConfiguration(strictNull: true)));
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "email: string;", actualString: output, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "| null", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("email: string;");
+        output.Should().NotContain("| null");
     }
 
     [Fact]
@@ -133,10 +133,10 @@ public sealed class ConfigurationDefaultsTests
             diagnostics: overriddenDiagnostics);
         var overriddenResult = renderer.RenderTemplate(template: overriddenDocument, metadata: metadata, diagnostics: overriddenDiagnostics, defaults: bomDefaults);
 
-        Assert.Empty(collection: configuredDiagnostics);
-        Assert.Empty(collection: overriddenDiagnostics);
-        Assert.True(condition: configuredResult.Utf8Bom);
-        Assert.False(condition: overriddenResult.Utf8Bom);
+        configuredDiagnostics.Should().BeEmpty();
+        overriddenDiagnostics.Should().BeEmpty();
+        configuredResult.Utf8Bom.Should().BeTrue();
+        overriddenResult.Utf8Bom.Should().BeFalse();
     }
 
     [Fact]
@@ -151,8 +151,8 @@ public sealed class ConfigurationDefaultsTests
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics, defaults: defaults);
 
-        Assert.Empty(collection: diagnostics);
-        Assert.Contains(expectedSubstring: "id = '00000000-0000-0000-0000-000000000000';", actualString: output, comparisonType: StringComparison.Ordinal);
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("id = '00000000-0000-0000-0000-000000000000';");
     }
 
     [Fact]
@@ -196,10 +196,10 @@ public sealed class ConfigurationDefaultsTests
             diagnostics: overriddenDiagnostics);
         var overriddenOutput = renderer.Render(template: overriddenDocument, metadata: metadata, diagnostics: overriddenDiagnostics, defaults: backtickDefaults);
 
-        Assert.Empty(collection: configuredDiagnostics);
-        Assert.Empty(collection: overriddenDiagnostics);
-        Assert.Contains(expectedSubstring: "id = `00000000-0000-0000-0000-000000000000`;", actualString: configuredOutput, comparisonType: StringComparison.Ordinal);
-        Assert.Contains(expectedSubstring: "id = '00000000-0000-0000-0000-000000000000';", actualString: overriddenOutput, comparisonType: StringComparison.Ordinal);
+        configuredDiagnostics.Should().BeEmpty();
+        overriddenDiagnostics.Should().BeEmpty();
+        configuredOutput.Should().Contain("id = `00000000-0000-0000-0000-000000000000`;");
+        overriddenOutput.Should().Contain("id = '00000000-0000-0000-0000-000000000000';");
     }
 
     [Fact]
@@ -227,17 +227,15 @@ public sealed class ConfigurationDefaultsTests
 
         _ = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
-        Assert.Contains(
-            collection: diagnostics,
-            filter: diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
-                                  && diagnostic.Code == "TW0007"
-                                  && diagnostic.File == templatePath
-                                  && diagnostic.Message == "hello world");
-        Assert.Contains(
-            collection: diagnostics,
-            filter: diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
-                                  && diagnostic.Code == "TW0007"
-                                  && diagnostic.Message == "careful");
+        diagnostics.Should().Contain(
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                          && diagnostic.Code == "TW0007"
+                          && diagnostic.File == templatePath
+                          && diagnostic.Message == "hello world");
+        diagnostics.Should().Contain(
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
+                          && diagnostic.Code == "TW0007"
+                          && diagnostic.Message == "careful");
     }
 
     [Fact]
@@ -266,9 +264,9 @@ public sealed class ConfigurationDefaultsTests
                 request: CreateRequest(directory: directory, encoding: "utf-8-bom"),
                 cancellationToken: CancellationToken.None);
 
-            Assert.False(condition: StartsWithUtf8Bom(bytes: await File.ReadAllBytesAsync(path: bomDisabledPath)));
-            Assert.True(condition: StartsWithUtf8Bom(bytes: await File.ReadAllBytesAsync(path: bomEnabledPath)));
-            Assert.True(condition: StartsWithUtf8Bom(bytes: await File.ReadAllBytesAsync(path: configuredBomPath)));
+            StartsWithUtf8Bom(bytes: await File.ReadAllBytesAsync(path: bomDisabledPath)).Should().BeFalse();
+            StartsWithUtf8Bom(bytes: await File.ReadAllBytesAsync(path: bomEnabledPath)).Should().BeTrue();
+            StartsWithUtf8Bom(bytes: await File.ReadAllBytesAsync(path: configuredBomPath)).Should().BeTrue();
         }
         finally
         {

@@ -51,17 +51,17 @@ public sealed class MsBuildProjectLoaderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory, TargetFramework: "net10.0"),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: result.Diagnostics);
-            Assert.Equal(expected: "net10.0", actual: result.TargetFramework);
-            Assert.True(condition: result.NullableEnabled);
-            Assert.True(condition: result.ImplicitUsingsEnabled);
-            Assert.Contains(expected: "LOCAL_SYMBOL", collection: result.PreprocessorSymbols);
-            Assert.Contains(expected: "NET10_0", collection: result.PreprocessorSymbols);
-            Assert.Contains(expected: "System.Collections.Generic", collection: result.GlobalUsings);
-            Assert.Contains(collection: result.SourceFiles, filter: path => path.EndsWith(value: "Model.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
-            Assert.DoesNotContain(collection: result.SourceFiles, filter: path => path.EndsWith(value: "Excluded.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
-            Assert.DoesNotContain(collection: result.SourceFiles, filter: path => path.EndsWith(value: "ReferencedModel.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
-            Assert.Contains(expected: referencedProjectPath, collection: result.ProjectReferences);
+            result.Diagnostics.Should().BeEmpty();
+            result.TargetFramework.Should().Be("net10.0");
+            result.NullableEnabled.Should().BeTrue();
+            result.ImplicitUsingsEnabled.Should().BeTrue();
+            result.PreprocessorSymbols.Should().Contain("LOCAL_SYMBOL");
+            result.PreprocessorSymbols.Should().Contain("NET10_0");
+            result.GlobalUsings.Should().Contain("System.Collections.Generic");
+            result.SourceFiles.Should().Contain(path => path.EndsWith(value: "Model.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+            result.SourceFiles.Should().NotContain(path => path.EndsWith(value: "Excluded.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+            result.SourceFiles.Should().NotContain(path => path.EndsWith(value: "ReferencedModel.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+            result.ProjectReferences.Should().Contain(referencedProjectPath);
         }
         finally
         {
@@ -93,8 +93,8 @@ public sealed class MsBuildProjectLoaderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory, TargetFramework: "net10.0"),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: result.Diagnostics);
-            Assert.Contains(collection: result.SourceFiles, filter: path => path.EndsWith(value: "Model.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+            result.Diagnostics.Should().BeEmpty();
+            result.SourceFiles.Should().Contain(path => path.EndsWith(value: "Model.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -130,8 +130,8 @@ public sealed class MsBuildProjectLoaderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory, TargetFramework: "net10.0"),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: result.Diagnostics);
-            Assert.Contains(collection: result.SourceFiles, filter: path => path.EndsWith(value: "MyModel.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+            result.Diagnostics.Should().BeEmpty();
+            result.SourceFiles.Should().Contain(path => path.EndsWith(value: "MyModel.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -198,9 +198,9 @@ public sealed class MsBuildProjectLoaderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory, TargetFramework: "net10.0"),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: result.Diagnostics);
-            Assert.Contains(collection: result.SourceFiles, filter: path => path.EndsWith(value: "Model.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
-            Assert.Contains(expected: referencedProjectPath, collection: result.ProjectReferences);
+            result.Diagnostics.Should().BeEmpty();
+            result.SourceFiles.Should().Contain(path => path.EndsWith(value: "Model.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+            result.ProjectReferences.Should().Contain(referencedProjectPath);
         }
         finally
         {
@@ -236,8 +236,8 @@ public sealed class MsBuildProjectLoaderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory, TargetFramework: "net10.0"),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: result.Diagnostics);
-            Assert.Contains(collection: result.SourceFiles, filter: path => path.EndsWith(value: "Model.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+            result.Diagnostics.Should().BeEmpty();
+            result.SourceFiles.Should().Contain(path => path.EndsWith(value: "Model.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -285,8 +285,8 @@ public sealed class MsBuildProjectLoaderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: solutionPath, TargetFramework: "net10.0"),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: result.Diagnostics);
-            Assert.Contains(expected: sharedSourcePath, collection: result.SourceFiles);
+            result.Diagnostics.Should().BeEmpty();
+            result.SourceFiles.Should().Contain(sharedSourcePath);
         }
         finally
         {

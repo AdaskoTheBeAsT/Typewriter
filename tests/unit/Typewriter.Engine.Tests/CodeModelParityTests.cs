@@ -53,7 +53,7 @@ public sealed class CodeModelParityTests
 
         foreach (var expectedProperty in expectedProperties)
         {
-            Assert.Contains(expected: expectedProperty, set: actualProperties);
+            actualProperties.Should().Contain(expectedProperty);
         }
     }
 
@@ -91,29 +91,29 @@ public sealed class CodeModelParityTests
         Type? structType = @struct;
         string typeName = type;
 
-        Assert.Equal(expected: "Generate", actual: attributeName);
-        Assert.Equal(expected: "Widget", actual: className);
-        Assert.Same(expected: type, actual: classType);
-        Assert.Equal(expected: "ApiVersion", actual: constantName);
-        Assert.Equal(expected: "Factory", actual: delegateName);
-        Assert.Equal(expected: "Widget summary.", actual: docComment);
-        Assert.Equal(expected: "WidgetKind", actual: enumName);
-        Assert.Same(expected: type, actual: enumType);
-        Assert.Equal(expected: "Draft", actual: enumValueName);
-        Assert.Equal(expected: "Changed", actual: eventName);
-        Assert.Equal(expected: "InstanceField", actual: fieldName);
-        Assert.Equal(expected: "IWidget", actual: interfaceName);
-        Assert.Same(expected: type, actual: interfaceType);
-        Assert.Equal(expected: "GetAsync", actual: methodName);
-        Assert.Equal(expected: "id", actual: parameterName);
-        Assert.Equal(expected: "id", actual: parameterCommentName);
-        Assert.Equal(expected: "DisplayName", actual: propertyName);
-        Assert.Equal(expected: "WidgetRecord", actual: recordName);
-        Assert.Same(expected: type, actual: recordType);
-        Assert.Equal(expected: "StaticLabel", actual: staticReadOnlyFieldName);
-        Assert.Equal(expected: "WidgetStruct", actual: structName);
-        Assert.Same(expected: type, actual: structType);
-        Assert.Equal(expected: "Widget", actual: typeName);
+        attributeName.Should().Be("Generate");
+        className.Should().Be("Widget");
+        classType.Should().BeSameAs(type);
+        constantName.Should().Be("ApiVersion");
+        delegateName.Should().Be("Factory");
+        docComment.Should().Be("Widget summary.");
+        enumName.Should().Be("WidgetKind");
+        enumType.Should().BeSameAs(type);
+        enumValueName.Should().Be("Draft");
+        eventName.Should().Be("Changed");
+        fieldName.Should().Be("InstanceField");
+        interfaceName.Should().Be("IWidget");
+        interfaceType.Should().BeSameAs(type);
+        methodName.Should().Be("GetAsync");
+        parameterName.Should().Be("id");
+        parameterCommentName.Should().Be("id");
+        propertyName.Should().Be("DisplayName");
+        recordName.Should().Be("WidgetRecord");
+        recordType.Should().BeSameAs(type);
+        staticReadOnlyFieldName.Should().Be("StaticLabel");
+        structName.Should().Be("WidgetStruct");
+        structType.Should().BeSameAs(type);
+        typeName.Should().Be("Widget");
     }
 
     [Fact]
@@ -121,11 +121,11 @@ public sealed class CodeModelParityTests
     {
         var @class = new Class { Name = "URLValue2Model" };
 
-        Assert.Equal(expected: "uRLValue2Model", actual: @class.name);
-        Assert.Equal(expected: "URL_VALUE_2_MODEL", actual: @class.GetName(nameCase: NameCase.UpperSnakeCase));
-        Assert.Equal(expected: "url-value-2-model", actual: @class.GetName(nameCase: NameCase.LowerKebabCase));
-        Assert.Equal(expected: "UrlValue2Model", actual: @class.GetName(nameCase: NameCase.PascalCase));
-        Assert.Equal(expected: "urlValue2Model", actual: @class.GetName(nameCase: NameCase.CamelCase));
-        Assert.Equal(expected: "url.value.2.model", actual: "URLValue2Model".ToNameCase(nameCase: NameCase.LowerDotCase));
+        @class.name.Should().Be("uRLValue2Model");
+        @class.GetName(nameCase: NameCase.UpperSnakeCase).Should().Be("URL_VALUE_2_MODEL");
+        @class.GetName(nameCase: NameCase.LowerKebabCase).Should().Be("url-value-2-model");
+        @class.GetName(nameCase: NameCase.PascalCase).Should().Be("UrlValue2Model");
+        @class.GetName(nameCase: NameCase.CamelCase).Should().Be("urlValue2Model");
+        "URLValue2Model".ToNameCase(nameCase: NameCase.LowerDotCase).Should().Be("url.value.2.model");
     }
 }

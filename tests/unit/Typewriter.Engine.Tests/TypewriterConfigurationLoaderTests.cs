@@ -43,11 +43,11 @@ public sealed class TypewriterConfigurationLoaderTests
                 projectPath: projectPath,
                 cancellationToken: CancellationToken.None);
 
-            Assert.Equal(expected: ["templates/**/*.tst"], actual: configuration.Templates);
-            Assert.Equal(expected: "crlf", actual: configuration.Output.Newline);
-            Assert.Equal(expected: FileNameConvention.Kebab, actual: configuration.Output.FileNameConvention);
-            Assert.Equal(expected: "net10.0", actual: configuration.DefaultTargetFramework);
-            Assert.True(condition: configuration.Diagnostics.FailOnWarning);
+            configuration.Templates.Should().Equal("templates/**/*.tst");
+            configuration.Output.Newline.Should().Be("crlf");
+            configuration.Output.FileNameConvention.Should().Be(FileNameConvention.Kebab);
+            configuration.DefaultTargetFramework.Should().Be("net10.0");
+            configuration.Diagnostics.FailOnWarning.Should().BeTrue();
         }
         finally
         {
@@ -80,11 +80,11 @@ public sealed class TypewriterConfigurationLoaderTests
                 projectPath: null,
                 cancellationToken: CancellationToken.None);
 
-            Assert.Equal(expected: IndentStyle.Space, actual: configuration.Output.IndentStyle);
-            Assert.Equal(expected: 2, actual: configuration.Output.IndentSize);
-            Assert.True(condition: configuration.Output.InsertFinalNewline);
-            Assert.True(condition: configuration.Output.TrimTrailingWhitespace);
-            Assert.Equal(expected: QuoteStyle.Backtick, actual: configuration.Output.QuoteStyle);
+            configuration.Output.IndentStyle.Should().Be(IndentStyle.Space);
+            configuration.Output.IndentSize.Should().Be(2);
+            configuration.Output.InsertFinalNewline.Should().BeTrue();
+            configuration.Output.TrimTrailingWhitespace.Should().BeTrue();
+            configuration.Output.QuoteStyle.Should().Be(QuoteStyle.Backtick);
         }
         finally
         {
@@ -113,11 +113,11 @@ public sealed class TypewriterConfigurationLoaderTests
                 projectPath: null,
                 cancellationToken: CancellationToken.None);
 
-            Assert.Equal(expected: IndentStyle.Preserve, actual: configuration.Output.IndentStyle);
-            Assert.Equal(expected: 4, actual: configuration.Output.IndentSize);
-            Assert.False(condition: configuration.Output.InsertFinalNewline);
-            Assert.False(condition: configuration.Output.TrimTrailingWhitespace);
-            Assert.Equal(expected: QuoteStyle.Double, actual: configuration.Output.QuoteStyle);
+            configuration.Output.IndentStyle.Should().Be(IndentStyle.Preserve);
+            configuration.Output.IndentSize.Should().Be(4);
+            configuration.Output.InsertFinalNewline.Should().BeFalse();
+            configuration.Output.TrimTrailingWhitespace.Should().BeFalse();
+            configuration.Output.QuoteStyle.Should().Be(QuoteStyle.Double);
         }
         finally
         {
@@ -147,8 +147,8 @@ public sealed class TypewriterConfigurationLoaderTests
                 projectPath: null,
                 cancellationToken: CancellationToken.None);
 
-            Assert.False(condition: configuration.Output.StrictNull);
-            Assert.Equal(expected: "utf-8-bom", actual: configuration.Output.Encoding);
+            configuration.Output.StrictNull.Should().BeFalse();
+            configuration.Output.Encoding.Should().Be("utf-8-bom");
         }
         finally
         {
