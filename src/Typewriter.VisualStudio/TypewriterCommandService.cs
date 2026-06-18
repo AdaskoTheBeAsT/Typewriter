@@ -598,16 +598,19 @@ internal sealed class TypewriterCommandService
     {
         ThreadHelper.ThrowIfNotOnUIThread();
         var dte = GetGlobalDte();
-        return IsTemplatePath(path: ResolveSelectedTemplatePath(dte: dte))
-            || IsTemplatePath(path: dte?.ActiveDocument?.FullName);
+        return IsSolutionExplorerActive(dte: dte)
+            ? IsTemplatePath(path: ResolveSelectedTemplatePath(dte: dte))
+            : IsTemplatePath(path: dte?.ActiveDocument?.FullName);
     }
 
     private static bool HasRenderAllContext()
     {
         ThreadHelper.ThrowIfNotOnUIThread();
         var dte = GetGlobalDte();
-        return GetSelectedProjectNodePath(dte: dte) is not null
-            || HasTemplateContext();
+        return IsSolutionExplorerActive(dte: dte)
+            ? GetSelectedProjectNodePath(dte: dte) is not null
+              || IsTemplatePath(path: ResolveSelectedTemplatePath(dte: dte))
+            : IsTemplatePath(path: dte?.ActiveDocument?.FullName);
     }
 
     private static DTE2? GetGlobalDte()
