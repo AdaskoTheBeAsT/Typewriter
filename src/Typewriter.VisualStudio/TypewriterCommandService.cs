@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -40,24 +41,33 @@ internal sealed class TypewriterCommandService
             return;
         }
 
-        commandService.AddCommand(
-            command: new OleMenuCommand(
-                invokeHandler: (_, _) => RunAsync(action: () => GenerateCurrentTemplateAsync(templatePathOverride: null, cancellationToken: CancellationToken.None)),
-                id: new CommandID(
-                    menuGroup: TypewriterVisualStudioConstants.CommandSetGuid,
-                    commandID: TypewriterVisualStudioConstants.GenerateCurrentTemplateCommandId)));
-        commandService.AddCommand(
-            command: new OleMenuCommand(
-                invokeHandler: (_, _) => RunAsync(action: () => GenerateAllTemplatesAsync(cancellationToken: CancellationToken.None)),
-                id: new CommandID(
-                    menuGroup: TypewriterVisualStudioConstants.CommandSetGuid,
-                    commandID: TypewriterVisualStudioConstants.GenerateAllTemplatesCommandId)));
-        commandService.AddCommand(
-            command: new OleMenuCommand(
-                invokeHandler: (_, _) => RunAsync(action: () => ValidateCurrentTemplateAsync(cancellationToken: CancellationToken.None)),
-                id: new CommandID(
-                    menuGroup: TypewriterVisualStudioConstants.CommandSetGuid,
-                    commandID: TypewriterVisualStudioConstants.ValidateCurrentTemplateCommandId)));
+        AddCommand(
+            commandService: commandService,
+            commandId: TypewriterVisualStudioConstants.GenerateCurrentTemplateCommandId,
+            action: () => GenerateCurrentTemplateAsync(templatePathOverride: null, cancellationToken: CancellationToken.None));
+        AddCommand(
+            commandService: commandService,
+            commandId: TypewriterVisualStudioConstants.GenerateAllTemplatesCommandId,
+            action: () => GenerateAllTemplatesAsync(cancellationToken: CancellationToken.None));
+        AddCommand(
+            commandService: commandService,
+            commandId: TypewriterVisualStudioConstants.ValidateCurrentTemplateCommandId,
+            action: () => ValidateCurrentTemplateAsync(cancellationToken: CancellationToken.None));
+        AddContextCommand(
+            commandService: commandService,
+            commandId: TypewriterVisualStudioConstants.RenderTemplateCommandId,
+            action: () => GenerateCurrentTemplateAsync(templatePathOverride: null, cancellationToken: CancellationToken.None),
+            isVisible: HasTemplateContext);
+        AddContextCommand(
+            commandService: commandService,
+            commandId: TypewriterVisualStudioConstants.RenderAllTemplatesCommandId,
+            action: () => GenerateAllTemplatesAsync(cancellationToken: CancellationToken.None),
+            isVisible: HasRenderAllContext);
+        AddContextCommand(
+            commandService: commandService,
+            commandId: TypewriterVisualStudioConstants.ValidateTemplateCommandId,
+            action: () => ValidateCurrentTemplateAsync(cancellationToken: CancellationToken.None),
+            isVisible: HasTemplateContext);
     }
 
     public Task GenerateSavedTemplateAsync(
@@ -67,6 +77,41 @@ internal sealed class TypewriterCommandService
             message: "Typewriter generate-on-save failed.",
             action: () => GenerateCurrentTemplateAsync(templatePathOverride: templatePath, cancellationToken: cancellationToken),
             cancellationToken: cancellationToken);
+
+    private void AddCommand(
+        OleMenuCommandService commandService,
+        int commandId,
+        Func<Task> action)
+    {
+        commandService.AddCommand(
+            command: new OleMenuCommand(
+                invokeHandler: (_, _) => RunAsync(action: action),
+                id: CreateCommandId(commandId: commandId)));
+    }
+
+    private void AddContextCommand(
+        OleMenuCommandService commandService,
+        int commandId,
+        Func<Task> action,
+        Func<bool> isVisible)
+    {
+        var command = new OleMenuCommand(
+            invokeHandler: (_, _) => RunAsync(action: action),
+            id: CreateCommandId(commandId: commandId));
+        command.BeforeQueryStatus += (_, _) =>
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            var visible = isVisible();
+            command.Visible = visible;
+            command.Enabled = visible;
+        };
+        commandService.AddCommand(command: command);
+    }
+
+    private static CommandID CreateCommandId(int commandId) =>
+        new(
+            menuGroup: TypewriterVisualStudioConstants.CommandSetGuid,
+            commandID: commandId);
 
     private void RunAsync(Func<Task> action)
     {
@@ -176,8 +221,10 @@ internal sealed class TypewriterCommandService
             return null;
         }
 
+        var selectedProjectPath = IsSolutionExplorerActive(dte: dte) ? GetSelectedProjectPath(dte: dte) : null;
         var projectPath = ResolveConfiguredPath(value: options.ProjectPath)
-            ?? FindProjectPathForTemplate(dte: dte, templatePath: templatePath)
+            ?? (templatePath is not null ? FindProjectPathForTemplate(dte: dte, templatePath: templatePath) : selectedProjectPath)
+            ?? selectedProjectPath
             ?? GetActiveProjectPath(dte: dte);
         var workspacePath = ResolveConfiguredPath(value: options.WorkspacePath)
             ?? GetSolutionPath(dte: dte)
@@ -360,13 +407,14 @@ internal sealed class TypewriterCommandService
         var candidate = templatePathOverride;
         if (string.IsNullOrWhiteSpace(value: candidate))
         {
-            candidate = dte?.ActiveDocument?.FullName;
+            var selectedTemplatePath = ResolveSelectedTemplatePath(dte: dte);
+            var activeTemplatePath = dte?.ActiveDocument?.FullName;
+            candidate = IsSolutionExplorerActive(dte: dte)
+                ? selectedTemplatePath ?? activeTemplatePath
+                : activeTemplatePath ?? selectedTemplatePath;
         }
 
-        return !string.IsNullOrWhiteSpace(value: candidate)
-            && Path.GetExtension(path: candidate).Equals(value: ".tst", comparisonType: StringComparison.OrdinalIgnoreCase)
-                ? candidate
-                : null;
+        return IsTemplatePath(path: candidate) ? candidate : null;
     }
 
     private static string? GetSolutionPath(DTE2? dte)
@@ -379,6 +427,216 @@ internal sealed class TypewriterCommandService
     {
         ThreadHelper.ThrowIfNotOnUIThread();
         return dte?.ActiveDocument?.ProjectItem?.ContainingProject?.FullName;
+    }
+
+    private static string? ResolveSelectedTemplatePath(DTE2? dte)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        return GetSelectedItems(dte: dte)
+            .Select(selector: selectedItem => GetProjectItemPath(projectItem: GetSelectedProjectItem(selectedItem: selectedItem)))
+            .FirstOrDefault(predicate: IsTemplatePath);
+    }
+
+    private static string? GetSelectedProjectPath(DTE2? dte)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        foreach (var selectedItem in GetSelectedItems(dte: dte))
+        {
+            var projectItem = GetSelectedProjectItem(selectedItem: selectedItem);
+            var projectPath = GetProjectPath(project: GetSelectedProject(selectedItem: selectedItem))
+                ?? GetProjectPath(project: projectItem?.ContainingProject);
+            if (!string.IsNullOrWhiteSpace(value: projectPath))
+            {
+                return projectPath;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? GetSelectedProjectNodePath(DTE2? dte)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        return GetSelectedItems(dte: dte)
+            .Select(selector: selectedItem => GetProjectPath(project: GetSelectedProject(selectedItem: selectedItem)))
+            .FirstOrDefault(predicate: path => !string.IsNullOrWhiteSpace(value: path));
+    }
+
+    private static IReadOnlyList<SelectedItem> GetSelectedItems(DTE2? dte)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        var selectedItems = dte?.SelectedItems;
+        if (selectedItems is null)
+        {
+            return [];
+        }
+
+        int count;
+        try
+        {
+            count = selectedItems.Count;
+        }
+        catch (COMException)
+        {
+            return [];
+        }
+
+        var items = new List<SelectedItem>();
+        for (var index = 1; index <= count; index++)
+        {
+            try
+            {
+                if (selectedItems.Item(index) is SelectedItem selectedItem)
+                {
+                    items.Add(item: selectedItem);
+                }
+            }
+            catch (COMException)
+            {
+            }
+            catch (ArgumentException)
+            {
+            }
+        }
+
+        return items;
+    }
+
+    private static ProjectItem? GetSelectedProjectItem(SelectedItem selectedItem)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        try
+        {
+            return selectedItem.ProjectItem;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (NotImplementedException)
+        {
+            return null;
+        }
+    }
+
+    private static Project? GetSelectedProject(SelectedItem selectedItem)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        try
+        {
+            return selectedItem.Project;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (NotImplementedException)
+        {
+            return null;
+        }
+    }
+
+    private static string? GetProjectItemPath(ProjectItem? projectItem)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        if (projectItem is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            for (var index = 1; index <= projectItem.FileCount; index++)
+            {
+                var path = projectItem.FileNames[(short)index];
+                if (!string.IsNullOrWhiteSpace(value: path))
+                {
+                    return path;
+                }
+            }
+        }
+        catch (COMException)
+        {
+        }
+        catch (ArgumentException)
+        {
+        }
+        catch (NotImplementedException)
+        {
+        }
+
+        return null;
+    }
+
+    private static string? GetProjectPath(Project? project)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        if (project is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return string.IsNullOrWhiteSpace(value: project.FullName) ? null : project.FullName;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (NotImplementedException)
+        {
+            return null;
+        }
+    }
+
+    private static bool IsTemplatePath(string? path) =>
+        !string.IsNullOrWhiteSpace(value: path)
+        && Path.GetExtension(path: path).Equals(value: ".tst", comparisonType: StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasTemplateContext()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        var dte = GetGlobalDte();
+        return IsSolutionExplorerActive(dte: dte)
+            ? IsTemplatePath(path: ResolveSelectedTemplatePath(dte: dte))
+            : IsTemplatePath(path: dte?.ActiveDocument?.FullName);
+    }
+
+    private static bool HasRenderAllContext()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        var dte = GetGlobalDte();
+        return IsSolutionExplorerActive(dte: dte)
+            ? GetSelectedProjectNodePath(dte: dte) is not null
+              || IsTemplatePath(path: ResolveSelectedTemplatePath(dte: dte))
+            : IsTemplatePath(path: dte?.ActiveDocument?.FullName);
+    }
+
+    private static DTE2? GetGlobalDte()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        return Package.GetGlobalService(typeof(DTE)) as DTE2;
+    }
+
+    private static bool IsSolutionExplorerActive(DTE2? dte)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        try
+        {
+            return string.Equals(
+                a: dte?.ActiveWindow?.Kind,
+                b: Constants.vsWindowKindSolutionExplorer,
+                comparisonType: StringComparison.OrdinalIgnoreCase);
+        }
+        catch (COMException)
+        {
+            return false;
+        }
+        catch (NotImplementedException)
+        {
+            return false;
+        }
     }
 
     private static string? FindProjectPathForTemplate(

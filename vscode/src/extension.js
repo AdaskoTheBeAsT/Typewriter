@@ -15,9 +15,9 @@ async function activate(context) {
 
     context.subscriptions.push(outputChannel, diagnostics);
     context.subscriptions.push(
-        vscode.commands.registerCommand("typewriter.generate", () => executeCurrentTemplate(context, "generate")),
-        vscode.commands.registerCommand("typewriter.generateAll", () => executeGenerateAll(context)),
-        vscode.commands.registerCommand("typewriter.validate", () => executeCurrentTemplate(context, "validate")),
+        vscode.commands.registerCommand("typewriter.generate", uri => executeCurrentTemplate(context, "generate", undefined, toFileUri(uri))),
+        vscode.commands.registerCommand("typewriter.generateAll", uri => executeGenerateAll(context, toFileUri(uri))),
+        vscode.commands.registerCommand("typewriter.validate", uri => executeCurrentTemplate(context, "validate", undefined, toFileUri(uri))),
         vscode.commands.registerCommand("typewriter.restartServer", () => restartLanguageServer(context)),
         createFallbackCompletionProvider(),
         vscode.workspace.onDidSaveTextDocument(document => handleDocumentSaved(context, document)));
@@ -123,28 +123,28 @@ async function stopLanguageServer() {
     await client.stop();
 }
 
-async function executeCurrentTemplate(context, command, document) {
-    const templatePath = await resolveCurrentTemplatePath(document);
+async function executeCurrentTemplate(context, command, document, resourceUri) {
+    const templatePath = await resolveCurrentTemplatePath(document, resourceUri);
     if (!templatePath) {
         return;
     }
 
-    await executeCliCommand(context, command, templatePath);
+    await executeCliCommand(context, command, templatePath, { resourceUri });
 }
 
-async function executeGenerateAll(context) {
-    await executeCliCommand(context, "generate", undefined, { allTemplates: true });
+async function executeGenerateAll(context, resourceUri) {
+    await executeCliCommand(context, "generate", undefined, { allTemplates: true, resourceUri });
 }
 
 async function executeCliCommand(context, command, templatePath, options = {}) {
-    const workspacePath = resolveWorkspacePath(templatePath);
+    const workspacePath = resolveWorkspacePath(templatePath, options.resourceUri);
     if (!workspacePath) {
         vscode.window.showErrorMessage("Typewriter requires an open workspace or configured typewriter.workspacePath.");
         return;
     }
 
     const workingDirectory = getWorkingDirectory(workspacePath);
-    const configuration = getConfiguration(templatePath ? vscode.Uri.file(templatePath) : undefined);
+    const configuration = getConfiguration(templatePath ? vscode.Uri.file(templatePath) : options.resourceUri);
     const args = buildTypewriterArguments(command, workspacePath, templatePath, configuration, options);
     const invocation = resolveCliInvocation(context, workingDirectory, configuration);
 
@@ -359,11 +359,13 @@ function buildLanguageServerInitializationOptions(workspacePath, configuration) 
     };
 }
 
-function resolveWorkspacePath(templatePath) {
-    const uri = templatePath ? vscode.Uri.file(templatePath) : vscode.window.activeTextEditor?.document.uri;
+function resolveWorkspacePath(templatePath, resourceUri) {
+    const uri = resourceUri ?? (templatePath ? vscode.Uri.file(templatePath) : vscode.window.activeTextEditor?.document.uri);
     const workspaceFolder = uri ? vscode.workspace.getWorkspaceFolder(uri) : undefined;
     const fallbackFolder = workspaceFolder ?? vscode.workspace.workspaceFolders?.[0];
-    const basePath = fallbackFolder?.uri.fsPath ?? (templatePath ? path.dirname(templatePath) : undefined);
+    const basePath = fallbackFolder?.uri.fsPath
+        ?? (templatePath ? path.dirname(templatePath) : undefined)
+        ?? (resourceUri ? path.dirname(resourceUri.fsPath) : undefined);
     const configuration = getConfiguration(uri);
     const configuredWorkspace = configuration.get("workspacePath");
 
@@ -374,7 +376,11 @@ function resolveWorkspacePath(templatePath) {
     return basePath;
 }
 
-async function resolveCurrentTemplatePath(document) {
+async function resolveCurrentTemplatePath(document, resourceUri) {
+    if (isTypewriterUri(resourceUri)) {
+        return resourceUri.fsPath;
+    }
+
     const targetDocument = document ?? vscode.window.activeTextEditor?.document;
     if (targetDocument && isTypewriterDocument(targetDocument)) {
         return targetDocument.uri.fsPath;
@@ -404,6 +410,15 @@ async function resolveCurrentTemplatePath(document) {
 function isTypewriterDocument(document) {
     return document.languageId === "typewriter"
         || document.uri.fsPath.toLowerCase().endsWith(".tst");
+}
+
+function isTypewriterUri(uri) {
+    return uri?.scheme === "file"
+        && uri.fsPath.toLowerCase().endsWith(".tst");
+}
+
+function toFileUri(value) {
+    return value?.scheme === "file" ? value : undefined;
 }
 
 function createFallbackCompletionProvider() {

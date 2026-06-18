@@ -8,6 +8,15 @@
       <Group guid="guidTypewriterCommandSet" id="TypewriterMenuGroup" priority="0x0600">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS" />
       </Group>
+      <Group guid="guidTypewriterCommandSet" id="TypewriterEditorContextMenuGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_CODEWIN" />
+      </Group>
+      <Group guid="guidTypewriterCommandSet" id="TypewriterItemContextMenuGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_ITEMNODE" />
+      </Group>
+      <Group guid="guidTypewriterCommandSet" id="TypewriterProjectContextMenuGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_PROJNODE" />
+      </Group>
     </Groups>
 
     <Buttons>
@@ -29,16 +38,58 @@
           <ButtonText>Typewriter: Validate Current Template</ButtonText>
         </Strings>
       </Button>
+      <Button guid="guidTypewriterCommandSet" id="cmdidRenderTemplate" priority="0x0200" type="Button">
+        <Parent guid="guidTypewriterCommandSet" id="TypewriterItemContextMenuGroup" />
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <Strings>
+          <ButtonText>Render Template</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidTypewriterCommandSet" id="cmdidRenderAllTemplates" priority="0x0201" type="Button">
+        <Parent guid="guidTypewriterCommandSet" id="TypewriterItemContextMenuGroup" />
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <Strings>
+          <ButtonText>Render All Templates</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidTypewriterCommandSet" id="cmdidValidateTemplate" priority="0x0202" type="Button">
+        <Parent guid="guidTypewriterCommandSet" id="TypewriterItemContextMenuGroup" />
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <Strings>
+          <ButtonText>Validate Template</ButtonText>
+        </Strings>
+      </Button>
     </Buttons>
   </Commands>
+
+  <CommandPlacements>
+    <CommandPlacement guid="guidTypewriterCommandSet" id="cmdidRenderTemplate" priority="0x0200">
+      <Parent guid="guidTypewriterCommandSet" id="TypewriterEditorContextMenuGroup" />
+    </CommandPlacement>
+    <CommandPlacement guid="guidTypewriterCommandSet" id="cmdidRenderAllTemplates" priority="0x0201">
+      <Parent guid="guidTypewriterCommandSet" id="TypewriterEditorContextMenuGroup" />
+    </CommandPlacement>
+    <CommandPlacement guid="guidTypewriterCommandSet" id="cmdidRenderAllTemplates" priority="0x0201">
+      <Parent guid="guidTypewriterCommandSet" id="TypewriterProjectContextMenuGroup" />
+    </CommandPlacement>
+    <CommandPlacement guid="guidTypewriterCommandSet" id="cmdidValidateTemplate" priority="0x0202">
+      <Parent guid="guidTypewriterCommandSet" id="TypewriterEditorContextMenuGroup" />
+    </CommandPlacement>
+  </CommandPlacements>
 
   <Symbols>
     <GuidSymbol name="guidTypewriterPackage" value="{0f42254e-a1f3-45bb-9209-b7a4d5c30791}" />
     <GuidSymbol name="guidTypewriterCommandSet" value="{70f36224-b7ab-491c-9f9c-b241ebafde9a}">
       <IDSymbol name="TypewriterMenuGroup" value="0x1020" />
+      <IDSymbol name="TypewriterEditorContextMenuGroup" value="0x1021" />
+      <IDSymbol name="TypewriterItemContextMenuGroup" value="0x1022" />
+      <IDSymbol name="TypewriterProjectContextMenuGroup" value="0x1023" />
       <IDSymbol name="cmdidGenerateCurrentTemplate" value="0x0100" />
       <IDSymbol name="cmdidGenerateAllTemplates" value="0x0101" />
       <IDSymbol name="cmdidValidateCurrentTemplate" value="0x0102" />
+      <IDSymbol name="cmdidRenderTemplate" value="0x0200" />
+      <IDSymbol name="cmdidRenderAllTemplates" value="0x0201" />
+      <IDSymbol name="cmdidValidateTemplate" value="0x0202" />
     </GuidSymbol>
   </Symbols>
 </CommandTable>
