@@ -55,21 +55,60 @@
     "commands": [
       {
         "command": "typewriter.generate",
-        "title": "Typewriter: Generate Current Template"
+        "title": "Typewriter: Generate Current Template",
+        "shortTitle": "Render Template"
       },
       {
         "command": "typewriter.generateAll",
-        "title": "Typewriter: Generate All Templates"
+        "title": "Typewriter: Generate All Templates",
+        "shortTitle": "Render All Templates"
       },
       {
         "command": "typewriter.validate",
-        "title": "Typewriter: Validate Current Template"
+        "title": "Typewriter: Validate Current Template",
+        "shortTitle": "Validate Template"
       },
       {
         "command": "typewriter.restartServer",
         "title": "Typewriter: Restart Language Server"
       }
     ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "typewriter.generate",
+          "when": "resourceScheme == file && resourceExtname == .tst",
+          "group": "typewriter@1"
+        },
+        {
+          "command": "typewriter.generateAll",
+          "when": "resourceScheme == file && resourceExtname == .tst",
+          "group": "typewriter@2"
+        },
+        {
+          "command": "typewriter.validate",
+          "when": "resourceScheme == file && resourceExtname == .tst",
+          "group": "typewriter@3"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "typewriter.generate",
+          "when": "resourceScheme == file && resourceExtname == .tst",
+          "group": "typewriter@1"
+        },
+        {
+          "command": "typewriter.generateAll",
+          "when": "resourceScheme == file && resourceExtname == .tst",
+          "group": "typewriter@2"
+        },
+        {
+          "command": "typewriter.validate",
+          "when": "resourceScheme == file && resourceExtname == .tst",
+          "group": "typewriter@3"
+        }
+      ]
+    },
     "configuration": {
       "title": "Typewriter",
       "properties": {

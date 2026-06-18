@@ -54,5 +54,29 @@
                 text="Validate Current Template"
                 description="Validate the current Typewriter template without writing generated files" />
         </group>
+        <group id="Typewriter.ContextMenu" text="Typewriter" popup="true">
+            <add-to-group group-id="SolutionExplorerPopupMenu" anchor="last" />
+            <action
+                id="Typewriter.RenderTemplate"
+                class="com.adaskothebeast.typewriter.rider.TypewriterGenerateCurrentAction"
+                text="Render Template"
+                description="Generate TypeScript from the selected Typewriter template" />
+            <action
+                id="Typewriter.RenderAllTemplates"
+                class="com.adaskothebeast.typewriter.rider.TypewriterGenerateAllAction"
+                text="Render All Templates"
+                description="Generate TypeScript from all discovered Typewriter templates" />
+            <action
+                id="Typewriter.ValidateTemplate"
+                class="com.adaskothebeast.typewriter.rider.TypewriterValidateCurrentAction"
+                text="Validate Template"
+                description="Validate the selected Typewriter template without writing generated files" />
+        </group>
+        <group id="Typewriter.EditorContextMenu" text="Typewriter" popup="true">
+            <add-to-group group-id="EditorLangPopupMenu" anchor="last" />
+            <reference ref="Typewriter.RenderTemplate" />
+            <reference ref="Typewriter.RenderAllTemplates" />
+            <reference ref="Typewriter.ValidateTemplate" />
+        </group>
     </actions>
 </idea-plugin>
