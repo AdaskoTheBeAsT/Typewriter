@@ -156,6 +156,7 @@ internal static class TemplateRuntimeCompiler
             "using System.Text.RegularExpressions;",
             "using Typewriter.CodeModel;",
             "using Typewriter.Configuration;",
+            "using Typewriter.Extensions.Documentation;",
             "using Typewriter.Extensions.Types;",
             "using Typewriter.Extensions.WebApi;",
             "using Typewriter.VisualStudio;",

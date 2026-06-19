@@ -1515,8 +1515,8 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             var document = XDocument.Parse(text: "<doc>" + documentation + "</doc>");
             return new DocCommentMetadata(
-                Summary: NormalizeDocumentation(documentation: document.Descendants(name: "summary").FirstOrDefault()?.Value) ?? string.Empty,
-                Returns: NormalizeDocumentation(documentation: document.Descendants(name: "returns").FirstOrDefault()?.Value) ?? string.Empty,
+                Summary: NormalizeDocumentation(documentation: GetDocCommentElementContent(element: document.Descendants(name: "summary").FirstOrDefault())) ?? string.Empty,
+                Returns: NormalizeDocumentation(documentation: GetDocCommentElementContent(element: document.Descendants(name: "returns").FirstOrDefault())) ?? string.Empty,
                 Parameters: document.Descendants(name: "param")
                     .Select(
                         selector: element => new ParameterCommentMetadata(
@@ -1589,6 +1589,13 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             LiteralExpressionSyntax literal => literal.Token.ValueText,
             _ => value.ToString(),
         };
+    }
+
+    private static string? GetDocCommentElementContent(XElement? element)
+    {
+        return element is null
+            ? null
+            : string.Concat(values: element.Nodes());
     }
 
     private static string? NormalizeDocumentation(string? documentation)

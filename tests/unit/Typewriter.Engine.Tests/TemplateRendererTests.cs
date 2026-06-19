@@ -1963,6 +1963,49 @@ public sealed class TemplateRendererTests
     }
 
     [Fact]
+    public void RenderInvokesDocCommentToJsDocExtension()
+    {
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "Widget",
+                    FullName: "Sample.Widget",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties: [],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true)
+                {
+                    DocComment = new DocCommentMetadata(
+                        Summary: "Defines a <see cref=\"T:Sample.Widget\" />.",
+                        Returns: string.Empty,
+                        Parameters: []),
+                },
+            ],
+            Diagnostics: []);
+        const string template = """
+            ${
+                string JsDoc(Class c) => c.DocComment.ToJsDocSummary();
+            }
+            $Classes[$JsDoc]
+            """;
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "jsdoc.tst", Content: template), diagnostics: diagnostics);
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("Defines a {@link Widget}.");
+    }
+
+    [Fact]
     public void RenderExposesCodeModelParityMembers()
     {
         const string ModelFullName = "Sample.Widget";

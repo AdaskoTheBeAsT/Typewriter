@@ -64,6 +64,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.4.0](#440)
     - [4.3.0](#430)
     - [4.2.0](#420)
     - [4.1.1](#411)
@@ -829,6 +830,11 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.4.0
+
+- Fixed XML doc-comment extraction so inline elements (such as `<see cref="..."/>`) are preserved in `$DocComment[$Summary]` and `$DocComment[$Returns]` instead of being stripped to their text content, so referenced type names are no longer lost in generated comments.
+- Added an opt-in `Typewriter.Extensions.Documentation` formatter with `DocComment.ToJsDoc()`, `ToJsDocSummary()`, and `ToJsDocReturns()` helpers that convert C# XML doc tags to TypeScript JSDoc (for example `<see cref="GeometryFieldType"/>` becomes `{@link GeometryFieldType}`, and `<c>`/`<see langword>`/`<paramref>` become backtick code). The metadata stays raw; conversion is applied only when a template calls these helpers.
 
 ### 4.3.0
 
