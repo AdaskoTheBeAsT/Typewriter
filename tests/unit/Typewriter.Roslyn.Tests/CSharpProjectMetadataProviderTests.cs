@@ -1034,6 +1034,59 @@ public sealed class CSharpProjectMetadataProviderTests
         }
     }
 
+    [Fact]
+    public async Task GetMetadataExtractsPropertyAndFieldInitializerValues()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Models.cs"),
+                contents: """
+                          namespace Sample;
+
+                          public class Holder
+                          {
+                              public string Type { get; } = "myTestType";
+
+                              public int Count { get; set; } = 5;
+
+                              public string Label = "instance";
+
+                              public string? NoInitializer { get; set; }
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().BeEmpty();
+            var holder = metadata.Types.Should().ContainSingle(type => type.Name == "Holder").Which;
+            holder.Properties.Should().ContainSingle(property => property.Name == "Type").Which.Value.Should().Be("myTestType");
+            holder.Properties.Should().ContainSingle(property => property.Name == "Count").Which.Value.Should().Be("5");
+            holder.Properties.Should().ContainSingle(property => property.Name == "NoInitializer").Which.Value.Should().BeNull();
+            holder.Fields.Should().ContainSingle(field => field.Name == "Label").Which.Value.Should().Be("instance");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(

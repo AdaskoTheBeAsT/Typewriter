@@ -326,7 +326,7 @@ internal sealed class TemplateFeatureService : IDisposable
         yield return Scalar(label: "Namespace", documentation: "Containing namespace.");
         yield return Scalar(label: "Type", documentation: "TypeScript rendering of the current item's type.");
         yield return Scalar(label: "ReturnType", documentation: "Method return type.");
-        yield return Scalar(label: "Value", documentation: "Constant, enum, or attribute argument value.");
+        yield return Scalar(label: "Value", documentation: "Constant, enum, attribute argument, or property/field initializer value.");
         yield return Scalar(label: "DefaultValue", documentation: "Parameter default value.");
         yield return Scalar(label: "Parent", documentation: "Parent metadata object.");
         yield return Scalar(label: "IsNullable", documentation: "Whether the current type reference or property is nullable.");

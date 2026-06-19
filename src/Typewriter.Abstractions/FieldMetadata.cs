@@ -15,4 +15,6 @@ public sealed record FieldMetadata(
     public string? Documentation { get; init; }
 
     public DocCommentMetadata? DocComment { get; init; }
+
+    public string? Value { get; init; }
 }

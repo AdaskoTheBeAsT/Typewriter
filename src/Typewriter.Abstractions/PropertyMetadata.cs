@@ -27,4 +27,6 @@ public sealed record PropertyMetadata(
     public bool IsVirtual { get; init; }
 
     public IReadOnlyList<ParameterMetadata> Parameters { get; init; } = [];
+
+    public string? Value { get; init; }
 }

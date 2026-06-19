@@ -64,7 +64,12 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.3.0](#430)
+    - [4.2.0](#420)
+    - [4.1.1](#411)
     - [4.1.0](#410)
+    - [4.0.0](#400)
+    - [4.0.0-beta.1](#400-beta1)
   - [🤝 Contributing](#-contributing)
   - [🐛 Issues and Support](#-issues-and-support)
   - [🙏 Acknowledgments](#-acknowledgments)
@@ -825,12 +830,45 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 
 ## Changelog
 
+### 4.3.0
+
+- Added property and instance-field initializer values to the metadata model, exposed to templates as `$Value` (for example `$Properties[$Value]` and `$Fields[$Value]`).
+- Initializer values come from the source declaration: literals render as their text value, non-literal initializers (such as `Guid.NewGuid()`) render as the expression text, and members without an initializer render empty.
+- Added Roslyn extraction and renderer support plus language-server completion documentation for the new `$Value` member, covered by engine and Roslyn tests.
+
+### 4.2.0
+
+- Restored the editor right-click commands **Render Template** and **Generate Current Template** so a template can be regenerated on demand from the context menu.
+- Fixed a stack overflow that occurred while extracting metadata for types with cyclic references.
+
+### 4.1.1
+
+- Fixed resolution of types that come from transitively referenced projects.
+- Fixed remaining metadata-loading issues for older full .NET Framework projects.
+- Fixed handling of satellite (localized) assemblies during project loading.
+
 ### 4.1.0
 
 - Added struct metadata and template rendering through `$Structs[...]`, `$Types(Struct)[...]`, CodeModel `Struct`, and LSP/editor completions.
 - Added indexer metadata through `Property.IsIndexer` and property-level `$Parameters[...]`, intended for lookup-style API generation rather than JSON DTO payloads.
 - Added literal dollar escaping with `$$`, so templates can emit `$type`, `${...}`, and other TypeScript dollar syntax without triggering template member lookup.
+- Fixed processing of full .NET Framework projects.
+- Fixed implicit `using` resolution for referenced projects.
+- Fixed loading of projects that use source generators.
+- Fixed conflicts when two projects reference different versions of the same package.
 - Added tests that cover Roslyn extraction, template rendering, CodeModel parity, and language-server completions for structs and indexers.
+
+### 4.0.0
+
+- First stable release of the ground-up, cross-platform reimplementation: a shared Roslyn-powered engine with a CLI, Language Server, VS Code extension, Visual Studio 2026 VSIX, and JetBrains Rider plugin.
+- Documentation and packaging refinements over `4.0.0-beta.1`.
+
+### 4.0.0-beta.1
+
+- Initial public preview of the new toolchain: `typewriter init`, `generate`, `validate`, `watch`, and `list-templates`, with `typewriter.json` configuration and discovery.
+- Editor-independent engine running the original `.tst` dialect, plus compiled C# helpers, shared `#load` source helpers, and NuGet `#r` references.
+- Safe output planning (`TW0005`/`TW0006`/`TW0008`), template logging (`TW0007`), and deterministic CLI exit codes with text/JSON output.
+- Language Server features: live diagnostics, completion, hover, go-to-definition, and semantic tokens.
 
 ---
 

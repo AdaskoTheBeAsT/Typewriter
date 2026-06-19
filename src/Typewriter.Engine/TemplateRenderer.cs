@@ -999,6 +999,7 @@ public sealed class TemplateRenderer
             "DocComment" => field.DocComment,
             "Parent" => field.Parent,
             "Type" => field.Type,
+            "Value" => field.Value,
             _ => Unresolved.Value,
         };
     }
@@ -1103,6 +1104,7 @@ public sealed class TemplateRenderer
             "IsRequired" => property.IsRequired,
             "Parameters" => property.Parameters,
             "Attributes" => property.Attributes,
+            "Value" => property.Value,
             _ => Unresolved.Value,
         };
     }
@@ -2408,6 +2410,7 @@ public sealed class TemplateRenderer
             "Parameters" => property.Parameters,
             "DocComment" => property.DocComment,
             "Attributes" => property.Attributes,
+            "Value" => property.Value,
             _ => Unresolved.Value,
         };
     }
@@ -2505,6 +2508,7 @@ public sealed class TemplateRenderer
             "DocComment" => field.DocComment,
             "Attributes" => field.Attributes,
             "ParentTypeFullName" => field.ParentTypeFullName,
+            "Value" => field.Value,
             _ => Unresolved.Value,
         };
     }

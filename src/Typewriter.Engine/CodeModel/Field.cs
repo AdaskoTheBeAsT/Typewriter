@@ -8,5 +8,7 @@ public class Field : Item
 
     public virtual Type? Type { get; init; }
 
+    public virtual string Value { get; init; } = string.Empty;
+
     public static implicit operator string(Field? instance) => instance?.ToString() ?? string.Empty;
 }
