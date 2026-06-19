@@ -591,6 +591,77 @@ public sealed class CSharpProjectMetadataProviderTests
     }
 
     [Fact]
+    public async Task GetMetadataPreservesInlineElementsInDocComments()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Models.cs"),
+                contents: """
+                          namespace Sample;
+
+                          /// <summary>Target type.</summary>
+                          public class GeometryFieldType
+                          {
+                          }
+
+                          /// <summary>
+                          /// Defines the types of a <see cref="GeometryFieldType"/>.
+                          /// </summary>
+                          public class GeometryHolder
+                          {
+                              /// <summary>Gets a value.</summary>
+                              /// <param name="index">The index of the <see cref="GeometryFieldType"/> to return.</param>
+                              /// <returns>The <see cref="GeometryFieldType"/> instance.</returns>
+                              public GeometryFieldType Get(int index)
+                              {
+                                  return new GeometryFieldType();
+                              }
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().BeEmpty();
+            var holder = metadata.Types.Should().ContainSingle(type => type.Name == "GeometryHolder").Which;
+            holder.DocComment.Should().NotBeNull();
+            holder.DocComment!.Summary.Should().Contain("Defines the types of a");
+            holder.DocComment.Summary.Should().Contain("<see cref=\"T:");
+            holder.DocComment.Summary.Should().Contain("GeometryFieldType");
+
+            var get = holder.Methods.Should().ContainSingle(method => method.Name == "Get").Which;
+            get.DocComment.Should().NotBeNull();
+            get.DocComment!.Returns.Should().Contain("<see cref=\"T:");
+            get.DocComment.Returns.Should().Contain("GeometryFieldType");
+
+            var indexParam = get.DocComment.Parameters.Should().ContainSingle().Which;
+            indexParam.Name.Should().Be("index");
+            indexParam.Description.Should().Contain("<see cref=\"T:");
+            indexParam.Description.Should().Contain("GeometryFieldType");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GetMetadataCompilesProjectReferencesSeparatelyBeforeMergingMetadata()
     {
         var directory = CreateProjectDirectory();
