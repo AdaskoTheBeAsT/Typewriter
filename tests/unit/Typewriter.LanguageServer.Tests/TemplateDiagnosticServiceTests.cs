@@ -26,9 +26,9 @@ public sealed class TemplateDiagnosticServiceTests
             var diagnostics = await new TemplateDiagnosticService()
                 .ValidateAsync(document: document, settings: settings, cancellationToken: CancellationToken.None);
 
-            var diagnostic = Assert.Single(collection: diagnostics.Where(predicate: item => item.Code == "TW0002"));
-            Assert.Equal(expected: project.TemplatePath, actual: diagnostic.File);
-            Assert.Contains(expectedSubstring: "not closed", actualString: diagnostic.Message, comparisonType: StringComparison.OrdinalIgnoreCase);
+            var diagnostic = diagnostics.Should().ContainSingle(item => item.Code == "TW0002").Which;
+            diagnostic.File.Should().Be(project.TemplatePath);
+            diagnostic.Message.Should().ContainEquivalentOf("not closed");
         }
         finally
         {
@@ -59,11 +59,11 @@ public sealed class TemplateDiagnosticServiceTests
                     Code: "TW0002"),
             ]);
 
-        var diagnostic = Assert.Single(collection: diagnostics);
-        Assert.Equal(expected: 2, actual: diagnostic.Range.Start.Line);
-        Assert.Equal(expected: 4, actual: diagnostic.Range.Start.Character);
-        Assert.Equal(expected: 1, actual: diagnostic.Severity);
-        Assert.Equal(expected: "TW0002", actual: diagnostic.Code);
+        var diagnostic = diagnostics.Should().ContainSingle().Which;
+        diagnostic.Range.Start.Line.Should().Be(2);
+        diagnostic.Range.Start.Character.Should().Be(4);
+        diagnostic.Severity.Should().Be(1);
+        diagnostic.Code.Should().Be("TW0002");
     }
 
     private static async Task<SampleProject> CreateSimpleProjectAsync(string directory)

@@ -13,7 +13,7 @@ public sealed class OutputContentFormatterTests
 
         var formatted = OutputContentFormatter.Format(content: content, output: OutputConfiguration.Default);
 
-        Assert.Equal(expected: content, actual: formatted);
+        formatted.Should().Be(content);
     }
 
     [Fact]
@@ -24,9 +24,7 @@ public sealed class OutputContentFormatterTests
 
         var formatted = OutputContentFormatter.Format(content: content, output: output);
 
-        Assert.Equal(
-            expected: "export class User {\n  constructor(\n    public name: string\n  ) {\n  }\n}",
-            actual: formatted);
+        formatted.Should().Be("export class User {\n  constructor(\n    public name: string\n  ) {\n  }\n}");
     }
 
     [Fact]
@@ -37,9 +35,7 @@ public sealed class OutputContentFormatterTests
 
         var formatted = OutputContentFormatter.Format(content: content, output: output);
 
-        Assert.Equal(
-            expected: "export class User {\n\tconstructor(\n\t\tpublic name: string\n\t) {\n\t}\n}",
-            actual: formatted);
+        formatted.Should().Be("export class User {\n\tconstructor(\n\t\tpublic name: string\n\t) {\n\t}\n}");
     }
 
     [Fact]
@@ -50,9 +46,7 @@ public sealed class OutputContentFormatterTests
 
         var formatted = OutputContentFormatter.Format(content: content, output: output);
 
-        Assert.Equal(
-            expected: "export class User {\n  constructor(\n    public name: string\n  ) {\n  }\n}",
-            actual: formatted);
+        formatted.Should().Be("export class User {\n  constructor(\n    public name: string\n  ) {\n  }\n}");
     }
 
     [Fact]
@@ -63,7 +57,7 @@ public sealed class OutputContentFormatterTests
 
         var formatted = OutputContentFormatter.Format(content: content, output: output);
 
-        Assert.Equal(expected: "export class User {\n    \n\tname: string;\n}", actual: formatted);
+        formatted.Should().Be("export class User {\n    \n\tname: string;\n}");
     }
 
     [Fact]
@@ -74,7 +68,7 @@ public sealed class OutputContentFormatterTests
 
         var formatted = OutputContentFormatter.Format(content: content, output: output);
 
-        Assert.Equal(expected: "export class User {\n    name: string;\n\n}", actual: formatted);
+        formatted.Should().Be("export class User {\n    name: string;\n\n}");
     }
 
     [Fact]
@@ -82,9 +76,9 @@ public sealed class OutputContentFormatterTests
     {
         var output = OutputConfiguration.Default with { InsertFinalNewline = true };
 
-        Assert.Equal(expected: "export const a = 1;\n", actual: OutputContentFormatter.Format(content: "export const a = 1;", output: output));
-        Assert.Equal(expected: "export const a = 1;\n", actual: OutputContentFormatter.Format(content: "export const a = 1;\n", output: output));
-        Assert.Equal(expected: string.Empty, actual: OutputContentFormatter.Format(content: string.Empty, output: output));
+        OutputContentFormatter.Format(content: "export const a = 1;", output: output).Should().Be("export const a = 1;\n");
+        OutputContentFormatter.Format(content: "export const a = 1;\n", output: output).Should().Be("export const a = 1;\n");
+        OutputContentFormatter.Format(content: string.Empty, output: output).Should().BeEmpty();
     }
 
     [Fact]
@@ -101,7 +95,7 @@ public sealed class OutputContentFormatterTests
 
         var formatted = OutputContentFormatter.Format(content: content, output: output);
 
-        Assert.Equal(expected: "export class User {\r\n\tname: string;\r\n}\r\n", actual: formatted);
+        formatted.Should().Be("export class User {\r\n\tname: string;\r\n}\r\n");
     }
 
     [Fact]
@@ -134,9 +128,7 @@ public sealed class OutputContentFormatterTests
                 request: request,
                 cancellationToken: CancellationToken.None);
 
-            Assert.Equal(
-                expected: "export class User {\n  name: string;\n}\n",
-                actual: await File.ReadAllTextAsync(path: path));
+            (await File.ReadAllTextAsync(path: path)).Should().Be("export class User {\n  name: string;\n}\n");
         }
         finally
         {

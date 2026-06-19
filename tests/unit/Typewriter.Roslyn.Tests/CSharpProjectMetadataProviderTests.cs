@@ -125,95 +125,136 @@ public sealed class CSharpProjectMetadataProviderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: metadata.Diagnostics);
-            var user = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "User"));
-            Assert.Equal(expected: TypeMetadataKind.Class, actual: user.Kind);
-            Assert.Equal(expected: "Frontend user.", actual: user.Documentation);
-            Assert.NotNull(@object: user.Location);
-            var email = Assert.Single(collection: user.Properties.Where(predicate: property => property.Name == "Email"));
-            Assert.True(condition: email.Type.IsNullable);
-            var displayName = Assert.Single(collection: user.Properties.Where(predicate: property => property.Name == "DisplayName"));
-            Assert.Equal(expected: "Name shown to users.", actual: displayName.Documentation);
-            Assert.NotNull(@object: displayName.Location);
-            var indexer = Assert.Single(collection: user.Properties.Where(predicate: property => property.IsIndexer));
-            Assert.Collection(
-                collection: indexer.Parameters,
+            metadata.Diagnostics.Should().BeEmpty();
+            var user = metadata.Types.Should().ContainSingle(type => type.Name == "User").Which;
+            user.Kind.Should().Be(TypeMetadataKind.Class);
+            user.Documentation.Should().Be("Frontend user.");
+            user.Location.Should().NotBeNull();
+            var email = user.Properties.Should().ContainSingle(property => property.Name == "Email").Which;
+            email.Type.IsNullable.Should().BeTrue();
+            var displayName = user.Properties.Should().ContainSingle(property => property.Name == "DisplayName").Which;
+            displayName.Documentation.Should().Be("Name shown to users.");
+            displayName.Location.Should().NotBeNull();
+            var indexer = user.Properties.Should().ContainSingle(property => property.IsIndexer).Which;
+            indexer.Parameters.Should().SatisfyRespectively(
                 parameter =>
                 {
-                    Assert.Equal(expected: "index", actual: parameter.Name);
-                    Assert.Equal(expected: "Int32", actual: parameter.Type.Name);
-                    Assert.Contains(collection: parameter.Attributes, filter: attribute => attribute.Name == "FromRoute");
-                    Assert.Equal(expected: indexer.FullName, actual: parameter.ParentPropertyFullName);
+                    parameter.Name.Should().Be("index");
+                    parameter.Type.Name.Should().Be("Int32");
+                    parameter.Attributes.Should().Contain(attribute => attribute.Name == "FromRoute");
+                    parameter.ParentPropertyFullName.Should().Be(indexer.FullName);
                 },
                 parameter =>
                 {
-                    Assert.Equal(expected: "key", actual: parameter.Name);
-                    Assert.True(condition: parameter.Type.IsNullable);
-                    Assert.Equal(expected: indexer.FullName, actual: parameter.ParentPropertyFullName);
+                    parameter.Name.Should().Be("key");
+                    parameter.Type.IsNullable.Should().BeTrue();
+                    parameter.ParentPropertyFullName.Should().Be(indexer.FullName);
                 });
-            var orders = Assert.Single(collection: user.Properties.Where(predicate: property => property.Name == "Orders"));
-            Assert.True(condition: orders.Type.IsCollection);
-            Assert.Equal(expected: "Order", actual: orders.Type.ElementType?.Name);
-            var aliases = Assert.Single(collection: user.Properties.Where(predicate: property => property.Name == "Aliases"));
-            Assert.True(condition: aliases.Type.IsCollection);
-            Assert.True(condition: aliases.Type.ElementType?.IsNullable);
-            var relatedUsers = Assert.Single(collection: user.Properties.Where(predicate: property => property.Name == "RelatedUsers"));
-            Assert.True(condition: relatedUsers.Type.IsDictionary);
-            Assert.Equal(expected: "String", actual: relatedUsers.Type.TypeArguments[index: 0].Name);
-            Assert.True(condition: relatedUsers.Type.TypeArguments[index: 1].IsNullable);
-            var defaultStatus = Assert.Single(collection: user.Properties.Where(predicate: property => property.Name == "DefaultStatus"));
-            Assert.True(condition: defaultStatus.Type.IsEnum);
-            Assert.Collection(
-                collection: defaultStatus.Type.EnumValues,
-                value => Assert.Equal(expected: (string?)"Draft", actual: (string?)value.Name),
-                value => Assert.Equal(expected: (string?)"Paid", actual: (string?)value.Name));
-            var order = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "Order"));
-            Assert.Equal(expected: TypeMetadataKind.Record, actual: order.Kind);
-            var money = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "Money"));
-            Assert.Equal(expected: TypeMetadataKind.Struct, actual: money.Kind);
-            Assert.Contains(collection: money.Properties, filter: property => property.Name == "Amount");
-            Assert.Contains(collection: money.NestedStructs, filter: nested => nested.Name == "Token");
-            var controller = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "UsersController"));
-            Assert.False(condition: controller.IsStatic);
-            var apiVersion = Assert.Single(collection: controller.Constants.Where(predicate: constant => constant.Name == "ApiVersion"));
-            Assert.Equal(expected: MetadataAccessibility.Public, actual: apiVersion.Accessibility);
-            Assert.Equal(expected: "v1", actual: apiVersion.Value);
-            Assert.Equal(expected: controller.FullName, actual: apiVersion.ParentTypeFullName);
-            var getAsync = Assert.Single(collection: controller.Methods.Where(predicate: method => method.Name == "GetAsync"));
-            Assert.Equal(expected: MetadataAccessibility.Public, actual: getAsync.Accessibility);
-            Assert.Equal(expected: "Task", actual: getAsync.ReturnType.Name);
-            Assert.Equal(expected: controller.FullName, actual: getAsync.ParentTypeFullName);
-            Assert.Contains(collection: getAsync.Attributes, filter: attribute => attribute.Name == "HttpGet");
-            Assert.Contains(
-                collection: getAsync.Attributes,
-                filter: attribute => attribute.Name == "ProducesResponseType"
-                                     && attribute.Arguments.FirstOrDefault()?.Value == "typeof(Sample.User)");
-            var id = Assert.Single(collection: getAsync.Parameters.Where(predicate: parameter => parameter.Name == "id"));
-            Assert.False(condition: id.HasDefaultValue);
-            Assert.Contains(collection: id.Attributes, filter: attribute => attribute.Name == "FromRoute");
-            var filter = Assert.Single(collection: getAsync.Parameters.Where(predicate: parameter => parameter.Name == "filter"));
-            Assert.True(condition: filter.Type.IsNullable);
-            Assert.True(condition: filter.HasDefaultValue);
-            Assert.Equal(expected: "null", actual: filter.DefaultValue);
-            Assert.Equal(expected: getAsync.FullName, actual: filter.ParentMethodFullName);
-            var constants = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "AppConstants"));
-            Assert.True(condition: constants.IsStatic);
-            Assert.Equal(expected: "42", actual: Assert.Single(collection: constants.Constants.Where(predicate: constant => constant.Name == "Answer")).Value);
-            var status = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "OrderStatus"));
-            Assert.Collection(
-                collection: status.EnumValues,
+            var orders = user.Properties.Should().ContainSingle(property => property.Name == "Orders").Which;
+            orders.Type.IsCollection.Should().BeTrue();
+            orders.Type.ElementType.Should().NotBeNull();
+            orders.Type.ElementType!.Name.Should().Be("Order");
+            var aliases = user.Properties.Should().ContainSingle(property => property.Name == "Aliases").Which;
+            aliases.Type.IsCollection.Should().BeTrue();
+            aliases.Type.ElementType.Should().NotBeNull();
+            aliases.Type.ElementType!.IsNullable.Should().BeTrue();
+            var relatedUsers = user.Properties.Should().ContainSingle(property => property.Name == "RelatedUsers").Which;
+            relatedUsers.Type.IsDictionary.Should().BeTrue();
+            relatedUsers.Type.TypeArguments[index: 0].Name.Should().Be("String");
+            relatedUsers.Type.TypeArguments[index: 1].IsNullable.Should().BeTrue();
+            var defaultStatus = user.Properties.Should().ContainSingle(property => property.Name == "DefaultStatus").Which;
+            defaultStatus.Type.IsEnum.Should().BeTrue();
+            defaultStatus.Type.EnumValues.Select(selector: value => value.Name).Should().Equal("Draft", "Paid");
+            var order = metadata.Types.Should().ContainSingle(type => type.Name == "Order").Which;
+            order.Kind.Should().Be(TypeMetadataKind.Record);
+            var money = metadata.Types.Should().ContainSingle(type => type.Name == "Money").Which;
+            money.Kind.Should().Be(TypeMetadataKind.Struct);
+            money.Properties.Should().Contain(property => property.Name == "Amount");
+            money.NestedStructs.Should().Contain(nested => nested.Name == "Token");
+            var controller = metadata.Types.Should().ContainSingle(type => type.Name == "UsersController").Which;
+            controller.IsStatic.Should().BeFalse();
+            var apiVersion = controller.Constants.Should().ContainSingle(constant => constant.Name == "ApiVersion").Which;
+            apiVersion.Accessibility.Should().Be(MetadataAccessibility.Public);
+            apiVersion.Value.Should().Be("v1");
+            apiVersion.ParentTypeFullName.Should().Be(controller.FullName);
+            var getAsync = controller.Methods.Should().ContainSingle(method => method.Name == "GetAsync").Which;
+            getAsync.Accessibility.Should().Be(MetadataAccessibility.Public);
+            getAsync.ReturnType.Name.Should().Be("Task");
+            getAsync.ParentTypeFullName.Should().Be(controller.FullName);
+            getAsync.Attributes.Should().Contain(attribute => attribute.Name == "HttpGet");
+            getAsync.Attributes
+                .Where(
+                    predicate: attribute => attribute.Name == "ProducesResponseType"
+                                            && attribute.Arguments.FirstOrDefault()?.Value == "typeof(Sample.User)")
+                .Should()
+                .ContainSingle();
+            var id = getAsync.Parameters.Should().ContainSingle(parameter => parameter.Name == "id").Which;
+            id.HasDefaultValue.Should().BeFalse();
+            id.Attributes.Should().Contain(attribute => attribute.Name == "FromRoute");
+            var filter = getAsync.Parameters.Should().ContainSingle(parameter => parameter.Name == "filter").Which;
+            filter.Type.IsNullable.Should().BeTrue();
+            filter.HasDefaultValue.Should().BeTrue();
+            filter.DefaultValue.Should().Be("null");
+            filter.ParentMethodFullName.Should().Be(getAsync.FullName);
+            var constants = metadata.Types.Should().ContainSingle(type => type.Name == "AppConstants").Which;
+            constants.IsStatic.Should().BeTrue();
+            constants.Constants.Should().ContainSingle(constant => constant.Name == "Answer").Which.Value.Should().Be("42");
+            var status = metadata.Types.Should().ContainSingle(type => type.Name == "OrderStatus").Which;
+            status.EnumValues.Should().SatisfyRespectively(
                 value =>
                 {
-                    Assert.Equal(expected: (string?)"Draft", actual: (string?)value.Name);
-                    Assert.Equal<long?>(expected: 0, actual: value.Value);
-                    Assert.Equal(expected: status.FullName, actual: (string?)value.ParentTypeFullName);
-                    Assert.Contains(collection: value.Attributes, filter: attribute => attribute.Name == "EnumLabel");
+                    value.Name.Should().Be("Draft");
+                    value.Value.Should().Be(0);
+                    value.ParentTypeFullName.Should().Be(status.FullName);
+                    value.Attributes.Should().Contain(attribute => attribute.Name == "EnumLabel");
                 },
                 value =>
                 {
-                    Assert.Equal(expected: (string?)"Paid", actual: (string?)value.Name);
-                    Assert.Equal<long?>(expected: 1, actual: value.Value);
+                    value.Name.Should().Be("Paid");
+                    value.Value.Should().Be(1);
                 });
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task GetMetadataLoadsWebSdkProjectWithRazorSourceGenerators()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "WebSample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk.Web">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Model.cs"),
+                contents: """
+                          namespace WebSample;
+
+                          public sealed class WeatherForecast
+                          {
+                              public string? Summary { get; init; }
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().BeEmpty();
+            metadata.Types.Should().ContainSingle(type => type.Name == "WeatherForecast");
         }
         finally
         {
@@ -280,23 +321,25 @@ public sealed class CSharpProjectMetadataProviderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: metadata.Diagnostics);
-            var enabled = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "EnabledRegion"));
-            Assert.True(condition: enabled.IsNullableAware);
-            Assert.True(condition: Assert.Single(collection: enabled.Properties.Where(predicate: property => property.Name == "OptionalName")).Type.IsNullable);
-            Assert.True(condition: Assert.Single(collection: enabled.Properties.Where(predicate: property => property.Name == "OptionalAliases")).Type.ElementType?.IsNullable);
-            var relatedItems = Assert.Single(collection: enabled.Properties.Where(predicate: property => property.Name == "RelatedItems"));
-            Assert.True(condition: relatedItems.Type.IsDictionary);
-            Assert.True(condition: relatedItems.Type.TypeArguments[index: 1].IsNullable);
-            var getAsync = Assert.Single(collection: enabled.Methods.Where(predicate: method => method.Name == "GetAsync"));
-            Assert.True(condition: getAsync.ReturnType.TypeArguments[index: 0].IsNullable);
+            metadata.Diagnostics.Should().BeEmpty();
+            var enabled = metadata.Types.Should().ContainSingle(type => type.Name == "EnabledRegion").Which;
+            enabled.IsNullableAware.Should().BeTrue();
+            enabled.Properties.Should().ContainSingle(property => property.Name == "OptionalName").Which.Type.IsNullable.Should().BeTrue();
+            var optionalAliases = enabled.Properties.Should().ContainSingle(property => property.Name == "OptionalAliases").Which;
+            optionalAliases.Type.ElementType.Should().NotBeNull();
+            optionalAliases.Type.ElementType!.IsNullable.Should().BeTrue();
+            var relatedItems = enabled.Properties.Should().ContainSingle(property => property.Name == "RelatedItems").Which;
+            relatedItems.Type.IsDictionary.Should().BeTrue();
+            relatedItems.Type.TypeArguments[index: 1].IsNullable.Should().BeTrue();
+            var getAsync = enabled.Methods.Should().ContainSingle(method => method.Name == "GetAsync").Which;
+            getAsync.ReturnType.TypeArguments[index: 0].IsNullable.Should().BeTrue();
 
-            var disabled = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "DisabledRegion"));
-            Assert.False(condition: disabled.IsNullableAware);
+            var disabled = metadata.Types.Should().ContainSingle(type => type.Name == "DisabledRegion").Which;
+            disabled.IsNullableAware.Should().BeFalse();
 
-            var restored = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "RestoredRegion"));
-            Assert.True(condition: restored.IsNullableAware);
-            Assert.True(condition: Assert.Single(collection: restored.Properties.Where(predicate: property => property.Name == "OptionalName")).Type.IsNullable);
+            var restored = metadata.Types.Should().ContainSingle(type => type.Name == "RestoredRegion").Which;
+            restored.IsNullableAware.Should().BeTrue();
+            restored.Properties.Should().ContainSingle(property => property.Name == "OptionalName").Which.Type.IsNullable.Should().BeTrue();
         }
         finally
         {
@@ -347,13 +390,13 @@ public sealed class CSharpProjectMetadataProviderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: metadata.Diagnostics);
-            var test = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "Test"));
-            var pseudoEnum = Assert.Single(collection: test.Properties.Where(predicate: property => property.Name == "PseudoEnum"));
-            var allowedValues = Assert.Single(collection: pseudoEnum.Attributes.Where(predicate: attribute => attribute.Name == "AllowedValues"));
-            var argument = Assert.Single(collection: allowedValues.Arguments);
-            Assert.Contains(expectedSubstring: "value1", actualString: argument.Value, comparisonType: StringComparison.Ordinal);
-            Assert.Contains(expectedSubstring: "value2", actualString: argument.Value, comparisonType: StringComparison.Ordinal);
+            metadata.Diagnostics.Should().BeEmpty();
+            var test = metadata.Types.Should().ContainSingle(type => type.Name == "Test").Which;
+            var pseudoEnum = test.Properties.Should().ContainSingle(property => property.Name == "PseudoEnum").Which;
+            var allowedValues = pseudoEnum.Attributes.Should().ContainSingle(attribute => attribute.Name == "AllowedValues").Which;
+            var argument = allowedValues.Arguments.Should().ContainSingle().Which;
+            argument.Value.Should().Contain("value1");
+            argument.Value.Should().Contain("value2");
         }
         finally
         {
@@ -395,10 +438,10 @@ public sealed class CSharpProjectMetadataProviderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: metadata.Diagnostics);
-            var type = Assert.Single(collection: metadata.Types.Where(predicate: type => type.Name == "CombinedQueryModel"));
-            Assert.False(condition: Assert.Single(collection: type.Properties.Where(predicate: property => property.Name == "FirstName")).Type.IsNullable);
-            Assert.True(condition: Assert.Single(collection: type.Properties.Where(predicate: property => property.Name == "MiddleName")).Type.IsNullable);
+            metadata.Diagnostics.Should().BeEmpty();
+            var type = metadata.Types.Should().ContainSingle(type => type.Name == "CombinedQueryModel").Which;
+            type.Properties.Should().ContainSingle(property => property.Name == "FirstName").Which.Type.IsNullable.Should().BeFalse();
+            type.Properties.Should().ContainSingle(property => property.Name == "MiddleName").Which.Type.IsNullable.Should().BeTrue();
         }
         finally
         {
@@ -492,49 +535,54 @@ public sealed class CSharpProjectMetadataProviderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: metadata.Diagnostics);
-            var topLevelDelegate = Assert.Single(collection: metadata.Delegates.Where(predicate: item => item.Name == "TopLevelDelegate"));
-            Assert.Equal(expected: "String", actual: topLevelDelegate.ReturnType.Name);
-            Assert.Equal(expected: "value", actual: Assert.Single(collection: topLevelDelegate.Parameters).Name);
+            metadata.Diagnostics.Should().BeEmpty();
+            var topLevelDelegate = metadata.Delegates.Should().ContainSingle(item => item.Name == "TopLevelDelegate").Which;
+            topLevelDelegate.ReturnType.Name.Should().Be("String");
+            topLevelDelegate.Parameters.Should().ContainSingle().Which.Name.Should().Be("value");
 
-            var outer = Assert.Single(collection: metadata.Types.Where(predicate: type => type.FullName == "Sample.Outer"));
-            Assert.Equal(expected: "Outer model summary.", actual: outer.DocComment?.Summary);
-            Assert.Equal(expected: Path.GetFullPath(path: sourcePath), actual: Assert.Single(collection: outer.FileLocations));
-            Assert.Equal(expected: "T", actual: Assert.Single(collection: outer.TypeParameters).Name);
-            Assert.Contains(collection: outer.BaseTypes, filter: type => type.Name == "BaseModel");
-            Assert.Contains(collection: outer.BaseTypes, filter: type => type.Name == "IModel");
+            var outer = metadata.Types.Should().ContainSingle(type => type.FullName == "Sample.Outer").Which;
+            outer.DocComment.Should().NotBeNull();
+            outer.DocComment!.Summary.Should().Be("Outer model summary.");
+            outer.FileLocations.Should().ContainSingle().Which.Should().Be(Path.GetFullPath(path: sourcePath));
+            outer.TypeParameters.Should().ContainSingle().Which.Name.Should().Be("T");
+            outer.BaseTypes.Should().Contain(type => type.Name == "BaseModel");
+            outer.BaseTypes.Should().Contain(type => type.Name == "IModel");
 
-            var field = Assert.Single(collection: outer.Fields.Where(predicate: item => item.Name == "InstanceField"));
-            Assert.Equal(expected: "Instance field summary.", actual: field.DocComment?.Summary);
-            var staticField = Assert.Single(collection: outer.StaticReadOnlyFields.Where(predicate: item => item.Name == "StaticLabel"));
-            Assert.Equal(expected: "ready", actual: staticField.Value);
-            Assert.Equal(expected: "Static label summary.", actual: staticField.DocComment?.Summary);
-            var changed = Assert.Single(collection: outer.Events.Where(predicate: item => item.Name == "Changed"));
-            Assert.Equal(expected: "Changed event summary.", actual: changed.DocComment?.Summary);
+            var field = outer.Fields.Should().ContainSingle(item => item.Name == "InstanceField").Which;
+            field.DocComment.Should().NotBeNull();
+            field.DocComment!.Summary.Should().Be("Instance field summary.");
+            var staticField = outer.StaticReadOnlyFields.Should().ContainSingle(item => item.Name == "StaticLabel").Which;
+            staticField.Value.Should().Be("ready");
+            staticField.DocComment.Should().NotBeNull();
+            staticField.DocComment!.Summary.Should().Be("Static label summary.");
+            var changed = outer.Events.Should().ContainSingle(item => item.Name == "Changed").Which;
+            changed.DocComment.Should().NotBeNull();
+            changed.DocComment!.Summary.Should().Be("Changed event summary.");
 
-            var mapper = Assert.Single(collection: outer.Delegates.Where(predicate: item => item.Name == "Mapper"));
-            Assert.True(condition: mapper.IsGeneric);
-            Assert.Equal(expected: ["TArg", "TResult"], actual: mapper.TypeParameters.Select(selector: item => item.Name));
-            Assert.Equal(expected: "value", actual: Assert.Single(collection: mapper.Parameters).Name);
+            var mapper = outer.Delegates.Should().ContainSingle(item => item.Name == "Mapper").Which;
+            mapper.IsGeneric.Should().BeTrue();
+            mapper.TypeParameters.Select(selector: item => item.Name).Should().Equal("TArg", "TResult");
+            mapper.Parameters.Should().ContainSingle().Which.Name.Should().Be("value");
 
-            Assert.Contains(collection: outer.NestedClasses, filter: type => type.Name == "NestedClass");
-            Assert.Contains(collection: outer.NestedRecords, filter: type => type.Name == "NestedRecord");
-            Assert.Contains(collection: outer.NestedEnums, filter: type => type.Name == "NestedEnum");
-            Assert.Contains(collection: outer.NestedInterfaces, filter: type => type.Name == "INested");
+            outer.NestedClasses.Should().Contain(type => type.Name == "NestedClass");
+            outer.NestedRecords.Should().Contain(type => type.Name == "NestedRecord");
+            outer.NestedEnums.Should().Contain(type => type.Name == "NestedEnum");
+            outer.NestedInterfaces.Should().Contain(type => type.Name == "INested");
 
-            var pair = Assert.Single(collection: outer.Properties.Where(predicate: property => property.Name == "Pair"));
-            Assert.True(condition: pair.IsVirtual);
-            Assert.True(condition: pair.Type.IsValueTuple);
-            Assert.Equal(expected: ["Name", "Count"], actual: pair.Type.TupleElements.Select(selector: element => element.Name));
+            var pair = outer.Properties.Should().ContainSingle(property => property.Name == "Pair").Which;
+            pair.IsVirtual.Should().BeTrue();
+            pair.Type.IsValueTuple.Should().BeTrue();
+            pair.Type.TupleElements.Select(selector: element => element.Name).Should().Equal("Name", "Count");
 
-            var echo = Assert.Single(collection: outer.Methods.Where(predicate: method => method.Name == "Echo"));
-            Assert.True(condition: echo.IsGeneric);
-            Assert.Equal(expected: "TMethod", actual: Assert.Single(collection: echo.TypeParameters).Name);
-            Assert.Equal(expected: "Echoes a value.", actual: echo.DocComment?.Summary);
-            Assert.Equal(expected: "Return description.", actual: echo.DocComment?.Returns);
-            var valueComment = Assert.Single(collection: echo.DocComment?.Parameters ?? []);
-            Assert.Equal(expected: "value", actual: valueComment.Name);
-            Assert.Equal(expected: "Value description.", actual: valueComment.Description);
+            var echo = outer.Methods.Should().ContainSingle(method => method.Name == "Echo").Which;
+            echo.IsGeneric.Should().BeTrue();
+            echo.TypeParameters.Should().ContainSingle().Which.Name.Should().Be("TMethod");
+            echo.DocComment.Should().NotBeNull();
+            echo.DocComment!.Summary.Should().Be("Echoes a value.");
+            echo.DocComment.Returns.Should().Be("Return description.");
+            var valueComment = echo.DocComment.Parameters.Should().ContainSingle().Which;
+            valueComment.Name.Should().Be("value");
+            valueComment.Description.Should().Be("Value description.");
         }
         finally
         {
@@ -649,10 +697,10 @@ public sealed class CSharpProjectMetadataProviderTests
                 project: new ProjectContext(ProjectPath: appProjectPath, WorkspacePath: directory),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: metadata.Diagnostics);
-            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "App.MyModel");
-            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "LibA.HelperA");
-            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "LibB.HelperB");
+            metadata.Diagnostics.Should().BeEmpty();
+            metadata.Types.Should().Contain(type => type.FullName == "App.MyModel");
+            metadata.Types.Should().Contain(type => type.FullName == "LibA.HelperA");
+            metadata.Types.Should().Contain(type => type.FullName == "LibB.HelperB");
         }
         finally
         {
@@ -752,11 +800,11 @@ public sealed class CSharpProjectMetadataProviderTests
                 project: new ProjectContext(ProjectPath: appProjectPath, WorkspacePath: directory),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: metadata.Diagnostics);
-            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "Leaf.Widget");
-            var model = Assert.Single(collection: metadata.Types.Where(predicate: type => type.FullName == "App.MyModel"));
-            var thing = Assert.Single(collection: model.Properties.Where(predicate: property => property.Name == "Thing"));
-            Assert.Equal(expected: "Leaf.Widget", actual: thing.Type.FullName);
+            metadata.Diagnostics.Should().BeEmpty();
+            metadata.Types.Should().Contain(type => type.FullName == "Leaf.Widget");
+            var model = metadata.Types.Should().ContainSingle(type => type.FullName == "App.MyModel").Which;
+            var thing = model.Properties.Should().ContainSingle(property => property.Name == "Thing").Which;
+            thing.Type.FullName.Should().Be("Leaf.Widget");
         }
         finally
         {
@@ -838,10 +886,10 @@ public sealed class CSharpProjectMetadataProviderTests
                 project: new ProjectContext(ProjectPath: coreProjectPath, WorkspacePath: directory),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: metadata.Diagnostics);
-            var model = Assert.Single(collection: metadata.Types.Where(predicate: type => type.FullName == "Core.MyModel"));
-            var attachment = Assert.Single(collection: model.Properties.Where(predicate: property => property.Name == "Attachment"));
-            Assert.Equal(expected: "Core.Models.File", actual: attachment.Type.FullName);
+            metadata.Diagnostics.Should().BeEmpty();
+            var model = metadata.Types.Should().ContainSingle(type => type.FullName == "Core.MyModel").Which;
+            var attachment = model.Properties.Should().ContainSingle(property => property.Name == "Attachment").Which;
+            attachment.Type.FullName.Should().Be("Core.Models.File");
         }
         finally
         {
@@ -896,13 +944,93 @@ public sealed class CSharpProjectMetadataProviderTests
                 project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Empty(collection: metadata.Diagnostics);
-            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "Sample.MyModel");
-            Assert.Contains(collection: metadata.Types, filter: type => type.FullName == "Sample.Validator");
+            metadata.Diagnostics.Should().BeEmpty();
+            metadata.Types.Should().Contain(type => type.FullName == "Sample.MyModel");
+            metadata.Types.Should().Contain(type => type.FullName == "Sample.Validator");
         }
         finally
         {
             await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task GetMetadataTruncatesCircularEnumerableTypeReferences()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Models.cs"),
+                contents: """
+                          using System.Collections;
+                          using System.Collections.Generic;
+
+                          namespace Sample;
+
+                          public sealed class SelfEnumerable : IEnumerable<SelfEnumerable>
+                          {
+                              public IEnumerator<SelfEnumerable> GetEnumerator() => throw new System.NotImplementedException();
+
+                              IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+                          }
+
+                          public sealed class Holder
+                          {
+                              public SelfEnumerable Property { get; init; } = new();
+
+                              public SelfEnumerable Field = new();
+
+                              public SelfEnumerable Create() => new();
+
+                              public void Handle(SelfEnumerable parameter)
+                              {
+                              }
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().BeEmpty();
+            var holder = metadata.Types.Should().ContainSingle(type => type.Name == "Holder").Which;
+            var property = holder.Properties.Should().ContainSingle(item => item.Name == "Property").Which;
+            VerifyTruncatedSelfEnumerable(type: property.Type);
+            var field = holder.Fields.Should().ContainSingle(item => item.Name == "Field").Which;
+            VerifyTruncatedSelfEnumerable(type: field.Type);
+            var create = holder.Methods.Should().ContainSingle(item => item.Name == "Create").Which;
+            VerifyTruncatedSelfEnumerable(type: create.ReturnType);
+            var handle = holder.Methods.Should().ContainSingle(item => item.Name == "Handle").Which;
+            var parameter = handle.Parameters.Should().ContainSingle(item => item.Name == "parameter").Which;
+            VerifyTruncatedSelfEnumerable(type: parameter.Type);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+
+        static void VerifyTruncatedSelfEnumerable(TypeMetadataReference type)
+        {
+            type.Name.Should().Be("SelfEnumerable");
+            type.IsCollection.Should().BeTrue();
+            type.ElementType.Should().NotBeNull();
+            type.ElementType!.Name.Should().Be("SelfEnumerable");
+            type.ElementType.IsCollection.Should().BeFalse();
+            type.ElementType.ElementType.Should().BeNull();
         }
     }
 

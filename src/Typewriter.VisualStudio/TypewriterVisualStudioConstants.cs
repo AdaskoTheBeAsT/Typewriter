@@ -14,4 +14,5 @@ internal static class TypewriterVisualStudioConstants
     public const int RenderTemplateCommandId = 0x0200;
     public const int RenderAllTemplatesCommandId = 0x0201;
     public const int ValidateTemplateCommandId = 0x0202;
+    public const int RenderSolutionAllTemplatesCommandId = 0x0203;
 }

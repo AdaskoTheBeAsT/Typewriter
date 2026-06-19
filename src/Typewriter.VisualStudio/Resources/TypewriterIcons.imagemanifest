@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImageManifest xmlns="http://schemas.microsoft.com/VisualStudio/ImageManifestSchema/2014">
+  <Symbols>
+    <Guid Name="TypewriterIconsGuid" Value="{cd3658cd-b731-4e06-84e9-4d913758da43}" />
+    <ID Name="TstFile" Value="1" />
+    <String Name="Resources" Value="/Typewriter.VisualStudio;Component/Resources" />
+  </Symbols>
+  <Images>
+    <Image Guid="$(TypewriterIconsGuid)" ID="$(TstFile)" AllowColorInversion="false">
+      <Source Uri="$(Resources)/typewriter-light-16.png" Background="Light">
+        <Size Value="16" />
+      </Source>
+      <Source Uri="$(Resources)/typewriter-light-32.png" Background="Light">
+        <Size Value="32" />
+      </Source>
+      <Source Uri="$(Resources)/typewriter-dark-16.png" Background="Dark">
+        <Size Value="16" />
+      </Source>
+      <Source Uri="$(Resources)/typewriter-dark-32.png" Background="Dark">
+        <Size Value="32" />
+      </Source>
+    </Image>
+  </Images>
+</ImageManifest>

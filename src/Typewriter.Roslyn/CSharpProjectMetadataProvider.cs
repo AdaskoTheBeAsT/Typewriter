@@ -470,10 +470,14 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             .Where(predicate: File.Exists)
             .Select(selector: path => new FileAdditionalText(path: path))
             .ToArray();
+        var analyzerConfigOptionsProvider = CreateAnalyzerConfigOptionsProvider(
+            analyzerConfigFiles: loadedProject.AnalyzerConfigFiles,
+            cancellationToken: cancellationToken);
         var driver = CSharpGeneratorDriver.Create(
             generators: generators,
             additionalTexts: additionalTexts,
-            parseOptions: parseOptions);
+            parseOptions: parseOptions,
+            optionsProvider: analyzerConfigOptionsProvider);
         _ = driver.RunGeneratorsAndUpdateCompilation(
             compilation: compilation,
             outputCompilation: out var updatedCompilation,
@@ -481,6 +485,79 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             cancellationToken: cancellationToken);
 
         return (CSharpCompilation)updatedCompilation;
+    }
+
+    private static AnalyzerConfigOptionsProvider CreateAnalyzerConfigOptionsProvider(
+        IReadOnlyList<string> analyzerConfigFiles,
+        CancellationToken cancellationToken) =>
+        new ProjectAnalyzerConfigOptionsProvider(
+            globalOptions: LoadGlobalAnalyzerConfigOptions(
+                analyzerConfigFiles: analyzerConfigFiles,
+                cancellationToken: cancellationToken));
+
+    private static IReadOnlyDictionary<string, string> LoadGlobalAnalyzerConfigOptions(
+        IEnumerable<string> analyzerConfigFiles,
+        CancellationToken cancellationToken)
+    {
+        var options = new Dictionary<string, string>(comparer: StringComparer.OrdinalIgnoreCase);
+        foreach (var analyzerConfigFile in analyzerConfigFiles.Where(predicate: File.Exists).Distinct(comparer: StringComparer.OrdinalIgnoreCase))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var fileOptions = new Dictionary<string, string>(comparer: StringComparer.OrdinalIgnoreCase);
+            var isGlobal = false;
+
+#pragma warning disable SCS0018,SEC0116
+            foreach (var line in File.ReadLines(path: analyzerConfigFile))
+#pragma warning restore SCS0018,SEC0116
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var trimmedLine = line.Trim();
+                if (trimmedLine.Length == 0
+                    || trimmedLine.StartsWith(value: '#')
+                    || trimmedLine.StartsWith(value: ';'))
+                {
+                    continue;
+                }
+
+                if (trimmedLine.StartsWith(value: '['))
+                {
+                    break;
+                }
+
+                var separatorIndex = trimmedLine.IndexOf(value: '=');
+                if (separatorIndex < 0)
+                {
+                    continue;
+                }
+
+                var key = trimmedLine[..separatorIndex].Trim();
+                if (key.Length == 0)
+                {
+                    continue;
+                }
+
+                var value = trimmedLine[(separatorIndex + 1)..].Trim();
+                if (key.Equals(value: "is_global", comparisonType: StringComparison.OrdinalIgnoreCase))
+                {
+                    isGlobal = value.Equals(value: "true", comparisonType: StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+
+                fileOptions[key: key] = value;
+            }
+
+            if (!isGlobal)
+            {
+                continue;
+            }
+
+            foreach (var option in fileOptions)
+            {
+                options[key: option.Key] = option.Value;
+            }
+        }
+
+        return options;
     }
 
     private static IEnumerable<ISourceGenerator> CreateSourceGenerators(
@@ -1075,25 +1152,60 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
     private static TypeMetadataReference CreateTypeReference(
         ITypeSymbol symbol,
-        NullableAnnotation nullableAnnotation)
+        NullableAnnotation nullableAnnotation) =>
+        CreateTypeReference(
+            symbol: symbol,
+            nullableAnnotation: nullableAnnotation,
+            visitedSymbols: new HashSet<ITypeSymbol>(comparer: SymbolEqualityComparer.Default));
+
+    private static TypeMetadataReference CreateTypeReference(
+        ITypeSymbol symbol,
+        NullableAnnotation nullableAnnotation,
+        ISet<ITypeSymbol> visitedSymbols)
+    {
+        if (!visitedSymbols.Add(item: symbol))
+        {
+            return CreateShallowTypeReference(symbol: symbol, nullableAnnotation: nullableAnnotation);
+        }
+
+        try
+        {
+            return CreateTypeReferenceCore(symbol: symbol, nullableAnnotation: nullableAnnotation, visitedSymbols: visitedSymbols);
+        }
+        finally
+        {
+            visitedSymbols.Remove(item: symbol);
+        }
+    }
+
+    private static TypeMetadataReference CreateTypeReferenceCore(
+        ITypeSymbol symbol,
+        NullableAnnotation nullableAnnotation,
+        ISet<ITypeSymbol> visitedSymbols)
     {
         if (symbol is INamedTypeSymbol namedType
             && IsNullableValueType(symbol: namedType)
             && namedType.TypeArguments.Length == 1)
         {
-            var inner = CreateTypeReference(symbol: namedType.TypeArguments[index: 0], nullableAnnotation: NullableAnnotation.Annotated);
+            var inner = CreateTypeReference(
+                symbol: namedType.TypeArguments[index: 0],
+                nullableAnnotation: NullableAnnotation.Annotated,
+                visitedSymbols: visitedSymbols);
             return inner with
             {
                 IsNullable = true,
             };
         }
 
-        var elementType = GetElementType(symbol: symbol);
+        var elementType = GetElementType(symbol: symbol, visitedSymbols: visitedSymbols);
         var typeArguments = symbol is INamedTypeSymbol genericType
             ? genericType.TypeArguments
                 .Zip(
                     second: genericType.TypeArgumentNullableAnnotations,
-                    resultSelector: static (argument, annotation) => CreateTypeReference(symbol: argument, nullableAnnotation: annotation))
+                    resultSelector: (argument, annotation) => CreateTypeReference(
+                        symbol: argument,
+                        nullableAnnotation: annotation,
+                        visitedSymbols: visitedSymbols))
                 .ToArray()
             : [];
 
@@ -1112,14 +1224,39 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             AssemblyName = GetAssemblyName(symbol: symbol),
             IsValueTuple = IsValueTuple(symbol: symbol),
-            TupleElements = GetTupleElements(symbol: symbol).ToArray(),
+            TupleElements = GetTupleElements(symbol: symbol, visitedSymbols: visitedSymbols).ToArray(),
             EnumValues = symbol is INamedTypeSymbol enumType
                 ? GetEnumValues(symbol: enumType).ToArray()
                 : [],
         };
     }
 
-    private static TypeMetadataReference? GetElementType(ITypeSymbol symbol)
+    private static TypeMetadataReference CreateShallowTypeReference(
+        ITypeSymbol symbol,
+        NullableAnnotation nullableAnnotation) =>
+        new(
+            Name: GetDisplayName(symbol: symbol),
+            FullName: GetFullName(symbol: symbol),
+            Namespace: GetNamespace(symbol: symbol),
+            IsNullable: nullableAnnotation == NullableAnnotation.Annotated,
+            IsCollection: false,
+            IsDictionary: IsDictionary(symbol: symbol),
+            IsEnum: IsEnum(symbol: symbol),
+            IsPrimitive: IsPrimitive(symbol: symbol),
+            IsDateLike: IsDateLike(symbol: symbol),
+            ElementType: null,
+            TypeArguments: [])
+        {
+            AssemblyName = GetAssemblyName(symbol: symbol),
+            IsValueTuple = IsValueTuple(symbol: symbol),
+            EnumValues = symbol is INamedTypeSymbol enumType
+                ? GetEnumValues(symbol: enumType).ToArray()
+                : [],
+        };
+
+    private static TypeMetadataReference? GetElementType(
+        ITypeSymbol symbol,
+        ISet<ITypeSymbol> visitedSymbols)
     {
         if (symbol.SpecialType == SpecialType.System_String)
         {
@@ -1128,7 +1265,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
         if (symbol is IArrayTypeSymbol arrayType)
         {
-            return CreateTypeReference(symbol: arrayType.ElementType, nullableAnnotation: arrayType.ElementNullableAnnotation);
+            return CreateTypeReference(symbol: arrayType.ElementType, nullableAnnotation: arrayType.ElementNullableAnnotation, visitedSymbols: visitedSymbols);
         }
 
         if (symbol is not INamedTypeSymbol namedType)
@@ -1151,7 +1288,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         var annotation = enumerable.TypeArgumentNullableAnnotations.Length > 0
             ? enumerable.TypeArgumentNullableAnnotations[index: 0]
             : NullableAnnotation.NotAnnotated;
-        return CreateTypeReference(symbol: enumerable.TypeArguments[index: 0], nullableAnnotation: annotation);
+        return CreateTypeReference(symbol: enumerable.TypeArguments[index: 0], nullableAnnotation: annotation, visitedSymbols: visitedSymbols);
     }
 
     private static bool IsDictionary(ITypeSymbol symbol)
@@ -1184,7 +1321,9 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         return symbol is INamedTypeSymbol { IsTupleType: true };
     }
 
-    private static IEnumerable<FieldMetadata> GetTupleElements(ITypeSymbol symbol)
+    private static IEnumerable<FieldMetadata> GetTupleElements(
+        ITypeSymbol symbol,
+        ISet<ITypeSymbol> visitedSymbols)
     {
         if (symbol is not INamedTypeSymbol { IsTupleType: true } tupleType)
         {
@@ -1196,7 +1335,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 Name: field.Name,
                 FullName: field.ToDisplayString(format: SymbolDisplayFormat.CSharpErrorMessageFormat),
                 Accessibility: MapAccessibility(accessibility: field.DeclaredAccessibility),
-                Type: CreateTypeReference(symbol: field.Type, nullableAnnotation: field.NullableAnnotation),
+                Type: CreateTypeReference(symbol: field.Type, nullableAnnotation: field.NullableAnnotation, visitedSymbols: visitedSymbols),
                 Attributes: GetAttributes(attributes: field.GetAttributes()).ToArray(),
                 ParentTypeFullName: GetFullName(symbol: tupleType))
             {
@@ -1475,6 +1614,36 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 #pragma warning disable SCS0018,SEC0116
             return SourceText.From(text: File.ReadAllText(path: Path));
 #pragma warning restore SCS0018,SEC0116
+        }
+    }
+
+    private sealed class ProjectAnalyzerConfigOptionsProvider(IReadOnlyDictionary<string, string> globalOptions) : AnalyzerConfigOptionsProvider
+    {
+        private readonly AnalyzerConfigOptions _globalOptions = new ProjectAnalyzerConfigOptions(options: globalOptions);
+
+        public override AnalyzerConfigOptions GlobalOptions => _globalOptions;
+
+        public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => _globalOptions;
+
+        public override AnalyzerConfigOptions GetOptions(AdditionalText textFile) => _globalOptions;
+    }
+
+    private sealed class ProjectAnalyzerConfigOptions(IReadOnlyDictionary<string, string> options) : AnalyzerConfigOptions
+    {
+        public override IEnumerable<string> Keys => options.Keys;
+
+        public override bool TryGetValue(
+            string key,
+            out string value)
+        {
+            if (options.TryGetValue(key: key, value: out var optionValue))
+            {
+                value = optionValue;
+                return true;
+            }
+
+            value = string.Empty;
+            return false;
         }
     }
 

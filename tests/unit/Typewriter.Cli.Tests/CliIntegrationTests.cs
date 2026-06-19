@@ -25,27 +25,25 @@ public sealed class CliIntegrationTests
                 "--workspace",
                 directory);
 
-            Assert.Equal(expected: 0, actual: result.ExitCode);
-            Assert.Equal(expected: string.Empty, actual: result.StandardError);
-            Assert.Contains(expectedSubstring: $"created: {configurationPath}", actualString: result.StandardOutput, comparisonType: StringComparison.Ordinal);
+            result.ExitCode.Should().Be(0);
+            result.StandardError.Should().BeEmpty();
+            result.StandardOutput.Should().Contain($"created: {configurationPath}");
 
             using var configuration = JsonDocument.Parse(json: await File.ReadAllTextAsync(path: configurationPath));
             var root = configuration.RootElement;
-            Assert.Equal(expected: ["**/*.tst"], actual: ReadStringArray(element: root.GetProperty(propertyName: "templates")));
-            Assert.Equal(
-                expected: ["**/bin/**", "**/obj/**", "**/node_modules/**"],
-                actual: ReadStringArray(element: root.GetProperty(propertyName: "exclude")));
-            Assert.Equal(expected: JsonValueKind.Null, actual: root.GetProperty(propertyName: "defaultTargetFramework").ValueKind);
+            ReadStringArray(element: root.GetProperty(propertyName: "templates")).Should().Equal("**/*.tst");
+            ReadStringArray(element: root.GetProperty(propertyName: "exclude")).Should().Equal("**/bin/**", "**/obj/**", "**/node_modules/**");
+            root.GetProperty(propertyName: "defaultTargetFramework").ValueKind.Should().Be(JsonValueKind.Null);
 
             var output = root.GetProperty(propertyName: "output");
-            Assert.Equal(expected: "lf", actual: output.GetProperty(propertyName: "newline").GetString());
-            Assert.Equal(expected: "utf-8", actual: output.GetProperty(propertyName: "encoding").GetString());
-            Assert.True(condition: output.GetProperty(propertyName: "writeOnlyWhenChanged").GetBoolean());
-            Assert.False(condition: output.GetProperty(propertyName: "dryRun").GetBoolean());
-            Assert.Equal(expected: "preserve", actual: output.GetProperty(propertyName: "fileNameConvention").GetString());
+            output.GetProperty(propertyName: "newline").GetString().Should().Be("lf");
+            output.GetProperty(propertyName: "encoding").GetString().Should().Be("utf-8");
+            output.GetProperty(propertyName: "writeOnlyWhenChanged").GetBoolean().Should().BeTrue();
+            output.GetProperty(propertyName: "dryRun").GetBoolean().Should().BeFalse();
+            output.GetProperty(propertyName: "fileNameConvention").GetString().Should().Be("preserve");
 
             var diagnostics = root.GetProperty(propertyName: "diagnostics");
-            Assert.False(condition: diagnostics.GetProperty(propertyName: "failOnWarning").GetBoolean());
+            diagnostics.GetProperty(propertyName: "failOnWarning").GetBoolean().Should().BeFalse();
         }
         finally
         {
@@ -69,9 +67,9 @@ public sealed class CliIntegrationTests
                 "--workspace",
                 directory);
 
-            Assert.Equal(expected: 1, actual: result.ExitCode);
-            Assert.Contains(expectedSubstring: "Configuration file already exists:", actualString: result.StandardError, comparisonType: StringComparison.Ordinal);
-            Assert.Equal(expected: ExistingConfiguration, actual: await File.ReadAllTextAsync(path: configurationPath));
+            result.ExitCode.Should().Be(1);
+            result.StandardError.Should().Contain("Configuration file already exists:");
+            (await File.ReadAllTextAsync(path: configurationPath)).Should().Be(ExistingConfiguration);
         }
         finally
         {
@@ -95,10 +93,10 @@ public sealed class CliIntegrationTests
                 directory,
                 "--force");
 
-            Assert.Equal(expected: 0, actual: result.ExitCode);
-            Assert.Equal(expected: string.Empty, actual: result.StandardError);
-            Assert.Contains(expectedSubstring: $"updated: {configurationPath}", actualString: result.StandardOutput, comparisonType: StringComparison.Ordinal);
-            Assert.Contains(expectedSubstring: "\"templates\"", actualString: await File.ReadAllTextAsync(path: configurationPath), comparisonType: StringComparison.Ordinal);
+            result.ExitCode.Should().Be(0);
+            result.StandardError.Should().BeEmpty();
+            result.StandardOutput.Should().Contain($"updated: {configurationPath}");
+            (await File.ReadAllTextAsync(path: configurationPath)).Should().Contain("\"templates\"");
         }
         finally
         {
@@ -128,17 +126,17 @@ public sealed class CliIntegrationTests
                 "--output",
                 "json");
 
-            Assert.Equal(expected: 0, actual: result.ExitCode);
-            Assert.True(condition: result.Success, userMessage: result.StandardError);
-            Assert.Empty(collection: result.Diagnostics);
+            result.ExitCode.Should().Be(0);
+            result.Success.Should().BeTrue(because: result.StandardError);
+            result.Diagnostics.Should().BeEmpty();
 
-            var generatedFile = Assert.Single(collection: result.GeneratedFiles);
-            Assert.Equal(expected: generatedPath, actual: generatedFile.Path);
-            Assert.True(condition: generatedFile.Changed);
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            generatedFile.Path.Should().Be(generatedPath);
+            generatedFile.Changed.Should().BeTrue();
 
             var generatedContent = await File.ReadAllTextAsync(path: generatedPath);
-            Assert.Contains(expectedSubstring: "export interface Customer", actualString: generatedContent, comparisonType: StringComparison.Ordinal);
-            Assert.Contains(expectedSubstring: "name: string;", actualString: generatedContent, comparisonType: StringComparison.Ordinal);
+            generatedContent.Should().Contain("export interface Customer");
+            generatedContent.Should().Contain("name: string;");
         }
         finally
         {
@@ -177,16 +175,14 @@ public sealed class CliIntegrationTests
                 "json",
                 "--all-projects");
 
-            Assert.Equal(expected: 0, actual: result.ExitCode);
-            Assert.True(condition: result.Success, userMessage: result.StandardError);
-            Assert.Empty(collection: result.Diagnostics);
-            Assert.Equal(
-                expected:
-                [
+            result.ExitCode.Should().Be(0);
+            result.Success.Should().BeTrue(because: result.StandardError);
+            result.Diagnostics.Should().BeEmpty();
+            result.GeneratedFiles.Select(selector: file => file.Path)
+                .Order(comparer: StringComparer.OrdinalIgnoreCase)
+                .Should().Equal(
                     Path.Combine(path1: firstDirectory, path2: "generated", path3: "models.ts"),
-                    Path.Combine(path1: secondDirectory, path2: "generated", path3: "models.ts"),
-                ],
-                actual: result.GeneratedFiles.Select(selector: file => file.Path).Order(comparer: StringComparer.OrdinalIgnoreCase));
+                    Path.Combine(path1: secondDirectory, path2: "generated", path3: "models.ts"));
         }
         finally
         {
@@ -224,9 +220,9 @@ public sealed class CliIntegrationTests
 
             var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
 
-            Assert.Equal(expected: 0, actual: result.ExitCode);
-            Assert.True(condition: result.Success, userMessage: result.StandardError);
-            Assert.Contains(collection: result.GeneratedFiles, filter: file => file.Path.Equals(value: generatedPath, comparisonType: StringComparison.OrdinalIgnoreCase));
+            result.ExitCode.Should().Be(0);
+            result.Success.Should().BeTrue(because: result.StandardError);
+            result.GeneratedFiles.Should().Contain(file => file.Path.Equals(value: generatedPath, comparisonType: StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -274,8 +270,8 @@ public sealed class CliIntegrationTests
 
             var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
 
-            Assert.Equal(expected: 0, actual: result.ExitCode);
-            Assert.Contains(expectedSubstring: "updated:", actualString: result.StandardOutput, comparisonType: StringComparison.Ordinal);
+            result.ExitCode.Should().Be(0);
+            result.StandardOutput.Should().Contain("updated:");
         }
         finally
         {
@@ -309,12 +305,12 @@ public sealed class CliIntegrationTests
                 "--output",
                 "json");
 
-            Assert.Equal(expected: 3, actual: result.ExitCode);
-            Assert.False(condition: result.Success);
+            result.ExitCode.Should().Be(3);
+            result.Success.Should().BeFalse();
 
-            var diagnostic = Assert.Single(collection: result.Diagnostics);
-            Assert.Equal(expected: "TW0003", actual: diagnostic.Code);
-            Assert.Equal(expected: "error", actual: diagnostic.Severity);
+            var diagnostic = result.Diagnostics.Should().ContainSingle().Which;
+            diagnostic.Code.Should().Be("TW0003");
+            diagnostic.Severity.Should().Be("error");
         }
         finally
         {
@@ -347,13 +343,13 @@ public sealed class CliIntegrationTests
                 "--output",
                 "json");
 
-            Assert.Equal(expected: 4, actual: result.ExitCode);
-            Assert.False(condition: result.Success);
+            result.ExitCode.Should().Be(4);
+            result.Success.Should().BeFalse();
 
-            var diagnostic = Assert.Single(collection: result.Diagnostics);
-            Assert.Equal(expected: "TW0002", actual: diagnostic.Code);
-            Assert.Equal(expected: "error", actual: diagnostic.Severity);
-            Assert.Contains(expectedSubstring: "not closed", actualString: diagnostic.Message, comparisonType: StringComparison.OrdinalIgnoreCase);
+            var diagnostic = result.Diagnostics.Should().ContainSingle().Which;
+            diagnostic.Code.Should().Be("TW0002");
+            diagnostic.Severity.Should().Be("error");
+            diagnostic.Message.Should().ContainEquivalentOf("not closed");
         }
         finally
         {
@@ -388,11 +384,11 @@ public sealed class CliIntegrationTests
                 "--framework",
                 "net10.0");
 
-            Assert.Equal(expected: 4, actual: result.ExitCode);
-            Assert.Contains(expectedSubstring: "Models.tst(", actualString: result.StandardError, comparisonType: StringComparison.Ordinal);
-            Assert.Contains(expectedSubstring: "error TW0002:", actualString: result.StandardError, comparisonType: StringComparison.Ordinal);
-            Assert.Contains(expectedSubstring: "CS0103", actualString: result.StandardError, comparisonType: StringComparison.Ordinal);
-            Assert.DoesNotContain(expectedSubstring: "error TW0002:", actualString: result.StandardOutput, comparisonType: StringComparison.Ordinal);
+            result.ExitCode.Should().Be(4);
+            result.StandardError.Should().Contain("Models.tst(");
+            result.StandardError.Should().Contain("error TW0002:");
+            result.StandardError.Should().Contain("CS0103");
+            result.StandardOutput.Should().NotContain("error TW0002:");
         }
         finally
         {
@@ -429,9 +425,9 @@ public sealed class CliIntegrationTests
                 "--framework",
                 "net10.0");
 
-            Assert.Equal(expected: 4, actual: result.ExitCode);
-            Assert.Contains(expectedSubstring: "error TW0002:", actualString: result.StandardError, comparisonType: StringComparison.Ordinal);
-            Assert.False(condition: File.Exists(path: generatedPath));
+            result.ExitCode.Should().Be(4);
+            result.StandardError.Should().Contain("error TW0002:");
+            File.Exists(path: generatedPath).Should().BeFalse();
         }
         finally
         {

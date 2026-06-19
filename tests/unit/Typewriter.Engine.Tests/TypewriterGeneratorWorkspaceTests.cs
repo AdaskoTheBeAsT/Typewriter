@@ -49,11 +49,11 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     Configuration: TypewriterConfiguration.Default),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
-            Assert.NotNull(@object: metadataProvider.Project);
-            Assert.Equal(expected: projectPath, actual: metadataProvider.Project.ProjectPath);
-            Assert.Equal(expected: solutionPath, actual: metadataProvider.Project.WorkspacePath);
-            Assert.Single(collection: result.GeneratedFiles);
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            metadataProvider.Project.Should().NotBeNull();
+            metadataProvider.Project!.ProjectPath.Should().Be(projectPath);
+            metadataProvider.Project.WorkspacePath.Should().Be(solutionPath);
+            result.GeneratedFiles.Should().ContainSingle();
         }
         finally
         {
@@ -98,11 +98,11 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     Configuration: TypewriterConfiguration.Default),
                 cancellationToken: CancellationToken.None);
 
-            var diagnostic = Assert.Single(collection: result.Diagnostics);
-            Assert.False(condition: result.Success);
-            Assert.Equal(expected: DiagnosticSeverity.Error, actual: diagnostic.Severity);
-            Assert.Equal(expected: "TW0003", actual: diagnostic.Code);
-            Assert.Contains(expectedSubstring: "Multiple .csproj files were found", actualString: diagnostic.Message, comparisonType: StringComparison.Ordinal);
+            var diagnostic = result.Diagnostics.Should().ContainSingle().Which;
+            result.Success.Should().BeFalse();
+            diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
+            diagnostic.Code.Should().Be("TW0003");
+            diagnostic.Message.Should().Contain("Multiple .csproj files were found");
         }
         finally
         {
@@ -146,10 +146,10 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     Configuration: TypewriterConfiguration.Default),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
-            Assert.NotNull(@object: metadataProvider.Project);
-            Assert.Equal(expected: secondProjectPath, actual: metadataProvider.Project.ProjectPath);
-            Assert.Single(collection: result.GeneratedFiles);
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            metadataProvider.Project.Should().NotBeNull();
+            metadataProvider.Project!.ProjectPath.Should().Be(secondProjectPath);
+            result.GeneratedFiles.Should().ContainSingle();
         }
         finally
         {
@@ -192,15 +192,11 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     AllProjects: true),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
-            Assert.Equal(expected: [firstProjectPath, secondProjectPath], actual: metadataProvider.Projects.Select(selector: project => project.ProjectPath));
-            Assert.Equal(
-                expected:
-                [
-                    Path.Combine(path1: directory, path2: "First", path3: "generated.ts"),
-                    Path.Combine(path1: directory, path2: "Second", path3: "generated.ts"),
-                ],
-                actual: result.GeneratedFiles.Select(selector: file => file.Path).Order(comparer: StringComparer.OrdinalIgnoreCase));
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            metadataProvider.Projects.Select(selector: project => project.ProjectPath).Should().Equal(firstProjectPath, secondProjectPath);
+            result.GeneratedFiles.Select(selector: file => file.Path).Order(comparer: StringComparer.OrdinalIgnoreCase).Should().Equal(
+                Path.Combine(path1: directory, path2: "First", path3: "generated.ts"),
+                Path.Combine(path1: directory, path2: "Second", path3: "generated.ts"));
         }
         finally
         {
@@ -249,24 +245,18 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     Configuration: TypewriterConfiguration.Default),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
-            Assert.Equal(
-                expected:
-                [
-                    Path.Combine(path1: directory, path2: "OrderDto.ts"),
-                    Path.Combine(path1: directory, path2: "UserDto.ts"),
-                ],
-                actual: result.GeneratedFiles.Select(selector: file => file.Path).Order(comparer: StringComparer.OrdinalIgnoreCase));
-            Assert.Contains(
-                collection: result.GeneratedFiles,
-                filter: file => file.Path.EndsWith(value: "UserDto.ts", comparisonType: StringComparison.OrdinalIgnoreCase)
-                                && file.Content.Contains(value: "export class UserDto", comparisonType: StringComparison.Ordinal)
-                                && !file.Content.Contains(value: "OrderDto", comparisonType: StringComparison.Ordinal));
-            Assert.Contains(
-                collection: result.GeneratedFiles,
-                filter: file => file.Path.EndsWith(value: "OrderDto.ts", comparisonType: StringComparison.OrdinalIgnoreCase)
-                                && file.Content.Contains(value: "export class OrderDto", comparisonType: StringComparison.Ordinal)
-                                && !file.Content.Contains(value: "UserDto", comparisonType: StringComparison.Ordinal));
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            result.GeneratedFiles.Select(selector: file => file.Path).Order(comparer: StringComparer.OrdinalIgnoreCase).Should().Equal(
+                Path.Combine(path1: directory, path2: "OrderDto.ts"),
+                Path.Combine(path1: directory, path2: "UserDto.ts"));
+            result.GeneratedFiles.Should().Contain(
+                file => file.Path.EndsWith(value: "UserDto.ts", comparisonType: StringComparison.OrdinalIgnoreCase)
+                        && file.Content.Contains(value: "export class UserDto", comparisonType: StringComparison.Ordinal)
+                        && !file.Content.Contains(value: "OrderDto", comparisonType: StringComparison.Ordinal));
+            result.GeneratedFiles.Should().Contain(
+                file => file.Path.EndsWith(value: "OrderDto.ts", comparisonType: StringComparison.OrdinalIgnoreCase)
+                        && file.Content.Contains(value: "export class OrderDto", comparisonType: StringComparison.Ordinal)
+                        && !file.Content.Contains(value: "UserDto", comparisonType: StringComparison.Ordinal));
         }
         finally
         {
@@ -320,9 +310,9 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     Configuration: TypewriterConfiguration.Default),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
-            var generatedFile = Assert.Single(collection: result.GeneratedFiles);
-            Assert.Equal(expected: Path.Combine(path1: directory, path2: "generated", path3: "UserDto.model.ts"), actual: generatedFile.Path);
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            generatedFile.Path.Should().Be(Path.Combine(path1: directory, path2: "generated", path3: "UserDto.model.ts"));
         }
         finally
         {
@@ -375,9 +365,9 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     Configuration: CreateConfiguration(fileNameConvention: fileNameConvention)),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
-            var generatedFile = Assert.Single(collection: result.GeneratedFiles);
-            Assert.Equal(expected: Path.Combine(path1: directory, path2: expectedFileName), actual: generatedFile.Path);
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            generatedFile.Path.Should().Be(Path.Combine(path1: directory, path2: expectedFileName));
         }
         finally
         {
@@ -418,9 +408,9 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     Configuration: CreateConfiguration(fileNameConvention: fileNameConvention)),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
-            var generatedFile = Assert.Single(collection: result.GeneratedFiles);
-            Assert.Equal(expected: Path.Combine(path1: directory, path2: expectedFileName), actual: generatedFile.Path);
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            generatedFile.Path.Should().Be(Path.Combine(path1: directory, path2: expectedFileName));
         }
         finally
         {
@@ -458,9 +448,9 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     Configuration: CreateConfiguration(fileNameConvention: FileNameConvention.Kebab)),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
-            var generatedFile = Assert.Single(collection: result.GeneratedFiles);
-            Assert.Equal(expected: Path.Combine(path1: directory, path2: "CustomFile.ts"), actual: generatedFile.Path);
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            generatedFile.Path.Should().Be(Path.Combine(path1: directory, path2: "CustomFile.ts"));
         }
         finally
         {
@@ -511,10 +501,10 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     Configuration: TypewriterConfiguration.Default),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
-            var generatedFile = Assert.Single(collection: result.GeneratedFiles);
-            Assert.Equal(expected: Path.Combine(path1: directory, path2: "api-users.service.ts"), actual: generatedFile.Path);
-            Assert.Contains(expectedSubstring: "export class UsersController", actualString: generatedFile.Content, comparisonType: StringComparison.Ordinal);
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            generatedFile.Path.Should().Be(Path.Combine(path1: directory, path2: "api-users.service.ts"));
+            generatedFile.Content.Should().Contain("export class UsersController");
         }
         finally
         {
@@ -574,24 +564,18 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     Configuration: TypewriterConfiguration.Default),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
-            Assert.Equal(
-                expected:
-                [
-                    Path.Combine(path1: directory, path2: "orders.service.ts"),
-                    Path.Combine(path1: directory, path2: "users.service.ts"),
-                ],
-                actual: result.GeneratedFiles.Select(selector: file => file.Path).Order(comparer: StringComparer.OrdinalIgnoreCase));
-            Assert.Contains(
-                collection: result.GeneratedFiles,
-                filter: file => file.Path.EndsWith(value: "users.service.ts", comparisonType: StringComparison.OrdinalIgnoreCase)
-                                && file.Content.Contains(value: "export class UsersController", comparisonType: StringComparison.Ordinal)
-                                && !file.Content.Contains(value: "OrdersController", comparisonType: StringComparison.Ordinal));
-            Assert.Contains(
-                collection: result.GeneratedFiles,
-                filter: file => file.Path.EndsWith(value: "orders.service.ts", comparisonType: StringComparison.OrdinalIgnoreCase)
-                                && file.Content.Contains(value: "export class OrdersController", comparisonType: StringComparison.Ordinal)
-                                && !file.Content.Contains(value: "UsersController", comparisonType: StringComparison.Ordinal));
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            result.GeneratedFiles.Select(selector: file => file.Path).Order(comparer: StringComparer.OrdinalIgnoreCase).Should().Equal(
+                Path.Combine(path1: directory, path2: "orders.service.ts"),
+                Path.Combine(path1: directory, path2: "users.service.ts"));
+            result.GeneratedFiles.Should().Contain(
+                file => file.Path.EndsWith(value: "users.service.ts", comparisonType: StringComparison.OrdinalIgnoreCase)
+                        && file.Content.Contains(value: "export class UsersController", comparisonType: StringComparison.Ordinal)
+                        && !file.Content.Contains(value: "OrdersController", comparisonType: StringComparison.Ordinal));
+            result.GeneratedFiles.Should().Contain(
+                file => file.Path.EndsWith(value: "orders.service.ts", comparisonType: StringComparison.OrdinalIgnoreCase)
+                        && file.Content.Contains(value: "export class OrdersController", comparisonType: StringComparison.Ordinal)
+                        && !file.Content.Contains(value: "UsersController", comparisonType: StringComparison.Ordinal));
         }
         finally
         {
@@ -636,11 +620,11 @@ public sealed class TypewriterGeneratorWorkspaceTests
                     Configuration: TypewriterConfiguration.Default),
                 cancellationToken: CancellationToken.None);
 
-            Assert.True(condition: result.Success, userMessage: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
-            var diagnostic = Assert.Single(collection: result.Diagnostics, predicate: candidate => candidate.Code == "TW0008");
-            Assert.Equal(expected: DiagnosticSeverity.Warning, actual: diagnostic.Severity);
-            Assert.Contains(expectedSubstring: "more than one template", actualString: diagnostic.Message, comparisonType: StringComparison.Ordinal);
-            Assert.Equal(expected: 2, actual: result.GeneratedFiles.Count);
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            var diagnostic = result.Diagnostics.Should().ContainSingle(candidate => candidate.Code == "TW0008").Which;
+            diagnostic.Severity.Should().Be(DiagnosticSeverity.Warning);
+            diagnostic.Message.Should().Contain("more than one template");
+            result.GeneratedFiles.Should().HaveCount(2);
         }
         finally
         {

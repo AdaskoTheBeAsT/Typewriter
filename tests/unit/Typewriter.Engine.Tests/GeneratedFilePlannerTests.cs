@@ -9,8 +9,8 @@ public sealed class GeneratedFilePlannerTests
     [Fact]
     public void HeaderValueUsesDeterministicLineFeeds()
     {
-        Assert.Contains(expectedSubstring: "\n", actualString: GeneratedFileHeader.Value, comparisonType: StringComparison.Ordinal);
-        Assert.DoesNotContain(expectedSubstring: "\r", actualString: GeneratedFileHeader.Value, comparisonType: StringComparison.Ordinal);
+        GeneratedFileHeader.Value.Should().Contain("\n");
+        GeneratedFileHeader.Value.Should().NotContain("\r");
     }
 
     [Theory]
@@ -38,11 +38,11 @@ public sealed class GeneratedFilePlannerTests
                 generatedFile: out var generatedFile,
                 diagnostic: out var diagnostic);
 
-            Assert.True(condition: planned, userMessage: diagnostic?.Message);
-            Assert.Null(@object: diagnostic);
+            planned.Should().BeTrue(because: diagnostic?.Message);
+            diagnostic.Should().BeNull();
             var file = generatedFile ?? throw new InvalidOperationException(message: "Expected generated file.");
-            Assert.Equal(expected: outputPath, actual: file.Path);
-            Assert.StartsWith(expectedStartString: GeneratedFileHeader.Value, actualString: file.Content, comparisonType: StringComparison.Ordinal);
+            file.Path.Should().Be(outputPath);
+            file.Content.Should().StartWith(GeneratedFileHeader.Value);
         }
         finally
         {

@@ -65,6 +65,11 @@ internal sealed class TypewriterCommandService
             isVisible: HasRenderAllContext);
         AddContextCommand(
             commandService: commandService,
+            commandId: TypewriterVisualStudioConstants.RenderSolutionAllTemplatesCommandId,
+            action: () => GenerateSolutionAllTemplatesAsync(cancellationToken: CancellationToken.None),
+            isVisible: HasSolutionContext);
+        AddContextCommand(
+            commandService: commandService,
             commandId: TypewriterVisualStudioConstants.ValidateTemplateCommandId,
             action: () => ValidateCurrentTemplateAsync(cancellationToken: CancellationToken.None),
             isVisible: HasTemplateContext);
@@ -169,7 +174,11 @@ internal sealed class TypewriterCommandService
         string? templatePathOverride,
         CancellationToken cancellationToken)
     {
-        var context = await CreateGenerationContextAsync(templatePathOverride: templatePathOverride, includeTemplate: true, cancellationToken: cancellationToken)
+        var context = await CreateGenerationContextAsync(
+                templatePathOverride: templatePathOverride,
+                includeTemplate: true,
+                solutionWide: false,
+                cancellationToken: cancellationToken)
             .ConfigureAwait(continueOnCapturedContext: false);
         if (context is null)
         {
@@ -181,7 +190,11 @@ internal sealed class TypewriterCommandService
 
     private async Task ValidateCurrentTemplateAsync(CancellationToken cancellationToken)
     {
-        var context = await CreateGenerationContextAsync(templatePathOverride: null, includeTemplate: true, cancellationToken: cancellationToken)
+        var context = await CreateGenerationContextAsync(
+                templatePathOverride: null,
+                includeTemplate: true,
+                solutionWide: false,
+                cancellationToken: cancellationToken)
             .ConfigureAwait(continueOnCapturedContext: false);
         if (context is null)
         {
@@ -193,7 +206,27 @@ internal sealed class TypewriterCommandService
 
     private async Task GenerateAllTemplatesAsync(CancellationToken cancellationToken)
     {
-        var context = await CreateGenerationContextAsync(templatePathOverride: null, includeTemplate: false, cancellationToken: cancellationToken)
+        var context = await CreateGenerationContextAsync(
+                templatePathOverride: null,
+                includeTemplate: false,
+                solutionWide: false,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(continueOnCapturedContext: false);
+        if (context is null)
+        {
+            return;
+        }
+
+        await ExecuteCliAsync(command: "generate", context: context, allTemplates: true, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    private async Task GenerateSolutionAllTemplatesAsync(CancellationToken cancellationToken)
+    {
+        var context = await CreateGenerationContextAsync(
+                templatePathOverride: null,
+                includeTemplate: false,
+                solutionWide: true,
+                cancellationToken: cancellationToken)
             .ConfigureAwait(continueOnCapturedContext: false);
         if (context is null)
         {
@@ -206,6 +239,7 @@ internal sealed class TypewriterCommandService
     private async Task<GenerationContext?> CreateGenerationContextAsync(
         string? templatePathOverride,
         bool includeTemplate,
+        bool solutionWide,
         CancellationToken cancellationToken)
     {
         await _package.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken: cancellationToken);
@@ -222,10 +256,12 @@ internal sealed class TypewriterCommandService
         }
 
         var selectedProjectPath = IsSolutionExplorerActive(dte: dte) ? GetSelectedProjectPath(dte: dte) : null;
-        var projectPath = ResolveConfiguredPath(value: options.ProjectPath)
-            ?? (templatePath is not null ? FindProjectPathForTemplate(dte: dte, templatePath: templatePath) : selectedProjectPath)
-            ?? selectedProjectPath
-            ?? GetActiveProjectPath(dte: dte);
+        var projectPath = solutionWide
+            ? null
+            : ResolveConfiguredPath(value: options.ProjectPath)
+              ?? (templatePath is not null ? FindProjectPathForTemplate(dte: dte, templatePath: templatePath) : selectedProjectPath)
+              ?? selectedProjectPath
+              ?? GetActiveProjectPath(dte: dte);
         var workspacePath = ResolveConfiguredPath(value: options.WorkspacePath)
             ?? GetSolutionPath(dte: dte)
             ?? projectPath
@@ -242,7 +278,7 @@ internal sealed class TypewriterCommandService
             projectPath: projectPath,
             templatePath: templatePath,
             framework: options.Framework.Trim(),
-            allProjects: options.AllProjects,
+            allProjects: solutionWide || options.AllProjects,
             workingDirectory: GetWorkingDirectory(workspacePath: resolvedWorkspacePath),
             cliInvocation: ResolveCliInvocation(options: options, workspacePath: resolvedWorkspacePath));
     }
@@ -613,6 +649,14 @@ internal sealed class TypewriterCommandService
             : IsTemplatePath(path: dte?.ActiveDocument?.FullName);
     }
 
+    private static bool HasSolutionContext()
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        var dte = GetGlobalDte();
+        return IsSolutionExplorerActive(dte: dte)
+            && !string.IsNullOrWhiteSpace(value: GetSolutionPath(dte: dte));
+    }
+
     private static DTE2? GetGlobalDte()
     {
         ThreadHelper.ThrowIfNotOnUIThread();
@@ -625,7 +669,7 @@ internal sealed class TypewriterCommandService
         try
         {
             return string.Equals(
-                a: dte?.ActiveWindow?.Kind,
+                a: dte?.ActiveWindow?.ObjectKind,
                 b: Constants.vsWindowKindSolutionExplorer,
                 comparisonType: StringComparison.OrdinalIgnoreCase);
         }

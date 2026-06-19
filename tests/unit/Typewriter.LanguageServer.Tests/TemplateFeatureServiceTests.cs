@@ -23,14 +23,14 @@ public sealed class TemplateFeatureServiceTests
             using var service = new TemplateFeatureService();
             var completions = await service.GetCompletionsAsync(document: document, settings: settings, position: new LspPosition(Line: 3, Character: 1), cancellationToken: CancellationToken.None);
 
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Classes");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Structs");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Customer");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Coordinate");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "DisplayName");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "index");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "IsIndexer");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "FormatName");
+            completions.Items.Should().Contain(item => item.Label == "Classes");
+            completions.Items.Should().Contain(item => item.Label == "Structs");
+            completions.Items.Should().Contain(item => item.Label == "Customer");
+            completions.Items.Should().Contain(item => item.Label == "Coordinate");
+            completions.Items.Should().Contain(item => item.Label == "DisplayName");
+            completions.Items.Should().Contain(item => item.Label == "index");
+            completions.Items.Should().Contain(item => item.Label == "IsIndexer");
+            completions.Items.Should().Contain(item => item.Label == "FormatName");
         }
         finally
         {
@@ -64,7 +64,7 @@ public sealed class TemplateFeatureServiceTests
                 position: new LspPosition(Line: 0, Character: 1),
                 cancellationToken: CancellationToken.None);
 
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Customer");
+            completions.Items.Should().Contain(item => item.Label == "Customer");
         }
         finally
         {
@@ -100,10 +100,10 @@ public sealed class TemplateFeatureServiceTests
                 position: position with { Character = position.Character + 3 },
                 cancellationToken: CancellationToken.None);
 
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "string");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Class");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "File");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Struct");
+            completions.Items.Should().Contain(item => item.Label == "string");
+            completions.Items.Should().Contain(item => item.Label == "Class");
+            completions.Items.Should().Contain(item => item.Label == "File");
+            completions.Items.Should().Contain(item => item.Label == "Struct");
         }
         finally
         {
@@ -135,9 +135,9 @@ public sealed class TemplateFeatureServiceTests
                 position: position with { Character = position.Character + 5 },
                 cancellationToken: CancellationToken.None);
 
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "interface");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "export");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "$Classes");
+            completions.Items.Should().Contain(item => item.Label == "interface");
+            completions.Items.Should().Contain(item => item.Label == "export");
+            completions.Items.Should().Contain(item => item.Label == "$Classes");
         }
         finally
         {
@@ -162,11 +162,11 @@ public sealed class TemplateFeatureServiceTests
         var tokens = new TemplateSemanticTokenService().GetSemanticTokens(document: document);
         var decoded = DecodeSemanticTokens(document: document, semanticTokens: tokens);
 
-        Assert.Contains(collection: decoded, filter: token => token.Text == "string" && token.Type == "type");
-        Assert.Contains(collection: decoded, filter: token => token.Text == "FormatName" && token.Type == "method");
-        Assert.Contains(collection: decoded, filter: token => token.Text == "export" && token.Type == "keyword");
-        Assert.Contains(collection: decoded, filter: token => token.Text == "interface" && token.Type == "interface");
-        Assert.Contains(collection: decoded, filter: token => token.Text == "$Name" && token.Type == "macro");
+        decoded.Should().Contain(token => token.Text == "string" && token.Type == "type");
+        decoded.Should().Contain(token => token.Text == "FormatName" && token.Type == "method");
+        decoded.Should().Contain(token => token.Text == "export" && token.Type == "keyword");
+        decoded.Should().Contain(token => token.Text == "interface" && token.Type == "interface");
+        decoded.Should().Contain(token => token.Text == "$Name" && token.Type == "macro");
     }
 
     [Fact]
@@ -187,9 +187,9 @@ public sealed class TemplateFeatureServiceTests
                 position: PositionOf(text: Template, marker: "Customer"),
                 cancellationToken: CancellationToken.None);
 
-            Assert.NotNull(@object: hover);
-            Assert.Contains(expectedSubstring: "Sample.Customer", actualString: hover.Contents.Value, comparisonType: StringComparison.Ordinal);
-            Assert.Contains(expectedSubstring: "Customer docs.", actualString: hover.Contents.Value, comparisonType: StringComparison.Ordinal);
+            hover.Should().NotBeNull();
+            hover!.Contents.Value.Should().Contain("Sample.Customer");
+            hover.Contents.Value.Should().Contain("Customer docs.");
         }
         finally
         {
@@ -215,9 +215,9 @@ public sealed class TemplateFeatureServiceTests
                 position: PositionOf(text: Template, marker: "Customer"),
                 cancellationToken: CancellationToken.None);
 
-            var location = Assert.Single(collection: locations);
-            Assert.Equal(expected: UriFromPath(path: project.SourcePath), actual: location.Uri);
-            Assert.True(condition: location.Range.Start.Line >= 2);
+            var location = locations.Should().ContainSingle().Which;
+            location.Uri.Should().Be(UriFromPath(path: project.SourcePath));
+            location.Range.Start.Line.Should().BeGreaterThanOrEqualTo(2);
         }
         finally
         {
@@ -247,10 +247,10 @@ public sealed class TemplateFeatureServiceTests
                 position: PositionOf(text: Template, marker: "generated/models.ts"),
                 cancellationToken: CancellationToken.None);
 
-            var location = Assert.Single(collection: locations);
-            Assert.Equal(expected: UriFromPath(path: generatedPath), actual: location.Uri);
-            Assert.Equal(expected: 0, actual: location.Range.Start.Line);
-            Assert.Equal(expected: 0, actual: location.Range.Start.Character);
+            var location = locations.Should().ContainSingle().Which;
+            location.Uri.Should().Be(UriFromPath(path: generatedPath));
+            location.Range.Start.Line.Should().Be(0);
+            location.Range.Start.Character.Should().Be(0);
         }
         finally
         {
@@ -267,14 +267,14 @@ public sealed class TemplateFeatureServiceTests
             }
             """;
         var virtualDoc = EmbeddedCSharpDocument.Create(templateText: Template);
-        Assert.NotNull(@object: virtualDoc);
+        virtualDoc.Should().NotBeNull();
 
         // The "string" keyword in the helper block should be mappable
         var stringIndex = Template.IndexOf(value: "string", comparisonType: StringComparison.Ordinal);
-        Assert.True(condition: virtualDoc.TryMapToVirtual(templateOffset: stringIndex, virtualOffset: out var virtualOffset));
-        Assert.True(condition: virtualOffset >= 0);
-        Assert.True(condition: virtualDoc.TryMapToTemplate(virtualOffset: virtualOffset, templateOffset: out var roundTripped));
-        Assert.Equal(expected: stringIndex, actual: roundTripped);
+        virtualDoc!.TryMapToVirtual(templateOffset: stringIndex, virtualOffset: out var virtualOffset).Should().BeTrue();
+        virtualOffset.Should().BeGreaterThanOrEqualTo(0);
+        virtualDoc.TryMapToTemplate(virtualOffset: virtualOffset, templateOffset: out var roundTripped).Should().BeTrue();
+        roundTripped.Should().Be(stringIndex);
     }
 
     [Fact]
@@ -282,7 +282,7 @@ public sealed class TemplateFeatureServiceTests
     {
         const string Template = "export interface $Name { }";
         var virtualDoc = EmbeddedCSharpDocument.Create(templateText: Template);
-        Assert.Null(@object: virtualDoc);
+        virtualDoc.Should().BeNull();
     }
 
     [Fact]
@@ -295,8 +295,8 @@ public sealed class TemplateFeatureServiceTests
             }
             """;
         var virtualDoc = EmbeddedCSharpDocument.Create(templateText: Template);
-        Assert.NotNull(@object: virtualDoc);
-        Assert.Contains(expectedSubstring: "string s", actualString: virtualDoc.Source, comparisonType: StringComparison.Ordinal);
+        virtualDoc.Should().NotBeNull();
+        virtualDoc!.Source.Should().Contain("string s");
     }
 
     [Fact]
@@ -320,8 +320,8 @@ public sealed class TemplateFeatureServiceTests
                 templateOffset: nameIndex,
                 cancellationToken: CancellationToken.None);
 
-            Assert.NotNull(@object: hover);
-            Assert.Contains(expectedSubstring: "FormatName", actualString: hover.Contents.Value, comparisonType: StringComparison.Ordinal);
+            hover.Should().NotBeNull();
+            hover!.Contents.Value.Should().Contain("FormatName");
         }
         finally
         {
@@ -364,8 +364,8 @@ public sealed class TemplateFeatureServiceTests
 
             foreach (var completions in completionResults)
             {
-                Assert.NotNull(@object: completions);
-                Assert.Contains(collection: completions.Items, filter: item => item.Label == "Class");
+                completions.Should().NotBeNull();
+                completions.Items.Should().Contain(item => item.Label == "Class");
             }
         }
         finally
@@ -402,7 +402,7 @@ public sealed class TemplateFeatureServiceTests
                 position: position with { Character = position.Character + 3 },
                 cancellationToken: CancellationToken.None);
 
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "using");
+            completions.Items.Should().Contain(item => item.Label == "using");
         }
         finally
         {
@@ -434,8 +434,8 @@ public sealed class TemplateFeatureServiceTests
                 position: position with { Character = position.Character + 3 },
                 cancellationToken: CancellationToken.None);
 
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Promise");
-            Assert.Contains(collection: completions.Items, filter: item => item.Label == "Partial");
+            completions.Items.Should().Contain(item => item.Label == "Promise");
+            completions.Items.Should().Contain(item => item.Label == "Partial");
         }
         finally
         {
@@ -558,7 +558,7 @@ public sealed class TemplateFeatureServiceTests
         string marker)
     {
         var offset = text.IndexOf(value: marker, comparisonType: StringComparison.Ordinal);
-        Assert.True(condition: offset >= 0, userMessage: $"Marker was not found: {marker}");
+        offset.Should().BeGreaterThanOrEqualTo(0, because: $"marker should exist: {marker}");
 
         var line = 0;
         var character = 0;

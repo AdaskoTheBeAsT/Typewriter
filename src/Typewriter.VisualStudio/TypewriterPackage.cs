@@ -15,6 +15,7 @@ namespace Typewriter.VisualStudio;
 [ProvideOptionPage(pageType: typeof(TypewriterOptions), categoryName: "Typewriter", pageName: "General", categoryResourceID: 0, pageNameResourceID: 0, supportsAutomation: true)]
 [ProvideAutoLoad(cmdUiContextGuid: VSConstants.UICONTEXT.SolutionExists_string, flags: PackageAutoLoadFlags.BackgroundLoad)]
 [ProvideAutoLoad(cmdUiContextGuid: VSConstants.UICONTEXT.NoSolution_string, flags: PackageAutoLoadFlags.BackgroundLoad)]
+[ProvideTstFileIcon]
 [Guid(guid: TypewriterVisualStudioConstants.PackageGuidString)]
 public sealed class TypewriterPackage : AsyncPackage
 {
