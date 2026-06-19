@@ -624,8 +624,9 @@ public sealed class CSharpProjectMetadataProviderTests
                           public class GeometryHolder
                           {
                               /// <summary>Gets a value.</summary>
+                              /// <param name="index">The index of the <see cref="GeometryFieldType"/> to return.</param>
                               /// <returns>The <see cref="GeometryFieldType"/> instance.</returns>
-                              public GeometryFieldType Get()
+                              public GeometryFieldType Get(int index)
                               {
                                   return new GeometryFieldType();
                               }
@@ -648,6 +649,11 @@ public sealed class CSharpProjectMetadataProviderTests
             get.DocComment.Should().NotBeNull();
             get.DocComment!.Returns.Should().Contain("<see cref=\"T:");
             get.DocComment.Returns.Should().Contain("GeometryFieldType");
+
+            var indexParam = get.DocComment.Parameters.Should().ContainSingle().Which;
+            indexParam.Name.Should().Be("index");
+            indexParam.Description.Should().Contain("<see cref=\"T:");
+            indexParam.Description.Should().Contain("GeometryFieldType");
         }
         finally
         {

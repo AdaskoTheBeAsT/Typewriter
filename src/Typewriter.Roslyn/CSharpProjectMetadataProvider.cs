@@ -1521,7 +1521,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                     .Select(
                         selector: element => new ParameterCommentMetadata(
                             Name: element.Attribute(name: "name")?.Value.Trim() ?? string.Empty,
-                            Description: NormalizeDocumentation(documentation: element.Value) ?? string.Empty))
+                            Description: NormalizeDocumentation(documentation: GetDocCommentElementContent(element: element)) ?? string.Empty))
                     .ToArray());
         }
         catch (System.Xml.XmlException)
