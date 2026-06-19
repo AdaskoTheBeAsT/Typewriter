@@ -297,6 +297,69 @@ public sealed class TemplateRendererTests
     }
 
     [Fact]
+    public void RenderResolvesPropertyAndFieldInitializerValue()
+    {
+        var stringType = TypeReference(name: "String", fullName: "System.String", isNullable: false);
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "Holder",
+                    FullName: "Sample.Holder",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties:
+                    [
+                        new PropertyMetadata(
+                            Name: "Type",
+                            FullName: "Sample.Holder.Type",
+                            Type: stringType,
+                            Accessibility: MetadataAccessibility.Public,
+                            HasGetter: true,
+                            HasSetter: false,
+                            IsRequired: false,
+                            Attributes: [])
+                        {
+                            Value = "myTestType",
+                        },
+                    ],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true)
+                {
+                    Fields =
+                    [
+                        new FieldMetadata(
+                            Name: "Label",
+                            FullName: "Sample.Holder.Label",
+                            Accessibility: MetadataAccessibility.Public,
+                            Type: stringType,
+                            Attributes: [],
+                            ParentTypeFullName: "Sample.Holder")
+                        {
+                            Value = "instance",
+                        },
+                    ],
+                },
+            ],
+            Diagnostics: []);
+        const string template = "$Classes[$Properties[$Name=$Value;]$Fields[$Name=$Value;]]";
+        var document = new TemplateDocument(Path: "models.tst", Content: template, OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("Type=myTestType;");
+        output.Should().Contain("Label=instance;");
+    }
+
+    [Fact]
     public void RenderPreservesNullableDictionaryWhenValueTypeIsNullable()
     {
         var keyType = TypeReference(name: "String", fullName: "System.String", isNullable: false);

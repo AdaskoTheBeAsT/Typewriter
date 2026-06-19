@@ -545,6 +545,7 @@ internal sealed class TemplateCodeModelAdapterFactory
                 ? new Typewriter.CodeModel.ParameterCollection(items: property.Parameters.Select(selector: parameter => CreateParameter(parameter: parameter, parent: null)))
                 : new Typewriter.CodeModel.ParameterCollection(),
             Type = CreateType(type: property.Type),
+            Value = property.Value ?? string.Empty,
         };
     }
 
@@ -627,6 +628,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             Attributes = CreateAttributes(attributes: field.Attributes, parent: null),
             DocComment = CreateDocComment(docComment: field.DocComment, parent: null),
             Type = CreateType(type: field.Type),
+            Value = field.Value ?? string.Empty,
         };
     }
 

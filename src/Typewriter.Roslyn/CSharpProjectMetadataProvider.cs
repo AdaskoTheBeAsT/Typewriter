@@ -737,6 +737,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                         IsIndexer = property.IsIndexer,
                         IsVirtual = property.IsVirtual,
                         Parameters = GetParameters(parameters: property.Parameters, parentFullName: fullName, parentPropertyFullName: fullName).ToArray(),
+                        Value = GetPropertyInitializerValue(property: property),
                     };
                 });
     }
@@ -872,6 +873,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                         Location = GetSourceLocation(symbol: field),
                         Documentation = docComment?.Summary,
                         DocComment = docComment,
+                        Value = GetFieldInitializerValue(field: field),
                     };
                 });
     }
@@ -1556,6 +1558,36 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             LiteralExpressionSyntax literal when literal.IsKind(kind: SyntaxKind.NullLiteralExpression) => string.Empty,
             LiteralExpressionSyntax literal => literal.Token.ValueText,
             _ => initializer.ToString(),
+        };
+    }
+
+    private static string? GetPropertyInitializerValue(IPropertySymbol property)
+    {
+        var syntax = property.DeclaringSyntaxReferences
+            .Select(selector: reference => reference.GetSyntax())
+            .OfType<PropertyDeclarationSyntax>()
+            .FirstOrDefault();
+        return GetInitializerValueText(initializer: syntax?.Initializer);
+    }
+
+    private static string? GetFieldInitializerValue(IFieldSymbol field)
+    {
+        var syntax = field.DeclaringSyntaxReferences
+            .Select(selector: reference => reference.GetSyntax())
+            .OfType<VariableDeclaratorSyntax>()
+            .FirstOrDefault();
+        return GetInitializerValueText(initializer: syntax?.Initializer);
+    }
+
+    private static string? GetInitializerValueText(EqualsValueClauseSyntax? initializer)
+    {
+        var value = initializer?.Value;
+        return value switch
+        {
+            null => null,
+            LiteralExpressionSyntax literal when literal.IsKind(kind: SyntaxKind.NullLiteralExpression) => "null",
+            LiteralExpressionSyntax literal => literal.Token.ValueText,
+            _ => value.ToString(),
         };
     }
 

@@ -22,5 +22,7 @@ public class Property : Item
 
     public virtual Type Type { get; init; } = new();
 
+    public virtual string Value { get; init; } = string.Empty;
+
     public static implicit operator string(Property? instance) => instance?.ToString() ?? string.Empty;
 }
