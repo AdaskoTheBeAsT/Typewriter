@@ -1585,7 +1585,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         return value switch
         {
             null => null,
-            LiteralExpressionSyntax literal when literal.IsKind(kind: SyntaxKind.NullLiteralExpression) => string.Empty,
+            LiteralExpressionSyntax literal when literal.IsKind(kind: SyntaxKind.NullLiteralExpression) => "null",
             LiteralExpressionSyntax literal => literal.Token.ValueText,
             _ => value.ToString(),
         };

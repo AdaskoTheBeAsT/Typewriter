@@ -1066,6 +1066,10 @@ public sealed class CSharpProjectMetadataProviderTests
                               public string Label = "instance";
 
                               public string? NoInitializer { get; set; }
+
+                              public string? NullInitializer { get; set; } = null;
+
+                              public string? NullField = null;
                           }
                           """);
             var provider = new CSharpProjectMetadataProvider();
@@ -1079,7 +1083,9 @@ public sealed class CSharpProjectMetadataProviderTests
             holder.Properties.Should().ContainSingle(property => property.Name == "Type").Which.Value.Should().Be("myTestType");
             holder.Properties.Should().ContainSingle(property => property.Name == "Count").Which.Value.Should().Be("5");
             holder.Properties.Should().ContainSingle(property => property.Name == "NoInitializer").Which.Value.Should().BeNull();
+            holder.Properties.Should().ContainSingle(property => property.Name == "NullInitializer").Which.Value.Should().Be("null");
             holder.Fields.Should().ContainSingle(field => field.Name == "Label").Which.Value.Should().Be("instance");
+            holder.Fields.Should().ContainSingle(field => field.Name == "NullField").Which.Value.Should().Be("null");
         }
         finally
         {
