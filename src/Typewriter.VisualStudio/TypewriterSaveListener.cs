@@ -1,16 +1,50 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 
 namespace Typewriter.VisualStudio;
 
-internal sealed class TypewriterSaveListener : IVsRunningDocTableEvents3
+internal sealed class TypewriterSaveListener : IVsRunningDocTableEvents3, IDisposable
 {
+    private static readonly TimeSpan SaveDebounceDelay = TimeSpan.FromMilliseconds(value: 300);
+    private static readonly string[] ConfigurationFileNames =
+    [
+        "typewriter.json",
+        "typewriter.config.json",
+        ".typewriterrc.json",
+    ];
+
+    private static readonly IReadOnlyList<string> DefaultInputExtensions =
+    [
+        ".cs",
+        ".csproj",
+        ".json",
+        ".props",
+        ".sln",
+        ".slnx",
+        ".targets",
+        ".tst",
+    ];
+
+    private static readonly HashSet<string> TemplateExtensions = new(comparer: StringComparer.OrdinalIgnoreCase)
+    {
+    };
+
+    private readonly object _sync = new();
     private readonly TypewriterPackage _package;
     private readonly TypewriterCommandService _commandService;
+    private readonly Timer _saveTimer;
+    private SaveGenerationRequest? _pendingRequest;
+    private DateTimeOffset _lastSaveAt = DateTimeOffset.MinValue;
+    private bool _isProcessing;
+    private bool _disposed;
 
     public TypewriterSaveListener(
         TypewriterPackage package,
@@ -18,6 +52,11 @@ internal sealed class TypewriterSaveListener : IVsRunningDocTableEvents3
     {
         _package = package;
         _commandService = commandService;
+        _saveTimer = new Timer(
+            callback: OnSaveTimerElapsed,
+            state: null,
+            dueTime: Timeout.InfiniteTimeSpan,
+            period: Timeout.InfiniteTimeSpan);
     }
 
     public int OnAfterSave(uint docCookie)
@@ -29,15 +68,45 @@ internal sealed class TypewriterSaveListener : IVsRunningDocTableEvents3
             return VSConstants.S_OK;
         }
 
-        var templatePath = GetDocumentMoniker(docCookie: docCookie) ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(value: templatePath)
-            && Path.GetExtension(path: templatePath).Equals(value: ".tst", comparisonType: StringComparison.OrdinalIgnoreCase))
-        {
-            _ = _package.JoinableTaskFactory.RunAsync(
-                asyncMethod: () => _commandService.GenerateSavedTemplateAsync(templatePath: templatePath, cancellationToken: CancellationToken.None));
-        }
+        var savedPath = GetDocumentMoniker(docCookie: docCookie) ?? string.Empty;
+        _ = _package.JoinableTaskFactory.RunAsync(
+            asyncMethod: async () =>
+            {
+                var inputExtensions = await Task.Run(function: () => ReadConfiguredInputExtensions(path: savedPath)).ConfigureAwait(continueOnCapturedContext: false);
+                var request = CreateSaveGenerationRequest(path: savedPath, inputExtensions: inputExtensions);
+                if (request is not null)
+                {
+                    Schedule(request: request);
+                }
+            });
 
         return VSConstants.S_OK;
+    }
+
+    public void Dispose()
+    {
+        lock (_sync)
+        {
+            _disposed = true;
+            _pendingRequest = null;
+        }
+
+        _saveTimer.Dispose();
+    }
+
+    private static IReadOnlyCollection<string> ReadConfiguredInputExtensions(string path)
+    {
+        var extensions = DefaultInputExtensions;
+        foreach (var configurationPath in FindConfigurationFiles(path: path))
+        {
+            var configuredExtensions = ReadInputExtensions(configurationPath: configurationPath);
+            if (configuredExtensions is not null)
+            {
+                extensions = configuredExtensions;
+            }
+        }
+
+        return extensions;
     }
 
     public int OnBeforeSave(uint docCookie) => VSConstants.S_OK;
@@ -113,5 +182,261 @@ internal sealed class TypewriterSaveListener : IVsRunningDocTableEvents3
                 pitemid: out _,
                 ppunkDocData: out _));
         return moniker;
+    }
+
+    private void Schedule(SaveGenerationRequest request)
+    {
+        lock (_sync)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _pendingRequest = SaveGenerationRequest.Merge(existing: _pendingRequest, incoming: request);
+            _lastSaveAt = DateTimeOffset.UtcNow;
+            _saveTimer.Change(dueTime: SaveDebounceDelay, period: Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    private void OnSaveTimerElapsed(object? state) =>
+        _ = _package.JoinableTaskFactory.RunAsync(asyncMethod: ProcessPendingSavesAsync);
+
+    private async Task ProcessPendingSavesAsync()
+    {
+        lock (_sync)
+        {
+            if (_disposed || _isProcessing)
+            {
+                return;
+            }
+
+            _isProcessing = true;
+        }
+
+        try
+        {
+            while (true)
+            {
+                await WaitForQuietPeriodAsync().ConfigureAwait(continueOnCapturedContext: false);
+
+                SaveGenerationRequest? request;
+                lock (_sync)
+                {
+                    if (_disposed)
+                    {
+                        return;
+                    }
+
+                    request = _pendingRequest;
+                    _pendingRequest = null;
+                    if (request is null)
+                    {
+                        return;
+                    }
+                }
+
+                await ExecuteSaveRequestAsync(request: request).ConfigureAwait(continueOnCapturedContext: false);
+            }
+        }
+        finally
+        {
+            lock (_sync)
+            {
+                _isProcessing = false;
+                if (!_disposed && _pendingRequest is not null)
+                {
+                    _saveTimer.Change(dueTime: SaveDebounceDelay, period: Timeout.InfiniteTimeSpan);
+                }
+            }
+        }
+    }
+
+    private async Task WaitForQuietPeriodAsync()
+    {
+        while (true)
+        {
+            TimeSpan remaining;
+            lock (_sync)
+            {
+                remaining = SaveDebounceDelay - (DateTimeOffset.UtcNow - _lastSaveAt);
+            }
+
+            if (remaining <= TimeSpan.Zero)
+            {
+                return;
+            }
+
+            await Task.Delay(delay: remaining).ConfigureAwait(continueOnCapturedContext: false);
+        }
+    }
+
+    private Task ExecuteSaveRequestAsync(SaveGenerationRequest request) =>
+        request.Scope == SaveGenerationScope.CurrentTemplate
+            ? _commandService.GenerateSavedTemplateAsync(templatePath: request.Path, cancellationToken: CancellationToken.None)
+            : _commandService.GenerateSavedInputAsync(inputPath: request.Path, cancellationToken: CancellationToken.None);
+
+    private static SaveGenerationRequest? CreateSaveGenerationRequest(
+        string path,
+        IReadOnlyCollection<string> inputExtensions)
+    {
+        if (string.IsNullOrWhiteSpace(value: path) || IsIgnoredPath(path: path))
+        {
+            return null;
+        }
+
+        var extension = Path.GetExtension(path: path);
+        if (!inputExtensions.Contains(value: extension, comparer: StringComparer.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (TemplateExtensions.Contains(item: extension))
+        {
+            return new SaveGenerationRequest(path: path, scope: SaveGenerationScope.CurrentTemplate);
+        }
+
+        return new SaveGenerationRequest(path: path, scope: SaveGenerationScope.AllTemplates);
+    }
+
+    private static IEnumerable<string> FindConfigurationFiles(string path)
+    {
+        if (string.IsNullOrWhiteSpace(value: path))
+        {
+            yield break;
+        }
+
+        var directory = File.Exists(path: path)
+            ? Path.GetDirectoryName(path: path)
+            : path;
+        var directories = new List<string>();
+        while (!string.IsNullOrWhiteSpace(value: directory))
+        {
+            directories.Add(item: directory!);
+            directory = Directory.GetParent(path: directory)?.FullName;
+        }
+
+        directories.Reverse();
+        foreach (var candidateDirectory in directories)
+        {
+            foreach (var configurationName in ConfigurationFileNames)
+            {
+                var configurationPath = Path.Combine(path1: candidateDirectory, path2: configurationName);
+                if (File.Exists(path: configurationPath))
+                {
+                    yield return configurationPath;
+                }
+            }
+        }
+    }
+
+    private static IReadOnlyList<string>? ReadInputExtensions(string configurationPath)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json: File.ReadAllText(path: configurationPath));
+            if (!TryGetProperty(element: document.RootElement, name: "inputExtensions", value: out var inputExtensions)
+                || inputExtensions.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var extensions = inputExtensions
+                .EnumerateArray()
+                .Where(predicate: element => element.ValueKind == JsonValueKind.String)
+                .Select(selector: element => element.GetString() ?? string.Empty)
+                .Select(selector: NormalizeExtension)
+                .Where(predicate: extension => !string.IsNullOrWhiteSpace(value: extension))
+                .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return extensions.Length == 0 ? DefaultInputExtensions : extensions;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static bool TryGetProperty(
+        JsonElement element,
+        string name,
+        out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (property.NameEquals(text: name)
+                || property.Name.Equals(value: name, comparisonType: StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string NormalizeExtension(string extension)
+    {
+        var trimmed = extension.Trim();
+        if (string.IsNullOrWhiteSpace(value: trimmed))
+        {
+            return string.Empty;
+        }
+
+        return trimmed.StartsWith(value: ".", comparisonType: StringComparison.Ordinal)
+            ? trimmed
+            : "." + trimmed;
+    }
+
+    private static bool IsIgnoredPath(string path)
+    {
+        var fullPath = Path.GetFullPath(path: path);
+        var segments = fullPath.Split(
+            separator: [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            options: StringSplitOptions.RemoveEmptyEntries);
+        return Array.Exists(array: segments, match: IsIgnoredDirectory);
+    }
+
+    private static bool IsIgnoredDirectory(string segment) =>
+        segment.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || segment.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || segment.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || segment.Equals(value: "generated", comparisonType: StringComparison.OrdinalIgnoreCase);
+
+    private sealed class SaveGenerationRequest
+    {
+        public SaveGenerationRequest(
+            string path,
+            SaveGenerationScope scope)
+        {
+            Path = path;
+            Scope = scope;
+        }
+
+        public string Path { get; }
+
+        public SaveGenerationScope Scope { get; }
+
+        public static SaveGenerationRequest Merge(
+            SaveGenerationRequest? existing,
+            SaveGenerationRequest incoming) =>
+            existing?.Scope == SaveGenerationScope.AllTemplates && incoming.Scope == SaveGenerationScope.CurrentTemplate
+                ? existing
+                : incoming;
+    }
+
+    private enum SaveGenerationScope
+    {
+        CurrentTemplate,
+        AllTemplates,
     }
 }

@@ -99,6 +99,7 @@ public static class TypewriterConfigurationLoader
         {
             Templates = loaded.Templates ?? current.Templates,
             Exclude = loaded.Exclude ?? current.Exclude,
+            InputExtensions = NormalizeExtensions(extensions: loaded.InputExtensions) ?? current.InputExtensions,
             DefaultTargetFramework = loaded.DefaultTargetFramework ?? current.DefaultTargetFramework,
             Output = current.Output with
             {
@@ -125,6 +126,7 @@ public static class TypewriterConfigurationLoader
     {
         return configuration with
         {
+            InputExtensions = ReadStringListEnvironment(name: "TYPEWRITER_INPUT_EXTENSIONS") ?? configuration.InputExtensions,
             DefaultTargetFramework = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_DEFAULT_TARGET_FRAMEWORK")
                 ?? configuration.DefaultTargetFramework,
             Output = configuration.Output with
@@ -153,11 +155,43 @@ public static class TypewriterConfigurationLoader
             || value.Equals(value: "yes", comparisonType: StringComparison.OrdinalIgnoreCase);
     }
 
+    private static IReadOnlyList<string>? ReadStringListEnvironment(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(variable: name);
+        if (string.IsNullOrWhiteSpace(value: value))
+        {
+            return null;
+        }
+
+        return NormalizeExtensions(
+            extensions: value.Split(
+                separator: [',', ';', ' '],
+                options: StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
+
+    private static IReadOnlyList<string>? NormalizeExtensions(IReadOnlyList<string>? extensions)
+    {
+        if (extensions is null)
+        {
+            return null;
+        }
+
+        var normalized = extensions
+            .Select(selector: extension => extension.Trim())
+            .Where(predicate: extension => !string.IsNullOrWhiteSpace(value: extension))
+            .Select(selector: extension => extension[0] == '.' ? extension : "." + extension)
+            .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return normalized.Length == 0 ? TypewriterConfiguration.DefaultInputExtensions : normalized;
+    }
+
     internal sealed record ConfigurationFile
     {
         public IReadOnlyList<string>? Templates { get; init; }
 
         public IReadOnlyList<string>? Exclude { get; init; }
+
+        public IReadOnlyList<string>? InputExtensions { get; init; }
 
         public string? DefaultTargetFramework { get; init; }
 

@@ -36,8 +36,8 @@ class TypewriterConfigurable(private val project: Project) : SearchableConfigura
         templatePathField = JTextField()
         frameworkField = JTextField()
         allProjectsCheckBox = JCheckBox("Generate all projects")
-        generateOnSaveCheckBox = JCheckBox("Generate current template on save")
-        validateOnSaveCheckBox = JCheckBox("Validate current template on save")
+        generateOnSaveCheckBox = JCheckBox("Generate on save for files matched by typewriter.json inputExtensions")
+        validateOnSaveCheckBox = JCheckBox("Validate on save for files matched by typewriter.json inputExtensions")
 
         val createdPanel = JPanel(GridBagLayout())
         var row = 0

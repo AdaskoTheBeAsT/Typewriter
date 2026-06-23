@@ -52,6 +52,6 @@ public sealed class TypewriterOptions : DialogPage
 
     [Category(category: "Generation")]
     [DisplayName(displayName: "Generate on save")]
-    [Description(description: "Generate the saved .tst template after Visual Studio saves it.")]
+    [Description(description: "Generate after saving files matched by typewriter.json inputExtensions.")]
     public bool GenerateOnSave { get; set; } = true;
 }

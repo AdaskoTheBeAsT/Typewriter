@@ -33,6 +33,8 @@ public sealed class CliIntegrationTests
             var root = configuration.RootElement;
             ReadStringArray(element: root.GetProperty(propertyName: "templates")).Should().Equal("**/*.tst");
             ReadStringArray(element: root.GetProperty(propertyName: "exclude")).Should().Equal("**/bin/**", "**/obj/**", "**/node_modules/**");
+            ReadStringArray(element: root.GetProperty(propertyName: "inputExtensions"))
+                .Should().Equal(".cs", ".csproj", ".json", ".props", ".sln", ".slnx", ".targets", ".tst");
             root.GetProperty(propertyName: "defaultTargetFramework").ValueKind.Should().Be(JsonValueKind.Null);
 
             var output = root.GetProperty(propertyName: "output");
@@ -272,6 +274,255 @@ public sealed class CliIntegrationTests
 
             result.ExitCode.Should().Be(0);
             result.StandardOutput.Should().Contain("updated:");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncWatchRegeneratesAfterProjectFileChange()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                sourceContent: """
+                               namespace Sample.Models;
+
+                               public sealed class Customer
+                               {
+                                   public required string Name { get; init; }
+
+                               #if INCLUDE_EMAIL
+                                   public required string Email { get; init; }
+                               #endif
+                               }
+                               """);
+            var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
+            using var cancellation = new CancellationTokenSource();
+
+            var runTask = RunCliRawAsync(
+                cancellationToken: cancellation.Token,
+                "watch",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0");
+
+            await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
+            (await File.ReadAllTextAsync(path: generatedPath, cancellationToken: cancellation.Token))
+                .Should().NotContain("email: string;");
+            await File.WriteAllTextAsync(
+                path: project.ProjectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                              <Nullable>enable</Nullable>
+                              <DefineConstants>$(DefineConstants);INCLUDE_EMAIL</DefineConstants>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await WaitForFileContentAsync(path: generatedPath, expectedContent: "email: string;", cancellationToken: cancellation.Token);
+            await cancellation.CancelAsync();
+
+            var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
+
+            result.ExitCode.Should().Be(0);
+            result.StandardOutput.Should().Contain("updated:");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncWatchRegeneratesAfterDirectoryBuildPropsChange()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                sourceContent: """
+                               namespace Sample.Models;
+
+                               public sealed class Customer
+                               {
+                                   public required string Name { get; init; }
+
+                               #if INCLUDE_EMAIL
+                                   public required string Email { get; init; }
+                               #endif
+                               }
+                               """);
+            var propsPath = Path.Combine(path1: directory, path2: "Directory.Build.props");
+            await File.WriteAllTextAsync(
+                path: propsPath,
+                contents: """
+                          <Project>
+                            <PropertyGroup />
+                          </Project>
+                          """);
+            var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
+            using var cancellation = new CancellationTokenSource();
+
+            var runTask = RunCliRawAsync(
+                cancellationToken: cancellation.Token,
+                "watch",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0");
+
+            await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
+            (await File.ReadAllTextAsync(path: generatedPath, cancellationToken: cancellation.Token))
+                .Should().NotContain("email: string;");
+            await File.WriteAllTextAsync(
+                path: propsPath,
+                contents: """
+                          <Project>
+                            <PropertyGroup>
+                              <DefineConstants>$(DefineConstants);INCLUDE_EMAIL</DefineConstants>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await WaitForFileContentAsync(path: generatedPath, expectedContent: "email: string;", cancellationToken: cancellation.Token);
+            await cancellation.CancelAsync();
+
+            var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
+
+            result.ExitCode.Should().Be(0);
+            result.StandardOutput.Should().Contain("updated:");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncWatchUsesConfiguredInputExtensions()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            var triggerPath = Path.Combine(path1: directory, path2: "refresh.trigger");
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: ConfigurationFileName),
+                contents: """
+                          {
+                            "inputExtensions": [ "trigger" ]
+                          }
+                          """);
+            var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
+            using var cancellation = new CancellationTokenSource();
+
+            var runTask = RunCliRawAsync(
+                cancellationToken: cancellation.Token,
+                "watch",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0");
+
+            await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
+            await File.WriteAllTextAsync(
+                path: project.SourcePath,
+                contents: """
+                          namespace Sample.Models;
+
+                          public sealed class Customer
+                          {
+                              public required string Name { get; init; }
+
+                              public required string Email { get; init; }
+                          }
+                          """);
+            await File.WriteAllTextAsync(path: triggerPath, contents: "refresh");
+            await WaitForFileContentAsync(path: generatedPath, expectedContent: "email: string;", cancellationToken: cancellation.Token);
+            await cancellation.CancelAsync();
+
+            var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
+
+            result.ExitCode.Should().Be(0);
+            result.StandardOutput.Should().Contain("updated:");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncWatchCoalescesRapidSourceSaves()
+    {
+        static string CreateSource(string propertyName) =>
+            $$"""
+              namespace Sample.Models;
+
+              public sealed class Customer
+              {
+                  public required string Name { get; init; }
+
+                  public required string {{propertyName}} { get; init; }
+              }
+              """;
+
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
+            using var cancellation = new CancellationTokenSource();
+
+            var runTask = RunCliRawAsync(
+                cancellationToken: cancellation.Token,
+                "watch",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0");
+
+            await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
+            await Task.Delay(millisecondsDelay: 500, cancellationToken: CancellationToken.None);
+            for (var index = 0; index < 10; index++)
+            {
+                await File.WriteAllTextAsync(
+                    path: project.SourcePath,
+                    contents: CreateSource(propertyName: "Value" + index.ToString(provider: CultureInfo.InvariantCulture)));
+            }
+
+            await WaitForFileContentAsync(path: generatedPath, expectedContent: "value9: string;", cancellationToken: cancellation.Token);
+            await Task.Delay(millisecondsDelay: 750, cancellationToken: CancellationToken.None);
+            await cancellation.CancelAsync();
+
+            var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
+
+            result.ExitCode.Should().Be(0);
+            CountOccurrences(text: result.StandardOutput, value: "updated:").Should().BeLessThanOrEqualTo(expected: 2);
         }
         finally
         {
@@ -560,6 +811,21 @@ public sealed class CliIntegrationTests
         return values;
     }
 
+    private static int CountOccurrences(
+        string text,
+        string value)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(value: value, startIndex: index, comparisonType: StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
+    }
+
     private static async Task WaitForFileAsync(
         string path,
         CancellationToken cancellationToken)
@@ -619,7 +885,8 @@ public sealed class CliIntegrationTests
 
     private static async Task<SampleProject> CreateSimpleProjectAsync(
         string directory,
-        string? templateContent = null)
+        string? templateContent = null,
+        string? sourceContent = null)
     {
         var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
         var templatePath = Path.Combine(path1: directory, path2: "Models.tst");
@@ -639,14 +906,15 @@ public sealed class CliIntegrationTests
                       """);
         await File.WriteAllTextAsync(
             path: Path.Combine(path1: modelDirectory, path2: "Customer.cs"),
-            contents: """
-                      namespace Sample.Models;
+            contents: sourceContent
+                      ?? """
+                         namespace Sample.Models;
 
-                      public sealed class Customer
-                      {
-                          public required string Name { get; init; }
-                      }
-                      """);
+                         public sealed class Customer
+                         {
+                             public required string Name { get; init; }
+                         }
+                         """);
         await File.WriteAllTextAsync(
             path: templatePath,
             contents: templateContent

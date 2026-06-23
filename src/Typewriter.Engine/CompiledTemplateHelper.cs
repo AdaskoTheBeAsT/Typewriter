@@ -8,6 +8,7 @@ namespace Typewriter.Engine;
 
 internal sealed class CompiledTemplateHelper : IDisposable
 {
+    private readonly bool _unloadLoadContextOnDispose;
     private TemplateCodeModelAdapterFactory? _adapterFactory;
     private object? _host;
     private TemplateAssemblyLoadContext? _loadContext;
@@ -18,12 +19,14 @@ internal sealed class CompiledTemplateHelper : IDisposable
         object host,
         TemplateCodeModelAdapterFactory adapterFactory,
         Typewriter.Configuration.Settings settings,
-        TemplateAssemblyLoadContext loadContext)
+        TemplateAssemblyLoadContext loadContext,
+        bool unloadLoadContextOnDispose = true)
     {
         _host = host;
         _adapterFactory = adapterFactory;
         _settings = settings;
         _loadContext = loadContext;
+        _unloadLoadContextOnDispose = unloadLoadContextOnDispose;
 #pragma warning disable S3011 // Reflection should not be used to increase accessibility of classes, methods, or fields
         _methods = host.GetType().GetMethods(
             bindingAttr: BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
@@ -168,7 +171,11 @@ internal sealed class CompiledTemplateHelper : IDisposable
         _adapterFactory = null;
         _host = null;
         _settings = null;
-        _loadContext?.Unload();
+        if (_unloadLoadContextOnDispose)
+        {
+            _loadContext?.Unload();
+        }
+
         _loadContext = null;
     }
 

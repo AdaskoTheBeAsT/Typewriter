@@ -1,30 +1,26 @@
+using Typewriter.Abstractions;
+
 namespace Typewriter.Cli;
 
 internal sealed class FileSystemGenerationWatcher : IDisposable
 {
-    private static readonly HashSet<string> WatchedExtensions = new(comparer: StringComparer.OrdinalIgnoreCase)
-    {
-        ".cs",
-        ".csproj",
-        ".json",
-        ".props",
-        ".sln",
-        ".slnx",
-        ".targets",
-        ".tst",
-    };
-
     private readonly Lock _sync = new();
     private readonly FileSystemWatcher[] _watchers;
+    private readonly HashSet<string> _watchedExtensions;
     private TaskCompletionSource _changeSignal = CreateSignal();
 
-    private FileSystemGenerationWatcher(IEnumerable<string> roots)
+    private FileSystemGenerationWatcher(
+        IEnumerable<string> roots,
+        IEnumerable<string> watchedExtensions)
     {
+        _watchedExtensions = new HashSet<string>(collection: watchedExtensions, comparer: StringComparer.OrdinalIgnoreCase);
         _watchers = roots.Select(selector: CreateWatcher).ToArray();
     }
 
-    public static FileSystemGenerationWatcher Create(CliOptions options) =>
-        new(roots: ResolveWatchRoots(options: options));
+    public static FileSystemGenerationWatcher Create(
+        CliOptions options,
+        TypewriterConfiguration configuration) =>
+        new(roots: ResolveWatchRoots(options: options), watchedExtensions: configuration.InputExtensions);
 
     public void Dispose()
     {
@@ -89,7 +85,16 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
             : fullPath;
     }
 
-    private static bool ShouldWatchPath(string path)
+    private static bool IsIgnoredDirectory(string segment) =>
+        segment.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || segment.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || segment.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || segment.Equals(value: "generated", comparisonType: StringComparison.OrdinalIgnoreCase);
+
+    private static TaskCompletionSource CreateSignal() =>
+        new(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private bool ShouldWatchPath(string path)
     {
         if (string.IsNullOrWhiteSpace(value: path))
         {
@@ -105,17 +110,8 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
             return false;
         }
 
-        return WatchedExtensions.Contains(item: Path.GetExtension(path: fullPath));
+        return _watchedExtensions.Contains(item: Path.GetExtension(path: fullPath));
     }
-
-    private static bool IsIgnoredDirectory(string segment) =>
-        segment.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || segment.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || segment.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || segment.Equals(value: "generated", comparisonType: StringComparison.OrdinalIgnoreCase);
-
-    private static TaskCompletionSource CreateSignal() =>
-        new(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
 
     private FileSystemWatcher CreateWatcher(string root)
     {

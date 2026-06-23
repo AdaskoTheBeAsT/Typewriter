@@ -202,6 +202,13 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
             Duration: stopwatch.Elapsed);
     }
 
+    private static CompiledTemplateFactory? CreateCompiledTemplateFactory(
+        TemplateDocument template,
+        ICollection<GenerationDiagnostic> diagnostics) =>
+        template.CodeBlocks.Count == 0
+            ? null
+            : TemplateRuntimeCompiler.CompileFactory(template: template, diagnostics: diagnostics);
+
 #pragma warning disable MA0051,S107,S3776
     private async Task GenerateProjectAsync(
         GenerationRequest request,
@@ -254,72 +261,92 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
             cancellationToken.ThrowIfCancellationRequested();
             var templateDiagnostics = new List<GenerationDiagnostic>();
             var template = TemplateDocument.Parse(template: templateFile, diagnostics: templateDiagnostics);
-            var renderResult = _templateRenderer.RenderTemplate(template: template, metadata: project, diagnostics: templateDiagnostics, defaults: renderDefaults);
-            if (templateDiagnostics.Any(predicate: diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+#pragma warning disable CA2000
+            var compiledTemplateFactory = CreateCompiledTemplateFactory(template: template, diagnostics: templateDiagnostics);
+#pragma warning restore CA2000
+            try
             {
+                if (templateDiagnostics.Any(predicate: diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                {
+                    foreach (var templateDiagnostic in templateDiagnostics)
+                    {
+                        diagnostics.Add(item: templateDiagnostic);
+                    }
+
+                    continue;
+                }
+
+                var renderResult = _templateRenderer.RenderTemplate(
+                    template: template,
+                    metadata: project,
+                    diagnostics: templateDiagnostics,
+                    defaults: renderDefaults,
+                    compiledTemplateFactory: compiledTemplateFactory);
+                if (ShouldRenderPerSourceFile(template: template, project: project, renderResult: renderResult))
+                {
+                    foreach (var sourceFile in project.SourceFiles.Where(predicate: sourceFile => sourceFile.Types.Count > 0))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var sourceProject = CreateSourceFileProject(project: project, sourceFile: sourceFile);
+                        var sourceDiagnostics = new List<GenerationDiagnostic>();
+                        var sourceRenderResult = _templateRenderer.RenderTemplate(
+                            template: template,
+                            metadata: sourceProject,
+                            diagnostics: sourceDiagnostics,
+                            defaults: renderDefaults,
+                            compiledTemplateFactory: compiledTemplateFactory);
+                        foreach (var sourceDiagnostic in sourceDiagnostics)
+                        {
+                            diagnostics.Add(item: sourceDiagnostic);
+                        }
+
+                        if (sourceDiagnostics.Any(predicate: diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                        {
+                            continue;
+                        }
+
+                        if (sourceRenderResult.RootItemCount == 0)
+                        {
+                            continue;
+                        }
+
+                        sourceRenderResult = ApplyLegacySourceOutputPath(
+                            sourceFile: sourceFile,
+                            renderResult: sourceRenderResult,
+                            fileNameConvention: request.Configuration.Output.FileNameConvention);
+                        await PlanAndWriteAsync(
+                            request: request,
+                            templateWorkspace: templateWorkspace,
+                            template: template,
+                            renderResult: sourceRenderResult,
+                            diagnostics: diagnostics,
+                            generatedFiles: generatedFiles,
+                            plannedOutputPaths: plannedOutputPaths,
+                            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+                    }
+
+                    continue;
+                }
+
                 foreach (var templateDiagnostic in templateDiagnostics)
                 {
                     diagnostics.Add(item: templateDiagnostic);
                 }
 
-                continue;
+                await PlanAndWriteAsync(
+                    request: request,
+                    templateWorkspace: templateWorkspace,
+                    template: template,
+                    renderResult: renderResult,
+                    diagnostics: diagnostics,
+                    generatedFiles: generatedFiles,
+                    plannedOutputPaths: plannedOutputPaths,
+                    cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             }
-
-            if (ShouldRenderPerSourceFile(template: template, project: project, renderResult: renderResult))
+            finally
             {
-                foreach (var sourceFile in project.SourceFiles.Where(predicate: sourceFile => sourceFile.Types.Count > 0))
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var sourceProject = CreateSourceFileProject(project: project, sourceFile: sourceFile);
-                    var sourceDiagnostics = new List<GenerationDiagnostic>();
-                    var sourceRenderResult = _templateRenderer.RenderTemplate(template: template, metadata: sourceProject, diagnostics: sourceDiagnostics, defaults: renderDefaults);
-                    foreach (var sourceDiagnostic in sourceDiagnostics)
-                    {
-                        diagnostics.Add(item: sourceDiagnostic);
-                    }
-
-                    if (sourceDiagnostics.Any(predicate: diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
-                    {
-                        continue;
-                    }
-
-                    if (sourceRenderResult.RootItemCount == 0)
-                    {
-                        continue;
-                    }
-
-                    sourceRenderResult = ApplyLegacySourceOutputPath(
-                        sourceFile: sourceFile,
-                        renderResult: sourceRenderResult,
-                        fileNameConvention: request.Configuration.Output.FileNameConvention);
-                    await PlanAndWriteAsync(
-                        request: request,
-                        templateWorkspace: templateWorkspace,
-                        template: template,
-                        renderResult: sourceRenderResult,
-                        diagnostics: diagnostics,
-                        generatedFiles: generatedFiles,
-                        plannedOutputPaths: plannedOutputPaths,
-                        cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
-                }
-
-                continue;
+                compiledTemplateFactory?.Dispose();
             }
-
-            foreach (var templateDiagnostic in templateDiagnostics)
-            {
-                diagnostics.Add(item: templateDiagnostic);
-            }
-
-            await PlanAndWriteAsync(
-                request: request,
-                templateWorkspace: templateWorkspace,
-                template: template,
-                renderResult: renderResult,
-                diagnostics: diagnostics,
-                generatedFiles: generatedFiles,
-                plannedOutputPaths: plannedOutputPaths,
-                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         }
     }
 

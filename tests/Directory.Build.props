@@ -23,7 +23,7 @@
     <PackageReference Include="AutoFixture.SeedExtensions" Version="4.18.1" />
     <PackageReference Include="AwesomeAssertions" Version="9.4.0" />
     <PackageReference Include="AwesomeAssertions.Analyzers" Version="9.0.8" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="Moq.Analyzers" Version="0.4.2" />
     <PackageReference Include="SemanticComparison" Version="4.1.0" />

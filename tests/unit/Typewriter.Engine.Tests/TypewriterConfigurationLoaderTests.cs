@@ -21,6 +21,7 @@ public sealed class TypewriterConfigurationLoaderTests
                 contents: """
                           {
                             "templates": [ "templates/**/*.tst" ],
+                            "inputExtensions": [ "cs" ],
                             "output": {
                               "newline": "crlf",
                               "fileNameConvention": "kebab"
@@ -32,6 +33,7 @@ public sealed class TypewriterConfigurationLoaderTests
                 contents: """
                           {
                             "defaultTargetFramework": "net10.0",
+                            "inputExtensions": [ "razor" ],
                             "diagnostics": {
                               "failOnWarning": true
                             }
@@ -44,6 +46,7 @@ public sealed class TypewriterConfigurationLoaderTests
                 cancellationToken: CancellationToken.None);
 
             configuration.Templates.Should().Equal("templates/**/*.tst");
+            configuration.InputExtensions.Should().Equal(".razor");
             configuration.Output.Newline.Should().Be("crlf");
             configuration.Output.FileNameConvention.Should().Be(FileNameConvention.Kebab);
             configuration.DefaultTargetFramework.Should().Be("net10.0");

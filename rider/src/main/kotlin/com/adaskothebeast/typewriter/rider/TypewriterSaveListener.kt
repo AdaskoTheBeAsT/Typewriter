@@ -22,12 +22,21 @@ class TypewriterSaveListener(private val project: Project) : BulkFileListener {
         events
             .filterIsInstance<VFileContentChangeEvent>()
             .mapNotNull { it.file }
-            .filter(::isTypewriterFile)
+            .filter(::isGenerationInputFile)
             .filter { ProjectFileIndex.getInstance(project).isInContent(it) }
             .distinctBy { it.path }
-            .forEach { project.service<TypewriterCliService>().handleSavedTemplate(it) }
+            .forEach { project.service<TypewriterCliService>().handleSavedFile(it) }
     }
 
-    private fun isTypewriterFile(file: VirtualFile): Boolean =
-        file.extension.equals("tst", ignoreCase = true)
+    private fun isGenerationInputFile(file: VirtualFile): Boolean {
+        if (file.path.split('/', '\\').any { it.lowercase() in ignoredDirectories }) {
+            return false
+        }
+
+        return !file.extension.isNullOrBlank()
+    }
+
+    private companion object {
+        val ignoredDirectories = setOf("bin", "obj", "node_modules", "generated")
+    }
 }

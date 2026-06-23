@@ -83,6 +83,14 @@ internal sealed class TypewriterCommandService
             action: () => GenerateCurrentTemplateAsync(templatePathOverride: templatePath, cancellationToken: cancellationToken),
             cancellationToken: cancellationToken);
 
+    public Task GenerateSavedInputAsync(
+        string inputPath,
+        CancellationToken cancellationToken) =>
+        RunWithReportingAsync(
+            message: "Typewriter generate-on-save failed.",
+            action: () => GenerateAllTemplatesAsync(inputPathOverride: inputPath, cancellationToken: cancellationToken),
+            cancellationToken: cancellationToken);
+
     private void AddCommand(
         OleMenuCommandService commandService,
         int commandId,
@@ -176,6 +184,7 @@ internal sealed class TypewriterCommandService
     {
         var context = await CreateGenerationContextAsync(
                 templatePathOverride: templatePathOverride,
+                inputPathOverride: null,
                 includeTemplate: true,
                 solutionWide: false,
                 cancellationToken: cancellationToken)
@@ -192,6 +201,7 @@ internal sealed class TypewriterCommandService
     {
         var context = await CreateGenerationContextAsync(
                 templatePathOverride: null,
+                inputPathOverride: null,
                 includeTemplate: true,
                 solutionWide: false,
                 cancellationToken: cancellationToken)
@@ -204,10 +214,16 @@ internal sealed class TypewriterCommandService
         await ExecuteCliAsync(command: "validate", context: context, allTemplates: false, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
     }
 
-    private async Task GenerateAllTemplatesAsync(CancellationToken cancellationToken)
+    private Task GenerateAllTemplatesAsync(CancellationToken cancellationToken) =>
+        GenerateAllTemplatesAsync(inputPathOverride: null, cancellationToken: cancellationToken);
+
+    private async Task GenerateAllTemplatesAsync(
+        string? inputPathOverride,
+        CancellationToken cancellationToken)
     {
         var context = await CreateGenerationContextAsync(
                 templatePathOverride: null,
+                inputPathOverride: inputPathOverride,
                 includeTemplate: false,
                 solutionWide: false,
                 cancellationToken: cancellationToken)
@@ -224,6 +240,7 @@ internal sealed class TypewriterCommandService
     {
         var context = await CreateGenerationContextAsync(
                 templatePathOverride: null,
+                inputPathOverride: null,
                 includeTemplate: false,
                 solutionWide: true,
                 cancellationToken: cancellationToken)
@@ -238,6 +255,7 @@ internal sealed class TypewriterCommandService
 
     private async Task<GenerationContext?> CreateGenerationContextAsync(
         string? templatePathOverride,
+        string? inputPathOverride,
         bool includeTemplate,
         bool solutionWide,
         CancellationToken cancellationToken)
@@ -249,6 +267,7 @@ internal sealed class TypewriterCommandService
         var templatePath = includeTemplate
             ? ResolveTemplatePath(dte: dte, templatePathOverride: templatePathOverride)
             : null;
+        var inputPath = ResolveInputPath(inputPath: inputPathOverride);
         if (includeTemplate && string.IsNullOrWhiteSpace(value: templatePath))
         {
             _outputPane.WriteLine(message: "No active .tst template was found.");
@@ -256,16 +275,18 @@ internal sealed class TypewriterCommandService
         }
 
         var selectedProjectPath = IsSolutionExplorerActive(dte: dte) ? GetSelectedProjectPath(dte: dte) : null;
+        var inputProjectPath = FindProjectPathForInput(dte: dte, inputPath: inputPath);
         var projectPath = solutionWide
             ? null
             : ResolveConfiguredPath(value: options.ProjectPath)
+              ?? inputProjectPath
               ?? (templatePath is not null ? FindProjectPathForTemplate(dte: dte, templatePath: templatePath) : selectedProjectPath)
               ?? selectedProjectPath
               ?? GetActiveProjectPath(dte: dte);
         var workspacePath = ResolveConfiguredPath(value: options.WorkspacePath)
             ?? GetSolutionPath(dte: dte)
             ?? projectPath
-            ?? GetWorkspaceFallback(templatePath: templatePath);
+            ?? GetWorkspaceFallback(templatePath: templatePath, inputPath: inputPath);
         if (string.IsNullOrWhiteSpace(value: workspacePath))
         {
             _outputPane.WriteLine(message: "No workspace, solution, project, or template directory was found.");
@@ -452,6 +473,11 @@ internal sealed class TypewriterCommandService
 
         return IsTemplatePath(path: candidate) ? candidate : null;
     }
+
+    private static string? ResolveInputPath(string? inputPath) =>
+        string.IsNullOrWhiteSpace(value: inputPath)
+            ? null
+            : Path.GetFullPath(path: inputPath);
 
     private static string? GetSolutionPath(DTE2? dte)
     {
@@ -700,6 +726,35 @@ internal sealed class TypewriterCommandService
                 IsPathBelowDirectory(path: templatePath ?? string.Empty, directory: Path.GetDirectoryName(path: projectPath) ?? string.Empty));
     }
 
+    private static string? FindProjectPathForInput(
+        DTE2? dte,
+        string? inputPath)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        if (string.IsNullOrWhiteSpace(value: inputPath))
+        {
+            return null;
+        }
+
+        var fullInputPath = Path.GetFullPath(path: inputPath);
+        if (fullInputPath.EndsWith(value: ".csproj", comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            return fullInputPath;
+        }
+
+        if (dte?.Solution?.Projects is null)
+        {
+            return null;
+        }
+
+        return EnumerateProjects(projects: dte.Solution.Projects)
+            .Select(selector: GetProjectPath)
+            .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
+            .Select(selector: path => path!)
+            .FirstOrDefault(predicate: projectPath =>
+                IsPathBelowDirectory(path: fullInputPath, directory: Path.GetDirectoryName(path: projectPath) ?? string.Empty));
+    }
+
     private static IEnumerable<Project> EnumerateProjects(Projects projects)
     {
         foreach (Project project in projects)
@@ -753,10 +808,17 @@ internal sealed class TypewriterCommandService
         return fullPath.StartsWith(value: fullDirectory, comparisonType: StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string? GetWorkspaceFallback(string? templatePath) =>
-        string.IsNullOrWhiteSpace(value: templatePath)
+    private static string? GetWorkspaceFallback(
+        string? templatePath,
+        string? inputPath)
+    {
+        var fallbackPath = string.IsNullOrWhiteSpace(value: templatePath)
+            ? inputPath
+            : templatePath;
+        return string.IsNullOrWhiteSpace(value: fallbackPath)
             ? null
-            : Path.GetDirectoryName(path: templatePath);
+            : Path.GetDirectoryName(path: fallbackPath);
+    }
 
     private static string? ResolveConfiguredPath(string value) =>
         string.IsNullOrWhiteSpace(value: value)

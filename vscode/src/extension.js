@@ -8,6 +8,17 @@ const vscode = require("vscode");
 let diagnostics;
 let languageClient;
 let outputChannel;
+const saveDebounceDelayMs = 300;
+const configurationFileNames = ["typewriter.json", "typewriter.config.json", ".typewriterrc.json"];
+const defaultInputExtensions = [".cs", ".csproj", ".json", ".props", ".sln", ".slnx", ".targets", ".tst"];
+const templateExtensions = new Set([".tst"]);
+const ignoredInputDirectories = new Set(["bin", "obj", "node_modules", "generated"]);
+const saveQueue = {
+    pending: undefined,
+    timer: undefined,
+    running: false,
+    lastSaveAt: 0,
+};
 
 async function activate(context) {
     outputChannel = vscode.window.createOutputChannel("Typewriter");
@@ -39,23 +50,135 @@ async function deactivate() {
 }
 
 async function handleDocumentSaved(context, document) {
-    if (!isTypewriterDocument(document)) {
+    const request = createSaveRequest(document);
+    if (!request) {
         return;
+    }
+
+    scheduleSaveRequest(context, request);
+}
+
+function createSaveRequest(document) {
+    if (!document?.uri || document.uri.scheme !== "file") {
+        return undefined;
+    }
+
+    const inputExtensions = readConfiguredInputExtensions(document.uri.fsPath);
+    const scope = getGenerationInputScope(document, inputExtensions);
+    if (!scope) {
+        return undefined;
     }
 
     const configuration = getConfiguration(document.uri);
-    if (configuration.get("generateOnSave", true)) {
-        await executeCurrentTemplate(context, "generate", document);
+    const generateOnSave = configuration.get("generateOnSave", true);
+    if (scope === "template") {
+        if (generateOnSave) {
+            return {
+                command: "generate",
+                templatePath: document.uri.fsPath,
+                resourceUri: document.uri,
+                allTemplates: false,
+            };
+        }
+
+        if (configuration.get("validateOnSave", true) && !languageClient) {
+            return {
+                command: "validate",
+                templatePath: document.uri.fsPath,
+                resourceUri: document.uri,
+                allTemplates: false,
+            };
+        }
+
+        return undefined;
+    }
+
+    if (generateOnSave) {
+        return {
+            command: "generate",
+            resourceUri: document.uri,
+            allTemplates: true,
+            projectPath: findNearestProjectPathForInput(document.uri.fsPath),
+        };
+    }
+
+    if (configuration.get("validateOnSave", true) && !languageClient) {
+        return {
+            command: "validate",
+            resourceUri: document.uri,
+            allTemplates: true,
+            projectPath: findNearestProjectPathForInput(document.uri.fsPath),
+        };
+    }
+
+    return undefined;
+}
+
+function scheduleSaveRequest(context, request) {
+    saveQueue.pending = mergeSaveRequests(saveQueue.pending, request);
+    saveQueue.lastSaveAt = Date.now();
+    if (saveQueue.timer) {
+        clearTimeout(saveQueue.timer);
+    }
+
+    saveQueue.timer = setTimeout(() => {
+        saveQueue.timer = undefined;
+        void processSaveQueue(context);
+    }, saveDebounceDelayMs);
+}
+
+async function processSaveQueue(context) {
+    if (saveQueue.running) {
         return;
     }
 
-    if (configuration.get("validateOnSave", true)) {
-        if (languageClient) {
+    saveQueue.running = true;
+    try {
+        while (true) {
+            await waitForSaveQuietPeriod();
+            const request = saveQueue.pending;
+            saveQueue.pending = undefined;
+            if (!request) {
+                return;
+            }
+
+            await executeSaveRequest(context, request);
+        }
+    } finally {
+        saveQueue.running = false;
+        if (saveQueue.pending && !saveQueue.timer) {
+            scheduleSaveRequest(context, saveQueue.pending);
+        }
+    }
+}
+
+async function waitForSaveQuietPeriod() {
+    while (true) {
+        const remaining = saveQueue.lastSaveAt + saveDebounceDelayMs - Date.now();
+        if (remaining <= 0) {
             return;
         }
 
-        await executeCurrentTemplate(context, "validate", document);
+        await delay(remaining);
     }
+}
+
+async function executeSaveRequest(context, request) {
+    await executeCliCommand(context, request.command, request.templatePath, {
+        allTemplates: request.allTemplates,
+        resourceUri: request.resourceUri,
+        projectPath: request.projectPath,
+    });
+}
+
+function mergeSaveRequests(existing, incoming) {
+    return existing?.allTemplates && !incoming.allTemplates
+        ? existing
+        : incoming;
+}
+
+function delay(milliseconds) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
 async function restartLanguageServer(context) {
@@ -192,7 +315,7 @@ function buildTypewriterArguments(command, workspacePath, templatePath, configur
         "json",
     ];
 
-    const projectPath = resolveOptionalPath(configuration.get("projectPath"), getPathBase(workspacePath));
+    const projectPath = resolveOptionalPath(configuration.get("projectPath"), getPathBase(workspacePath)) || options.projectPath;
     if (projectPath) {
         args.push("--project", projectPath);
     }
@@ -415,6 +538,109 @@ function isTypewriterDocument(document) {
 function isTypewriterUri(uri) {
     return uri?.scheme === "file"
         && uri.fsPath.toLowerCase().endsWith(".tst");
+}
+
+function getGenerationInputScope(document, inputExtensions) {
+    const filePath = document.uri.fsPath;
+    if (isIgnoredInputPath(filePath)) {
+        return undefined;
+    }
+
+    const extension = path.extname(filePath).toLowerCase();
+    if (!inputExtensions.has(extension)) {
+        return undefined;
+    }
+
+    if (isTypewriterDocument(document) && templateExtensions.has(extension)) {
+        return "template";
+    }
+
+    return "project";
+}
+
+function isIgnoredInputPath(filePath) {
+    return filePath
+        .split(/[\\/]+/)
+        .some(segment => ignoredInputDirectories.has(segment.toLowerCase()));
+}
+
+function findNearestProjectPathForInput(filePath) {
+    if (path.extname(filePath).toLowerCase() === ".csproj") {
+        return filePath;
+    }
+
+    let directory = path.dirname(filePath);
+    while (directory && directory !== path.dirname(directory)) {
+        try {
+            const project = fs.readdirSync(directory)
+                .filter(name => name.toLowerCase().endsWith(".csproj"))
+                .sort((left, right) => left.localeCompare(right))[0];
+            if (project) {
+                return path.join(directory, project);
+            }
+        } catch {
+            return undefined;
+        }
+
+        directory = path.dirname(directory);
+    }
+
+    return undefined;
+}
+
+function readConfiguredInputExtensions(filePath) {
+    let extensions = defaultInputExtensions;
+    for (const configurationPath of findConfigurationFiles(filePath)) {
+        const configuredExtensions = readInputExtensions(configurationPath);
+        if (configuredExtensions) {
+            extensions = configuredExtensions;
+        }
+    }
+
+    return new Set(extensions.map(extension => extension.toLowerCase()));
+}
+
+function findConfigurationFiles(filePath) {
+    const directories = [];
+    let directory = safeIsDirectory(filePath) ? filePath : path.dirname(filePath);
+    while (directory && directory !== path.dirname(directory)) {
+        directories.push(directory);
+        directory = path.dirname(directory);
+    }
+
+    return directories
+        .reverse()
+        .flatMap(candidateDirectory => configurationFileNames.map(name => path.join(candidateDirectory, name)))
+        .filter(candidate => fs.existsSync(candidate));
+}
+
+function readInputExtensions(configurationPath) {
+    try {
+        const configuration = JSON.parse(fs.readFileSync(configurationPath, "utf8"));
+        const propertyName = Object.keys(configuration)
+            .find(key => key.toLowerCase() === "inputextensions");
+        if (!propertyName || !Array.isArray(configuration[propertyName])) {
+            return undefined;
+        }
+
+        const extensions = configuration[propertyName]
+            .filter(value => typeof value === "string")
+            .map(normalizeExtension)
+            .filter(Boolean)
+            .filter((extension, index, array) => array.findIndex(item => item.toLowerCase() === extension.toLowerCase()) === index);
+        return extensions.length > 0 ? extensions : defaultInputExtensions;
+    } catch {
+        return undefined;
+    }
+}
+
+function normalizeExtension(extension) {
+    const trimmed = extension.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+
+    return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
 }
 
 function toFileUri(value) {

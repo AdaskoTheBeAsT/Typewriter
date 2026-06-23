@@ -197,21 +197,22 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
 
     private static global::Buildalyzer.AnalyzerManager CreateAnalyzerManager(string workspacePath)
     {
-        var fullPath = Path.GetFullPath(path: workspacePath);
-        return fullPath.EndsWith(value: ".sln", comparisonType: StringComparison.OrdinalIgnoreCase) && File.Exists(path: fullPath)
-            ? new global::Buildalyzer.AnalyzerManager(solutionFilePath: fullPath)
+        var solutionPath = ResolveSolutionPath(workspacePath: workspacePath);
+        return solutionPath is not null
+               && solutionPath.EndsWith(value: ".sln", comparisonType: StringComparison.OrdinalIgnoreCase)
+            ? new global::Buildalyzer.AnalyzerManager(solutionFilePath: solutionPath)
             : new global::Buildalyzer.AnalyzerManager();
     }
 
     private static IReadOnlyDictionary<string, string> CreateSolutionProperties(string workspacePath)
     {
-        var fullPath = Path.GetFullPath(path: workspacePath);
-        if (!IsSolutionFile(path: fullPath) || !File.Exists(path: fullPath))
+        var solutionPath = ResolveSolutionPath(workspacePath: workspacePath);
+        if (solutionPath is null)
         {
             return new Dictionary<string, string>(comparer: StringComparer.OrdinalIgnoreCase);
         }
 
-        var solutionDirectory = Path.GetDirectoryName(path: fullPath) ?? Environment.CurrentDirectory;
+        var solutionDirectory = Path.GetDirectoryName(path: solutionPath) ?? Environment.CurrentDirectory;
         if (!solutionDirectory.EndsWith(value: Path.DirectorySeparatorChar))
         {
             solutionDirectory += Path.DirectorySeparatorChar;
@@ -220,11 +221,34 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         return new Dictionary<string, string>(comparer: StringComparer.OrdinalIgnoreCase)
         {
             [key: "SolutionDir"] = solutionDirectory,
-            [key: "SolutionPath"] = fullPath,
-            [key: "SolutionFileName"] = Path.GetFileName(path: fullPath),
-            [key: "SolutionName"] = Path.GetFileNameWithoutExtension(path: fullPath),
-            [key: "SolutionExt"] = Path.GetExtension(path: fullPath),
+            [key: "SolutionPath"] = solutionPath,
+            [key: "SolutionFileName"] = Path.GetFileName(path: solutionPath),
+            [key: "SolutionName"] = Path.GetFileNameWithoutExtension(path: solutionPath),
+            [key: "SolutionExt"] = Path.GetExtension(path: solutionPath),
         };
+    }
+
+    private static string? ResolveSolutionPath(string workspacePath)
+    {
+        var fullPath = Path.GetFullPath(path: workspacePath);
+        if (IsSolutionFile(path: fullPath) && File.Exists(path: fullPath))
+        {
+            return fullPath;
+        }
+
+        if (!Directory.Exists(path: fullPath))
+        {
+            return null;
+        }
+
+        var solutionFiles = Directory.EnumerateFiles(path: fullPath, searchPattern: "*.sln", searchOption: SearchOption.TopDirectoryOnly)
+            .Concat(second: Directory.EnumerateFiles(path: fullPath, searchPattern: "*.slnx", searchOption: SearchOption.TopDirectoryOnly))
+            .Order(comparer: StringComparer.OrdinalIgnoreCase)
+            .Take(count: 2)
+            .ToArray();
+        return solutionFiles.Length == 1
+            ? solutionFiles[0]
+            : null;
     }
 
     private static void ApplyGlobalProperties(

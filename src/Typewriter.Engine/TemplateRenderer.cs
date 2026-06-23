@@ -47,13 +47,19 @@ public sealed class TemplateRenderer
         TemplateDocument template,
         ProjectMetadata metadata,
         ICollection<GenerationDiagnostic> diagnostics,
-        TemplateRenderDefaults? defaults = null)
+        TemplateRenderDefaults? defaults = null,
+        CompiledTemplateFactory? compiledTemplateFactory = null)
     {
         ArgumentNullException.ThrowIfNull(argument: template);
         ArgumentNullException.ThrowIfNull(argument: metadata);
         ArgumentNullException.ThrowIfNull(argument: diagnostics);
 
-        using var state = new RenderState(template: template, metadata: metadata, diagnostics: diagnostics, defaults: defaults ?? TemplateRenderDefaults.Default);
+        using var state = new RenderState(
+            template: template,
+            metadata: metadata,
+            diagnostics: diagnostics,
+            defaults: defaults ?? TemplateRenderDefaults.Default,
+            compiledTemplateFactory: compiledTemplateFactory);
         var content = NormalizeRenderedWhitespace(value: RenderCore(template: template.Content, context: metadata, state: state));
         var settings = state.TemplateSettings;
         var outputPath = template.OutputPath ?? state.ResolveOutputPath();
@@ -2714,7 +2720,8 @@ public sealed class TemplateRenderer
             TemplateDocument template,
             ProjectMetadata metadata,
             ICollection<GenerationDiagnostic> diagnostics,
-            TemplateRenderDefaults defaults)
+            TemplateRenderDefaults defaults,
+            CompiledTemplateFactory? compiledTemplateFactory)
         {
             _metadata = metadata;
             _templatePath = template.Path;
@@ -2735,7 +2742,8 @@ public sealed class TemplateRenderer
                 .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal);
             _compiledTemplateHelper = template.CodeBlocks.Count == 0
                 ? null
-                : TemplateRuntimeCompiler.Compile(template: template, metadata: metadata, diagnostics: diagnostics, defaults: defaults);
+                : compiledTemplateFactory?.CreateHelper(metadata: metadata, diagnostics: diagnostics, defaults: defaults)
+                  ?? TemplateRuntimeCompiler.Compile(template: template, metadata: metadata, diagnostics: diagnostics, defaults: defaults);
         }
 
         public Typewriter.Configuration.Settings? TemplateSettings => _compiledTemplateHelper?.Settings;

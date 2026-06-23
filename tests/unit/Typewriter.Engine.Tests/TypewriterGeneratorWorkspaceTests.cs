@@ -584,6 +584,76 @@ public sealed class TypewriterGeneratorWorkspaceTests
     }
 
     [Fact]
+    public async Task GenerateAsyncCompilesTemplateHelpersOnceWhenFanOutRendersPerSourceFile()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            TemplateRuntimeCompiler.ClearCompileCacheForTests();
+
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            var templatePath = Path.Combine(path1: directory, path2: "Services.tst");
+            await File.WriteAllTextAsync(path: projectPath, contents: "<Project />");
+
+            var usersController = CreateClassMetadata(name: "UsersController");
+            var ordersController = CreateClassMetadata(name: "OrdersController");
+            var templateFile = new TemplateFile(
+                Path: templatePath,
+                Content: """
+                         ${
+                             Template(Settings settings)
+                             {
+                                 settings.OutputFilenameFactory = file => $"{file.Classes.First().Name.Replace("Controller", string.Empty).ToLowerInvariant()}.service.ts";
+                             }
+
+                             string RenderName(Class c) => c.Name;
+                         }
+                         $Classes[
+                         export class $RenderName {
+                         }
+                         ]
+                         """);
+            var templateDiagnostics = new List<GenerationDiagnostic>();
+            var template = TemplateDocument.Parse(template: templateFile, diagnostics: templateDiagnostics);
+            templateDiagnostics.Should().BeEmpty();
+
+            var metadataProvider = new CapturingMetadataProvider(
+                types: [usersController, ordersController],
+                sourceFiles:
+                [
+                    new SourceFileMetadata(Path: Path.Combine(path1: directory, path2: "UsersController.cs"), Types: [usersController]),
+                    new SourceFileMetadata(Path: Path.Combine(path1: directory, path2: "OrdersController.cs"), Types: [ordersController]),
+                ]);
+            var generator = new TypewriterGenerator(
+                templateDiscovery: new StaticTemplateDiscovery(templates: templateFile),
+                metadataProvider: metadataProvider,
+                fileWriter: new PassthroughFileWriter());
+
+            var result = await generator.GenerateAsync(
+                request: new GenerationRequest(
+                    WorkspacePath: directory,
+                    ProjectPath: projectPath,
+                    TemplatePath: templatePath,
+                    Mode: GenerationMode.Generate,
+                    Configuration: TypewriterConfiguration.Default),
+                cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            result.GeneratedFiles.Select(selector: file => file.Path).Order(comparer: StringComparer.OrdinalIgnoreCase).Should().Equal(
+                Path.Combine(path1: directory, path2: "orders.service.ts"),
+                Path.Combine(path1: directory, path2: "users.service.ts"));
+            var cacheDiagnostics = new List<GenerationDiagnostic>();
+            TemplateRuntimeCompiler.GetCompileCacheMissCountForTests(template: template, diagnostics: cacheDiagnostics).Should().Be(1);
+            cacheDiagnostics.Should().BeEmpty();
+        }
+        finally
+        {
+            TemplateRuntimeCompiler.ClearCompileCacheForTests();
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GenerateAsyncReportsDuplicateOutputPathsAcrossTemplates()
     {
         var directory = CreateProjectDirectory();

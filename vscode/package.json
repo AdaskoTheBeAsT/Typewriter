@@ -169,12 +169,12 @@
         "typewriter.generateOnSave": {
           "type": "boolean",
           "default": true,
-          "description": "Generate the current .tst template when it is saved."
+          "description": "Generate after saving files matched by typewriter.json inputExtensions."
         },
         "typewriter.validateOnSave": {
           "type": "boolean",
           "default": true,
-          "description": "Validate the current .tst template when it is saved. Ignored when generateOnSave is enabled."
+          "description": "Validate after saving files matched by typewriter.json inputExtensions. Ignored when generateOnSave is enabled."
         },
         "typewriter.languageServer.enabled": {
           "type": "boolean",
