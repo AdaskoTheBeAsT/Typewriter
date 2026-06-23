@@ -48,7 +48,8 @@ public sealed class TemplateRenderer
         ProjectMetadata metadata,
         ICollection<GenerationDiagnostic> diagnostics,
         TemplateRenderDefaults? defaults = null,
-        CompiledTemplateFactory? compiledTemplateFactory = null)
+        CompiledTemplateFactory? compiledTemplateFactory = null,
+        ProjectMetadataIndex? metadataIndex = null)
     {
         ArgumentNullException.ThrowIfNull(argument: template);
         ArgumentNullException.ThrowIfNull(argument: metadata);
@@ -59,7 +60,8 @@ public sealed class TemplateRenderer
             metadata: metadata,
             diagnostics: diagnostics,
             defaults: defaults ?? TemplateRenderDefaults.Default,
-            compiledTemplateFactory: compiledTemplateFactory);
+            compiledTemplateFactory: compiledTemplateFactory,
+            metadataIndex: metadataIndex);
         var content = NormalizeRenderedWhitespace(value: RenderCore(template: template.Content, context: metadata, state: state));
         var settings = state.TemplateSettings;
         var outputPath = template.OutputPath ?? state.ResolveOutputPath();
@@ -74,6 +76,33 @@ public sealed class TemplateRenderer
             OutputDirectory: settings?.OutputDirectory,
             Utf8Bom: settings?.Utf8BomGeneration);
     }
+
+#pragma warning disable SA1204
+    internal static TemplateRenderInspection InspectTemplate(
+        TemplateDocument template,
+        ProjectMetadata metadata,
+        ICollection<GenerationDiagnostic> diagnostics,
+        TemplateRenderDefaults? defaults = null,
+        CompiledTemplateFactory? compiledTemplateFactory = null,
+        ProjectMetadataIndex? metadataIndex = null)
+    {
+        ArgumentNullException.ThrowIfNull(argument: template);
+        ArgumentNullException.ThrowIfNull(argument: metadata);
+        ArgumentNullException.ThrowIfNull(argument: diagnostics);
+
+        using var state = new RenderState(
+            template: template,
+            metadata: metadata,
+            diagnostics: diagnostics,
+            defaults: defaults ?? TemplateRenderDefaults.Default,
+            compiledTemplateFactory: compiledTemplateFactory,
+            metadataIndex: metadataIndex);
+        var settings = state.TemplateSettings;
+        return new TemplateRenderInspection(
+            IsSingleFileMode: settings?.IsSingleFileMode == true,
+            UsesOutputFilenameFactory: state.UsesOutputFilenameFactory);
+    }
+#pragma warning restore SA1204
 
     private static string? FormatCollectionScalar(IEnumerable collection)
     {
@@ -1473,18 +1502,31 @@ public sealed class TemplateRenderer
         var normalized = value.Replace(oldValue: "\r\n", newValue: "\n", comparisonType: StringComparison.Ordinal)
             .Replace(oldChar: '\r', newChar: '\n');
         var lines = normalized.Split(separator: '\n');
+        var nextNonBlankLineIndexes = new int[lines.Length];
+        var nextNonBlankLineIndex = -1;
+        for (var index = lines.Length - 1; index >= 0; index--)
+        {
+            nextNonBlankLineIndexes[index] = nextNonBlankLineIndex;
+            if (!string.IsNullOrWhiteSpace(value: lines[index]))
+            {
+                nextNonBlankLineIndex = index;
+            }
+        }
+
         var output = new List<string>(capacity: lines.Length);
+        string? previousNonBlankLine = null;
         for (var index = 0; index < lines.Length; index++)
         {
             if (!string.IsNullOrWhiteSpace(value: lines[index]))
             {
                 output.Add(item: lines[index]);
+                previousNonBlankLine = lines[index];
                 continue;
             }
 
-            var previous = output.LastOrDefault(predicate: line => !string.IsNullOrWhiteSpace(value: line));
-            var next = lines.Skip(count: index + 1).FirstOrDefault(predicate: line => !string.IsNullOrWhiteSpace(value: line));
-            if (previous?.TrimEnd().EndsWith(value: '{') == true
+            var nextIndex = nextNonBlankLineIndexes[index];
+            var next = nextIndex < 0 ? null : lines[nextIndex];
+            if (previousNonBlankLine?.TrimEnd().EndsWith(value: '{') == true
                 || next?.TrimStart().StartsWith(value: '}') == true)
             {
                 continue;
@@ -2721,7 +2763,8 @@ public sealed class TemplateRenderer
             ProjectMetadata metadata,
             ICollection<GenerationDiagnostic> diagnostics,
             TemplateRenderDefaults defaults,
-            CompiledTemplateFactory? compiledTemplateFactory)
+            CompiledTemplateFactory? compiledTemplateFactory,
+            ProjectMetadataIndex? metadataIndex)
         {
             _metadata = metadata;
             _templatePath = template.Path;
@@ -2729,21 +2772,14 @@ public sealed class TemplateRenderer
             _compatibilityMethods = template.CompatibilityMethods;
             _diagnostics = diagnostics;
             _defaults = defaults;
-            _typesByFullName = metadata.Types
-                .GroupBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
-                .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal);
-            _methodsByFullName = metadata.Types
-                .SelectMany(selector: type => type.Methods)
-                .GroupBy(keySelector: method => method.FullName, comparer: StringComparer.Ordinal)
-                .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal);
-            _propertiesByFullName = metadata.Types
-                .SelectMany(selector: type => type.Properties)
-                .GroupBy(keySelector: property => property.FullName, comparer: StringComparer.Ordinal)
-                .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal);
+            var index = metadataIndex ?? ProjectMetadataIndex.Create(metadata: metadata);
+            _typesByFullName = index.TypesByFullName;
+            _methodsByFullName = index.MethodsByFullName;
+            _propertiesByFullName = index.PropertiesByFullName;
             _compiledTemplateHelper = template.CodeBlocks.Count == 0
                 ? null
-                : compiledTemplateFactory?.CreateHelper(metadata: metadata, diagnostics: diagnostics, defaults: defaults)
-                  ?? TemplateRuntimeCompiler.Compile(template: template, metadata: metadata, diagnostics: diagnostics, defaults: defaults);
+                : compiledTemplateFactory?.CreateHelper(metadata: metadata, diagnostics: diagnostics, defaults: defaults, metadataIndex: index)
+                  ?? TemplateRuntimeCompiler.Compile(template: template, metadata: metadata, diagnostics: diagnostics, defaults: defaults, metadataIndex: index);
         }
 
         public Typewriter.Configuration.Settings? TemplateSettings => _compiledTemplateHelper?.Settings;

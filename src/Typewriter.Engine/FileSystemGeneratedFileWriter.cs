@@ -14,7 +14,7 @@ public sealed class FileSystemGeneratedFileWriter : IGeneratedFileWriter
         ArgumentNullException.ThrowIfNull(argument: request);
 
         var content = OutputContentFormatter.Format(content: file.Content, output: request.Configuration.Output);
-        var changed = await HasChangedAsync(path: file.Path, content: content, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        var changed = await HasChangedAsync(file: file, content: content, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         if (request.Configuration.Output.DryRun || request.Mode == GenerationMode.Validate)
         {
             return file with
@@ -55,13 +55,19 @@ public sealed class FileSystemGeneratedFileWriter : IGeneratedFileWriter
     }
 
     private static async Task<bool> HasChangedAsync(
-        string path,
+        GeneratedFile file,
         string content,
         CancellationToken cancellationToken)
     {
+        var path = file.Path;
         if (!File.Exists(path: path))
         {
             return true;
+        }
+
+        if (GeneratedFileExistingContentCache.TryGet(file: file, content: out var cached))
+        {
+            return !string.Equals(a: cached, b: content, comparisonType: StringComparison.Ordinal);
         }
 
 #pragma warning disable SCS0018 // Potential Path Traversal vulnerability was found where '{0}' in '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.

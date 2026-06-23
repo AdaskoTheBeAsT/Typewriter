@@ -6,31 +6,42 @@ namespace Typewriter.LanguageServer;
 internal sealed class LanguageServerHost
 {
     private static readonly TimeSpan ValidationDelay = TimeSpan.FromMilliseconds(milliseconds: 250);
+    private static readonly JsonSerializerOptions JsonOptions = new(defaults: JsonSerializerDefaults.Web);
 
     private readonly JsonRpcConnection _connection;
     private readonly ITemplateDiagnosticService _diagnosticService;
 #pragma warning disable IDISP008 // Don't assign member with injected and created disposables
+    private readonly IWorkspaceGenerationService _generationService;
     private readonly TemplateFeatureService _featureService;
 #pragma warning restore IDISP008 // Don't assign member with injected and created disposables
     private readonly TemplateSemanticTokenService _semanticTokenService;
     private readonly ConcurrentDictionary<string, TextDocumentState> _documents = new(comparer: StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<long, Task> _pendingGenerationRequests = [];
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingValidations = new(comparer: StringComparer.OrdinalIgnoreCase);
+    private long _nextGenerationRequestId;
     private LanguageServerSettings _settings = LanguageServerSettings.Default;
     private bool _exitRequested;
 
     public LanguageServerHost(JsonRpcConnection connection)
-        : this(connection: connection, diagnosticService: new TemplateDiagnosticService(), featureService: new TemplateFeatureService(), semanticTokenService: new TemplateSemanticTokenService())
+        : this(
+            connection: connection,
+            diagnosticService: new TemplateDiagnosticService(),
+            generationService: new WorkspaceGenerationService(),
+            featureService: new TemplateFeatureService(),
+            semanticTokenService: new TemplateSemanticTokenService())
     {
     }
 
     internal LanguageServerHost(
         JsonRpcConnection connection,
         ITemplateDiagnosticService diagnosticService,
+        IWorkspaceGenerationService generationService,
         TemplateFeatureService featureService,
         TemplateSemanticTokenService? semanticTokenService = null)
     {
         _connection = connection;
         _diagnosticService = diagnosticService;
+        _generationService = generationService;
         _featureService = featureService;
         _semanticTokenService = semanticTokenService ?? new TemplateSemanticTokenService();
     }
@@ -79,6 +90,10 @@ internal sealed class LanguageServerHost
                     },
                     full = true,
                     range = false,
+                },
+                experimental = new
+                {
+                    typewriterGenerationProvider = true,
                 },
             },
             serverInfo = new
@@ -175,6 +190,15 @@ internal sealed class LanguageServerHost
 
         if (message.TryGetProperty(propertyName: "id", value: out var id))
         {
+            if (string.Equals(a: method, b: "typewriter/generate", comparisonType: StringComparison.Ordinal))
+            {
+                StartGenerationRequest(
+                    id: id.Clone(),
+                    parameters: parameters.Clone(),
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
             await HandleRequestAsync(id: id, method: method, parameters: parameters, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             return;
         }
@@ -198,6 +222,7 @@ internal sealed class LanguageServerHost
                     cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
                 break;
             case "shutdown":
+                await AwaitPendingGenerationRequestsAsync().ConfigureAwait(continueOnCapturedContext: false);
                 await _connection.WriteResponseAsync(id: id, result: null, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
                 break;
             case "textDocument/completion":
@@ -342,6 +367,82 @@ internal sealed class LanguageServerHost
             id: id,
             result: _semanticTokenService.GetSemanticTokens(document: document),
             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    private async Task WriteGenerationResponseAsync(
+        JsonElement id,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
+    {
+        WorkspaceGenerationRequest? request;
+        try
+        {
+            request = parameters.ValueKind == JsonValueKind.Object
+                ? JsonSerializer.Deserialize<WorkspaceGenerationRequest>(json: parameters.GetRawText(), options: JsonOptions)
+                : null;
+        }
+        catch (JsonException)
+        {
+            request = null;
+        }
+
+        if (request is null)
+        {
+            await _connection.WriteErrorResponseAsync(
+                id: id,
+                code: -32602,
+                message: "Invalid Typewriter generation request.",
+                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            return;
+        }
+
+        try
+        {
+            var result = await _generationService.GenerateAsync(
+                request: request,
+                settings: _settings,
+                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            await _connection.WriteResponseAsync(id: id, result: result, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await _connection.WriteErrorResponseAsync(
+                id: id,
+                code: -32603,
+                message: exception.Message,
+                cancellationToken: CancellationToken.None).ConfigureAwait(continueOnCapturedContext: false);
+        }
+    }
+
+    private void StartGenerationRequest(
+        JsonElement id,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
+    {
+        var requestId = Interlocked.Increment(location: ref _nextGenerationRequestId);
+        var task = WriteGenerationResponseAsync(id: id, parameters: parameters, cancellationToken: cancellationToken);
+        _pendingGenerationRequests[key: requestId] = task;
+        _ = task.ContinueWith(
+            continuationAction: completedTask =>
+            {
+                _ = completedTask.Exception;
+                _ = _pendingGenerationRequests.TryRemove(key: requestId, value: out _);
+            },
+            cancellationToken: CancellationToken.None,
+            continuationOptions: TaskContinuationOptions.ExecuteSynchronously,
+            scheduler: TaskScheduler.Default);
+    }
+
+    private async Task AwaitPendingGenerationRequestsAsync()
+    {
+        while (_pendingGenerationRequests.Count > 0)
+        {
+            await Task.WhenAll(tasks: _pendingGenerationRequests.Values).ConfigureAwait(continueOnCapturedContext: false);
+        }
     }
 
     private void ScheduleValidation(

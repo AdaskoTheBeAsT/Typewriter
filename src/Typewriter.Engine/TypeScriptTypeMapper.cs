@@ -1,9 +1,12 @@
+using System.Collections.Concurrent;
 using Typewriter.Abstractions;
 
 namespace Typewriter.Engine;
 
 public sealed class TypeScriptTypeMapper
 {
+    private readonly ConcurrentDictionary<MapCacheKey, string> _cache = new();
+
     public string Map(TypeMetadataReference type) =>
         Map(type: type, strictNull: true);
 
@@ -13,13 +16,10 @@ public sealed class TypeScriptTypeMapper
     {
         ArgumentNullException.ThrowIfNull(argument: type);
 
-        var mapped = MapCore(type: type, strictNull: strictNull);
-        if (strictNull && type.IsNullable && !HasTopLevelNullUnion(mapped: mapped))
-        {
-            return $"{mapped} | null";
-        }
-
-        return mapped;
+        return _cache.GetOrAdd(
+            key: new MapCacheKey(Type: type, StrictNull: strictNull),
+            valueFactory: static (key, mapper) => mapper.MapUncached(type: key.Type, strictNull: key.StrictNull),
+            factoryArgument: this);
     }
 
     private static bool IsBoolean(string fullName) =>
@@ -208,4 +208,21 @@ public sealed class TypeScriptTypeMapper
 
         return type.Name;
     }
+
+    private string MapUncached(
+        TypeMetadataReference type,
+        bool strictNull)
+    {
+        var mapped = MapCore(type: type, strictNull: strictNull);
+        if (strictNull && type.IsNullable && !HasTopLevelNullUnion(mapped: mapped))
+        {
+            return $"{mapped} | null";
+        }
+
+        return mapped;
+    }
+
+    private sealed record MapCacheKey(
+        TypeMetadataReference Type,
+        bool StrictNull);
 }

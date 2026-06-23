@@ -40,9 +40,28 @@ internal sealed class CliResult
 {
     public bool Success { get; set; }
 
-    public List<CliGeneratedFile> GeneratedFiles { get; } = [];
+    public long DurationMs { get; set; }
 
-    public List<CliDiagnostic> Diagnostics { get; } = [];
+    public List<CliGeneratedFile> GeneratedFiles { get; set; } = [];
+
+    public List<CliDiagnostic> Diagnostics { get; set; } = [];
+}
+
+internal sealed class TypewriterGenerationRequest
+{
+    public string Command { get; set; } = string.Empty;
+
+    public string WorkspacePath { get; set; } = string.Empty;
+
+    public string? ProjectPath { get; set; }
+
+    public string? TemplatePath { get; set; }
+
+    public string? TemplateSearchPath { get; set; }
+
+    public string? Framework { get; set; }
+
+    public bool AllProjects { get; set; }
 }
 
 internal sealed class CliGeneratedFile
@@ -73,6 +92,7 @@ internal sealed class GenerationContext
         string workspacePath,
         string? projectPath,
         string? templatePath,
+        string? templateSearchPath,
         string framework,
         bool allProjects,
         string workingDirectory,
@@ -81,6 +101,7 @@ internal sealed class GenerationContext
         WorkspacePath = workspacePath;
         ProjectPath = projectPath;
         TemplatePath = templatePath;
+        TemplateSearchPath = templateSearchPath;
         Framework = framework;
         AllProjects = allProjects;
         WorkingDirectory = workingDirectory;
@@ -92,6 +113,8 @@ internal sealed class GenerationContext
     public string? ProjectPath { get; }
 
     public string? TemplatePath { get; }
+
+    public string? TemplateSearchPath { get; }
 
     public string Framework { get; }
 

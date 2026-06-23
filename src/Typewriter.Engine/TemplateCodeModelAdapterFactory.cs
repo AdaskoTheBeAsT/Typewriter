@@ -25,6 +25,8 @@ internal sealed class TemplateCodeModelAdapterFactory
     private readonly IReadOnlyDictionary<string, PropertyMetadata> _propertiesByFullName;
     private readonly IReadOnlyDictionary<string, TypeMetadata> _typesByFullName;
     private readonly TypeScriptTypeMapper _typeMapper = new();
+    private CodeFile? _cachedFile;
+    private ProjectMetadata? _cachedFileProject;
 
     public TemplateCodeModelAdapterFactory(
         ProjectMetadata metadata,
@@ -41,20 +43,21 @@ internal sealed class TemplateCodeModelAdapterFactory
     public TemplateCodeModelAdapterFactory(
         ProjectMetadata metadata,
         Typewriter.Configuration.Settings settings)
+        : this(metadata: metadata, settings: settings, metadataIndex: null)
+    {
+    }
+
+    public TemplateCodeModelAdapterFactory(
+        ProjectMetadata metadata,
+        Typewriter.Configuration.Settings settings,
+        ProjectMetadataIndex? metadataIndex)
     {
         _settings = settings;
         _assemblyName = Path.GetFileNameWithoutExtension(path: metadata.ProjectPath);
-        _typesByFullName = metadata.Types
-            .GroupBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
-            .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal);
-        _methodsByFullName = metadata.Types
-            .SelectMany(selector: type => type.Methods)
-            .GroupBy(keySelector: method => method.FullName, comparer: StringComparer.Ordinal)
-            .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal);
-        _propertiesByFullName = metadata.Types
-            .SelectMany(selector: type => type.Properties)
-            .GroupBy(keySelector: property => property.FullName, comparer: StringComparer.Ordinal)
-            .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal);
+        var index = metadataIndex ?? ProjectMetadataIndex.Create(metadata: metadata);
+        _typesByFullName = index.TypesByFullName;
+        _methodsByFullName = index.MethodsByFullName;
+        _propertiesByFullName = index.PropertiesByFullName;
     }
 
     public bool TryAdapt(
@@ -76,7 +79,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
         adapted = context switch
         {
-            ProjectMetadata project => AdaptProject(project: project, targetType: targetType),
+            ProjectMetadata project => targetType.IsAssignableFrom(c: typeof(CodeFile)) ? CreateFile(project: project) : null,
             TypeMetadata type => AdaptType(type: type, targetType: targetType),
             PropertyMetadata property => CreateProperty(property: property, parent: null),
             MethodMetadata method => CreateMethod(method: method, parent: null),
@@ -98,7 +101,14 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     public CodeFile CreateFile(ProjectMetadata project)
     {
-        return (CodeFile)AdaptProject(project: project, targetType: typeof(CodeFile))!;
+        if (ReferenceEquals(objA: _cachedFileProject, objB: project) && _cachedFile is not null)
+        {
+            return _cachedFile;
+        }
+
+        _cachedFile = (CodeFile)AdaptProject(project: project, targetType: typeof(CodeFile))!;
+        _cachedFileProject = project;
+        return _cachedFile;
     }
 
     private static Typewriter.CodeModel.DocComment? CreateDocComment(

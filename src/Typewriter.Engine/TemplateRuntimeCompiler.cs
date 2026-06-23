@@ -22,6 +22,12 @@ internal static class TemplateRuntimeCompiler
     private static readonly ConcurrentDictionary<string, CompiledTemplateCacheEntry> CompiledTemplateCache = new(comparer: StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, int> CompiledTemplateCacheMissCounts = new(comparer: StringComparer.Ordinal);
     private static readonly ConcurrentQueue<string> CompiledTemplateCacheOrder = new();
+    private static readonly HttpClient RemoteLoadHttpClient = new()
+    {
+        Timeout = RemoteLoadTimeout,
+    };
+
+    private static readonly ConcurrentDictionary<string, LocalLoadCacheEntry> LocalLoadCache = new(comparer: StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, RemoteLoadCacheEntry> RemoteLoadCache = new(comparer: StringComparer.OrdinalIgnoreCase);
 
     public static CompiledTemplateHelper? Compile(
@@ -36,7 +42,14 @@ internal static class TemplateRuntimeCompiler
         ProjectMetadata metadata,
         ICollection<GenerationDiagnostic> diagnostics,
         TemplateRenderDefaults defaults)
-#pragma warning restore MA0051 // Method is too long
+        => Compile(template: template, metadata: metadata, diagnostics: diagnostics, defaults: defaults, metadataIndex: null);
+
+    internal static CompiledTemplateHelper? Compile(
+        TemplateDocument template,
+        ProjectMetadata metadata,
+        ICollection<GenerationDiagnostic> diagnostics,
+        TemplateRenderDefaults defaults,
+        ProjectMetadataIndex? metadataIndex)
     {
         if (template.CodeBlocks.Count == 0)
         {
@@ -51,8 +64,10 @@ internal static class TemplateRuntimeCompiler
                 metadata: metadata,
                 diagnostics: diagnostics,
                 defaults: defaults,
-                cacheEntry: cacheEntry);
+                cacheEntry: cacheEntry,
+                metadataIndex: metadataIndex);
     }
+#pragma warning restore MA0051 // Method is too long
 
     internal static CompiledTemplateFactory? CompileFactory(
         TemplateDocument template,
@@ -105,7 +120,8 @@ internal static class TemplateRuntimeCompiler
         TemplateRenderDefaults defaults,
         Type hostType,
         TemplateAssemblyLoadContext loadContext,
-        bool unloadLoadContextOnDispose)
+        bool unloadLoadContextOnDispose,
+        ProjectMetadataIndex? metadataIndex = null)
     {
         var settings = new Typewriter.Configuration.Settings
         {
@@ -117,7 +133,7 @@ internal static class TemplateRuntimeCompiler
             strictNullGeneration: defaults.StrictNullGeneration,
             utf8BomGeneration: defaults.Utf8BomGeneration,
             stringLiteralCharacter: defaults.StringLiteralCharacter);
-        var adapterFactory = new TemplateCodeModelAdapterFactory(metadata: metadata, settings: settings);
+        var adapterFactory = new TemplateCodeModelAdapterFactory(metadata: metadata, settings: settings, metadataIndex: metadataIndex);
         var host = CreateHost(hostType: hostType, settings: settings, file: adapterFactory.CreateFile(project: metadata));
         return new CompiledTemplateHelper(
             host: host,
@@ -199,7 +215,8 @@ internal static class TemplateRuntimeCompiler
         ProjectMetadata metadata,
         ICollection<GenerationDiagnostic> diagnostics,
         TemplateRenderDefaults defaults,
-        CompiledTemplateCacheEntry cacheEntry)
+        CompiledTemplateCacheEntry cacheEntry,
+        ProjectMetadataIndex? metadataIndex)
     {
         var assemblyLoadContext = new TemplateAssemblyLoadContext(
             name: cacheEntry.AssemblyName,
@@ -228,7 +245,8 @@ internal static class TemplateRuntimeCompiler
             defaults: defaults,
             hostType: hostType,
             loadContext: assemblyLoadContext,
-            unloadLoadContextOnDispose: true);
+            unloadLoadContextOnDispose: true,
+            metadataIndex: metadataIndex);
     }
 
     private static CompiledTemplateCacheEntry? CompileToCacheEntry(
@@ -618,7 +636,20 @@ internal static class TemplateRuntimeCompiler
         }
 
 #pragma warning disable SCS0018,SEC0116
+        var file = new FileInfo(fileName: loadedPath);
+        if (LocalLoadCache.TryGetValue(key: loadedPath, value: out var cached)
+            && cached.Length == file.Length
+            && cached.LastWriteTicks == file.LastWriteTimeUtc.Ticks)
+        {
+            source = cached.Source;
+            return true;
+        }
+
         source = File.ReadAllText(path: loadedPath);
+        LocalLoadCache[key: loadedPath] = new LocalLoadCacheEntry(
+            Source: source,
+            Length: file.Length,
+            LastWriteTicks: file.LastWriteTimeUtc.Ticks);
 #pragma warning restore SCS0018,SEC0116
         return true;
     }
@@ -639,12 +670,8 @@ internal static class TemplateRuntimeCompiler
 
         try
         {
-            using var client = new HttpClient
-            {
-                Timeout = RemoteLoadTimeout,
-            };
             using var request = new HttpRequestMessage(method: HttpMethod.Get, requestUri: loadedPath);
-            using var response = client.Send(request: request, completionOption: HttpCompletionOption.ResponseHeadersRead);
+            using var response = RemoteLoadHttpClient.Send(request: request, completionOption: HttpCompletionOption.ResponseHeadersRead);
             if (!response.IsSuccessStatusCode)
             {
                 AddLoadDiagnostic(
@@ -936,6 +963,11 @@ internal static class TemplateRuntimeCompiler
         string AssemblyName,
         byte[] AssemblyBytes,
         IReadOnlyList<string?> ReferencePaths);
+
+    private sealed record LocalLoadCacheEntry(
+        string Source,
+        long Length,
+        long LastWriteTicks);
 
     private sealed record RemoteLoadCacheEntry(string Source, DateTimeOffset FetchedAtUtc);
 }

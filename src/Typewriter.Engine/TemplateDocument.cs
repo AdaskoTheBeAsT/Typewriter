@@ -362,13 +362,13 @@ public sealed record TemplateDocument(
             return null;
         }
 
-        var openQuote = block.IndexOf(value: '"', startIndex: markerIndex);
+        var openQuote = block.IndexOfAny(anyOf: ['"', '\''], startIndex: markerIndex);
         if (openQuote < 0)
         {
             return null;
         }
 
-        var closeQuote = block.IndexOf(value: '"', startIndex: openQuote + 1);
+        var closeQuote = block.IndexOf(value: block[index: openQuote], startIndex: openQuote + 1);
         return closeQuote < 0
             ? null
             : block.Substring(startIndex: openQuote + 1, length: closeQuote - openQuote - 1);

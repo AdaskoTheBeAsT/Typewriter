@@ -21,15 +21,18 @@ internal sealed class TypewriterCommandService
     private readonly TypewriterPackage _package;
     private readonly TypewriterOutputPane _outputPane;
     private readonly TypewriterDiagnosticReporter _diagnosticReporter;
+    private readonly TypewriterPersistentGenerationClient _persistentGenerationClient;
 
     public TypewriterCommandService(
         TypewriterPackage package,
         TypewriterOutputPane outputPane,
-        TypewriterDiagnosticReporter diagnosticReporter)
+        TypewriterDiagnosticReporter diagnosticReporter,
+        TypewriterPersistentGenerationClient persistentGenerationClient)
     {
         _package = package;
         _outputPane = outputPane;
         _diagnosticReporter = diagnosticReporter;
+        _persistentGenerationClient = persistentGenerationClient;
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
@@ -294,10 +297,14 @@ internal sealed class TypewriterCommandService
         }
 
         var resolvedWorkspacePath = workspacePath ?? string.Empty;
+        var templateSearchPath = inputPath is not null && !string.IsNullOrWhiteSpace(value: projectPath)
+            ? Path.GetDirectoryName(path: projectPath)
+            : null;
         return new GenerationContext(
             workspacePath: resolvedWorkspacePath,
             projectPath: projectPath,
             templatePath: templatePath,
+            templateSearchPath: templateSearchPath,
             framework: options.Framework.Trim(),
             allProjects: solutionWide || options.AllProjects,
             workingDirectory: GetWorkingDirectory(workspacePath: resolvedWorkspacePath),
@@ -312,9 +319,48 @@ internal sealed class TypewriterCommandService
     {
         var args = BuildTypewriterArguments(command: command, context: context, allTemplates: allTemplates);
         await _package.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken: cancellationToken);
-        _outputPane.WriteLine(message: FormatCommand(command: context.CliInvocation.Command, arguments: context.CliInvocation.Arguments.Concat(second: args)));
         _diagnosticReporter.Clear();
 
+        var generationRequest = new TypewriterGenerationRequest
+        {
+            Command = command,
+            WorkspacePath = context.WorkspacePath,
+            ProjectPath = context.ProjectPath,
+            TemplatePath = allTemplates ? null : context.TemplatePath,
+            TemplateSearchPath = context.TemplateSearchPath,
+            Framework = string.IsNullOrWhiteSpace(value: context.Framework) ? null : context.Framework,
+            AllProjects = allTemplates && context.AllProjects,
+        };
+        var persistentResult = await TypewriterLanguageClient.TryGenerateAsync(
+            request: generationRequest,
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        if (persistentResult is null)
+        {
+            await _package.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken: cancellationToken);
+            var options = _package.GetTypewriterOptions();
+            persistentResult = await _persistentGenerationClient.TryGenerateAsync(
+                request: generationRequest,
+                options: options,
+                workingDirectory: context.WorkingDirectory,
+                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        }
+
+        if (persistentResult is not null)
+        {
+            await _package.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken: CancellationToken.None);
+            _outputPane.WriteLine(message: "> Typewriter language server: typewriter/generate");
+            _diagnosticReporter.Publish(diagnostics: persistentResult.Diagnostics, workingDirectory: context.WorkingDirectory);
+            WriteResultSummary(payload: persistentResult);
+            if (!persistentResult.Success)
+            {
+                _outputPane.Show();
+            }
+
+            return;
+        }
+
+        await _package.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken: cancellationToken);
+        _outputPane.WriteLine(message: FormatCommand(command: context.CliInvocation.Command, arguments: context.CliInvocation.Arguments.Concat(second: args)));
         var processResult = await RunProcessAsync(invocation: context.CliInvocation, typewriterArguments: args, workingDirectory: context.WorkingDirectory, cancellationToken: cancellationToken)
             .ConfigureAwait(continueOnCapturedContext: false);
         var payload = ParsePayload(standardOutput: processResult.StandardOutput);
@@ -357,6 +403,12 @@ internal sealed class TypewriterCommandService
         {
             args.Add(item: "--template");
             args.Add(item: context.TemplatePath ?? string.Empty);
+        }
+
+        if (!string.IsNullOrWhiteSpace(value: context.TemplateSearchPath))
+        {
+            args.Add(item: "--template-search-path");
+            args.Add(item: context.TemplateSearchPath ?? string.Empty);
         }
 
         if (!string.IsNullOrWhiteSpace(value: context.Framework))

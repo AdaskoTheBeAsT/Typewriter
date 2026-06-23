@@ -99,6 +99,7 @@ function createSaveRequest(document) {
             resourceUri: document.uri,
             allTemplates: true,
             projectPath: findNearestProjectPathForInput(document.uri.fsPath),
+            projectScoped: true,
         };
     }
 
@@ -108,6 +109,7 @@ function createSaveRequest(document) {
             resourceUri: document.uri,
             allTemplates: true,
             projectPath: findNearestProjectPathForInput(document.uri.fsPath),
+            projectScoped: true,
         };
     }
 
@@ -168,6 +170,26 @@ async function executeSaveRequest(context, request) {
         allTemplates: request.allTemplates,
         resourceUri: request.resourceUri,
         projectPath: request.projectPath,
+    });
+}
+
+async function waitForSaveQuietPeriod() {
+    while (true) {
+        const remaining = saveQueue.lastSaveAt + saveDebounceDelayMs - Date.now();
+        if (remaining <= 0) {
+            return;
+        }
+
+        await delay(remaining);
+    }
+}
+
+async function executeSaveRequest(context, request) {
+    await executeCliCommand(context, request.command, request.templatePath, {
+        allTemplates: request.allTemplates,
+        resourceUri: request.resourceUri,
+        projectPath: request.projectPath,
+        projectScoped: request.projectScoped,
     });
 }
 
@@ -270,6 +292,7 @@ async function executeCliCommand(context, command, templatePath, options = {}) {
     const configuration = getConfiguration(templatePath ? vscode.Uri.file(templatePath) : options.resourceUri);
     const args = buildTypewriterArguments(command, workspacePath, templatePath, configuration, options);
     const invocation = resolveCliInvocation(context, workingDirectory, configuration);
+    const generationRequest = buildGenerationRequest(command, workspacePath, templatePath, configuration, options);
 
     await vscode.window.withProgress(
         {
@@ -278,11 +301,17 @@ async function executeCliCommand(context, command, templatePath, options = {}) {
             cancellable: false,
         },
         async () => {
-            outputChannel.appendLine(formatCommand(invocation.command, invocation.args.concat(args)));
-            const result = await runProcess(invocation.command, invocation.args.concat(args), workingDirectory);
-            writeProcessOutput(result);
+            const persistentPayload = await tryRunPersistentGeneration(generationRequest);
+            let payload = persistentPayload;
+            let exitCode = persistentPayload ? 0 : undefined;
+            if (!persistentPayload) {
+                outputChannel.appendLine(formatCommand(invocation.command, invocation.args.concat(args)));
+                const result = await runProcess(invocation.command, invocation.args.concat(args), workingDirectory);
+                writeProcessOutput(result);
+                payload = parseCliPayload(result.stdout);
+                exitCode = result.exitCode;
+            }
 
-            const payload = parseCliPayload(result.stdout);
             if (payload) {
                 publishDiagnostics(payload, workingDirectory);
                 writeResultSummary(payload);
@@ -290,7 +319,7 @@ async function executeCliCommand(context, command, templatePath, options = {}) {
                 diagnostics.clear();
             }
 
-            if (result.exitCode === 0 && payload?.success !== false) {
+            if (exitCode === 0 && payload?.success !== false) {
                 const generated = Array.isArray(payload?.generatedFiles) ? payload.generatedFiles.length : 0;
                 vscode.window.setStatusBarMessage(
                     generated > 0 ? `Typewriter generated ${generated} file(s).` : "Typewriter completed.",
@@ -318,6 +347,11 @@ function buildTypewriterArguments(command, workspacePath, templatePath, configur
     const projectPath = resolveOptionalPath(configuration.get("projectPath"), getPathBase(workspacePath)) || options.projectPath;
     if (projectPath) {
         args.push("--project", projectPath);
+    }
+
+    const templateSearchPath = options.projectScoped && projectPath ? path.dirname(projectPath) : undefined;
+    if (templateSearchPath) {
+        args.push("--template-search-path", templateSearchPath);
     }
 
     if (templatePath && !options.allTemplates) {
@@ -643,6 +677,109 @@ function normalizeExtension(extension) {
     return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
 }
 
+function getGenerationInputScope(document, inputExtensions) {
+    const filePath = document.uri.fsPath;
+    if (isIgnoredInputPath(filePath)) {
+        return undefined;
+    }
+
+    const extension = path.extname(filePath).toLowerCase();
+    if (!inputExtensions.has(extension)) {
+        return undefined;
+    }
+
+    if (isTypewriterDocument(document) && templateExtensions.has(extension)) {
+        return "template";
+    }
+
+    return "project";
+}
+
+function isIgnoredInputPath(filePath) {
+    return filePath
+        .split(/[\\/]+/)
+        .some(segment => ignoredInputDirectories.has(segment.toLowerCase()));
+}
+
+function findNearestProjectPathForInput(filePath) {
+    if (path.extname(filePath).toLowerCase() === ".csproj") {
+        return filePath;
+    }
+
+    let directory = path.dirname(filePath);
+    while (directory && directory !== path.dirname(directory)) {
+        try {
+            const project = fs.readdirSync(directory)
+                .filter(name => name.toLowerCase().endsWith(".csproj"))
+                .sort((left, right) => left.localeCompare(right))[0];
+            if (project) {
+                return path.join(directory, project);
+            }
+        } catch {
+            return undefined;
+        }
+
+        directory = path.dirname(directory);
+    }
+
+    return undefined;
+}
+
+function readConfiguredInputExtensions(filePath) {
+    let extensions = defaultInputExtensions;
+    for (const configurationPath of findConfigurationFiles(filePath)) {
+        const configuredExtensions = readInputExtensions(configurationPath);
+        if (configuredExtensions) {
+            extensions = configuredExtensions;
+        }
+    }
+
+    return new Set(extensions.map(extension => extension.toLowerCase()));
+}
+
+function findConfigurationFiles(filePath) {
+    const directories = [];
+    let directory = safeIsDirectory(filePath) ? filePath : path.dirname(filePath);
+    while (directory && directory !== path.dirname(directory)) {
+        directories.push(directory);
+        directory = path.dirname(directory);
+    }
+
+    return directories
+        .reverse()
+        .flatMap(candidateDirectory => configurationFileNames.map(name => path.join(candidateDirectory, name)))
+        .filter(candidate => fs.existsSync(candidate));
+}
+
+function readInputExtensions(configurationPath) {
+    try {
+        const configuration = JSON.parse(fs.readFileSync(configurationPath, "utf8"));
+        const propertyName = Object.keys(configuration)
+            .find(key => key.toLowerCase() === "inputextensions");
+        if (!propertyName || !Array.isArray(configuration[propertyName])) {
+            return undefined;
+        }
+
+        const extensions = configuration[propertyName]
+            .filter(value => typeof value === "string")
+            .map(normalizeExtension)
+            .filter(Boolean)
+            .filter((extension, index, array) => array.findIndex(item => item.toLowerCase() === extension.toLowerCase()) === index);
+        return extensions.length > 0 ? extensions : defaultInputExtensions;
+    } catch {
+        return undefined;
+    }
+}
+
+function normalizeExtension(extension) {
+    const trimmed = extension.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+
+    return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
+}
+
 function toFileUri(value) {
     return value?.scheme === "file" ? value : undefined;
 }
@@ -822,6 +959,36 @@ function createTemplateFallbackCompletions(includeDollar) {
         item.insertText = new vscode.SnippetString(`${includeDollar ? "$" : ""}${insertText}`);
         return item;
     });
+}
+
+async function tryRunPersistentGeneration(request) {
+    const client = languageClient;
+    if (!client) {
+        return undefined;
+    }
+
+    try {
+        outputChannel.appendLine("> Typewriter language server: typewriter/generate");
+        return await client.sendRequest("typewriter/generate", request);
+    } catch (error) {
+        outputChannel.appendLine(`Persistent generation unavailable; falling back to the CLI: ${error.message ?? error}`);
+        return undefined;
+    }
+}
+
+function buildGenerationRequest(command, workspacePath, templatePath, configuration, options) {
+    const projectPath = resolveOptionalPath(configuration.get("projectPath"), getPathBase(workspacePath)) || options.projectPath;
+    const templateSearchPath = options.projectScoped && projectPath ? path.dirname(projectPath) : undefined;
+    const framework = configuration.get("framework");
+    return {
+        command,
+        workspacePath,
+        projectPath,
+        templatePath: templatePath && !options.allTemplates ? templatePath : undefined,
+        templateSearchPath,
+        framework: typeof framework === "string" && framework.trim() ? framework.trim() : undefined,
+        allProjects: Boolean(options.allTemplates && configuration.get("allProjects", false)),
+    };
 }
 
 function createCSharpFallbackCompletions(text) {

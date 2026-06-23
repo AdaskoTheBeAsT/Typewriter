@@ -22,6 +22,7 @@
         <colorSettingsPage implementation="com.adaskothebeast.typewriter.rider.TypewriterColorSettingsPage" />
         <projectService serviceImplementation="com.adaskothebeast.typewriter.rider.TypewriterSettingsState" />
         <projectService serviceImplementation="com.adaskothebeast.typewriter.rider.TypewriterCliService" />
+        <projectService serviceImplementation="com.adaskothebeast.typewriter.rider.TypewriterLanguageServerClient" />
         <projectConfigurable
             id="typewriter"
             displayName="Typewriter"

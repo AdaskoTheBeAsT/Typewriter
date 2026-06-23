@@ -43,7 +43,7 @@ public sealed class GeneratedFilePlanner
             generatedFile: out generatedFile,
             diagnostic: out diagnostic);
 
-#pragma warning disable CC0091,S107,S2325
+#pragma warning disable CC0091,MA0051,S107,S2325
     public bool TryPlan(
         WorkspaceContext workspace,
         TemplateDocument template,
@@ -53,7 +53,7 @@ public sealed class GeneratedFilePlanner
         bool? utf8Bom,
         out GeneratedFile? generatedFile,
         out GenerationDiagnostic? diagnostic)
-#pragma warning restore CC0091,S107,S2325
+#pragma warning restore CC0091,MA0051,S107,S2325
     {
         ArgumentNullException.ThrowIfNull(argument: workspace);
         ArgumentNullException.ThrowIfNull(argument: template);
@@ -89,10 +89,11 @@ public sealed class GeneratedFilePlanner
             return false;
         }
 
+        string? existing = null;
         if (File.Exists(path: resolvedOutputPath))
         {
 #pragma warning disable SCS0018,SEC0116
-            var existing = File.ReadAllText(path: resolvedOutputPath);
+            existing = File.ReadAllText(path: resolvedOutputPath);
 #pragma warning restore SCS0018,SEC0116
             if (!HasGeneratedHeader(content: existing)
                 && !string.Equals(a: existing, b: content, comparisonType: StringComparison.Ordinal))
@@ -113,6 +114,11 @@ public sealed class GeneratedFilePlanner
             Content: EnsureGeneratedHeader(content: content),
             Changed: true,
             Utf8Bom: utf8Bom);
+        if (existing is not null)
+        {
+            GeneratedFileExistingContentCache.Set(file: generatedFile, content: existing);
+        }
+
         return true;
     }
 

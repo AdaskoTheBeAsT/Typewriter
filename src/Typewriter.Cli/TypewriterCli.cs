@@ -80,7 +80,10 @@ internal static class TypewriterCli
         CliOptions options,
         CancellationToken cancellationToken)
     {
-        var result = await GenerateOnceAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        var result = await GenerateOnceAsync(
+            options: options,
+            generator: CreateGenerator(),
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         WriteResult(result: result, output: options.Output);
         return GetExitCode(result: result);
     }
@@ -92,14 +95,23 @@ internal static class TypewriterCli
         try
         {
             var configuration = await CreateConfigurationAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            var generator = CreateGenerator();
             using var watcher = FileSystemGenerationWatcher.Create(options: options, configuration: configuration);
-            await RunWatchedGenerationAsync(options: options, watcher: watcher, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            await RunWatchedGenerationAsync(
+                options: options,
+                watcher: watcher,
+                generator: generator,
+                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
 
             while (!cancellationToken.IsCancellationRequested)
             {
                 await watcher.WaitForChangeAsync(cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
                 await watcher.WaitForQuietPeriodAsync(quietPeriod: WatchDebounceDelay, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
-                await RunWatchedGenerationAsync(options: options, watcher: watcher, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+                await RunWatchedGenerationAsync(
+                    options: options,
+                    watcher: watcher,
+                    generator: generator,
+                    cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -113,6 +125,7 @@ internal static class TypewriterCli
     private static async Task RunWatchedGenerationAsync(
         CliOptions options,
         FileSystemGenerationWatcher watcher,
+        TypewriterGenerator generator,
         CancellationToken cancellationToken)
     {
         while (true)
@@ -123,7 +136,10 @@ internal static class TypewriterCli
             var changeObserved = false;
             try
             {
-                await GenerateAndWriteAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+                await GenerateAndWriteAsync(
+                    options: options,
+                    generator: generator,
+                    cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             }
             finally
             {
@@ -150,14 +166,19 @@ internal static class TypewriterCli
 
     private static async Task GenerateAndWriteAsync(
         CliOptions options,
+        TypewriterGenerator generator,
         CancellationToken cancellationToken)
     {
-        var result = await GenerateOnceAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        var result = await GenerateOnceAsync(
+            options: options,
+            generator: generator,
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         WriteResult(result: result, output: options.Output);
     }
 
     private static async Task<GenerationResult> GenerateOnceAsync(
         CliOptions options,
+        TypewriterGenerator generator,
         CancellationToken cancellationToken)
     {
         var configuration = await CreateConfigurationAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
@@ -167,15 +188,17 @@ internal static class TypewriterCli
             TemplatePath: options.TemplatePath,
             Mode: options.Command == CliCommand.Validate ? GenerationMode.Validate : GenerationMode.Generate,
             Configuration: configuration,
-            AllProjects: options.AllProjects);
-
-        var generator = new TypewriterGenerator(
-            templateDiscovery: new FileSystemTemplateDiscovery(),
-            metadataProvider: new CSharpProjectMetadataProvider(),
-            fileWriter: new FileSystemGeneratedFileWriter());
+            AllProjects: options.AllProjects,
+            TemplateSearchPath: options.TemplateSearchPath);
 
         return await generator.GenerateAsync(request: request, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
     }
+
+    private static TypewriterGenerator CreateGenerator() =>
+        new(
+            templateDiscovery: new FileSystemTemplateDiscovery(),
+            metadataProvider: new CSharpProjectMetadataProvider(),
+            fileWriter: new FileSystemGeneratedFileWriter());
 
     private static async Task<int> ListTemplatesAsync(
         CliOptions options,
@@ -189,11 +212,21 @@ internal static class TypewriterCli
             ProjectPath: options.ProjectPath,
             TemplatePath: options.TemplatePath,
             Mode: GenerationMode.Validate,
-            Configuration: await CreateConfigurationAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false));
+            Configuration: await CreateConfigurationAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false),
+            TemplateSearchPath: options.TemplateSearchPath);
 
+        var templateSearchPath = options.TemplateSearchPath;
+        if (!string.IsNullOrWhiteSpace(value: templateSearchPath) && !Path.IsPathRooted(path: templateSearchPath))
+        {
+            templateSearchPath = Path.Combine(
+                path1: ResolveConfigurationDirectory(workspacePath: workspacePath),
+                path2: templateSearchPath);
+        }
+
+        templateSearchPath ??= workspacePath;
         var templates = await new FileSystemTemplateDiscovery()
             .FindTemplatesAsync(
-                workspace: new WorkspaceContext(RootPath: Path.GetFullPath(path: workspacePath)),
+                workspace: new WorkspaceContext(RootPath: Path.GetFullPath(path: templateSearchPath)),
                 request: request,
                 cancellationToken: cancellationToken)
             .ConfigureAwait(continueOnCapturedContext: false);

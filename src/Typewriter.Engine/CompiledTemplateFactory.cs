@@ -21,7 +21,8 @@ internal sealed class CompiledTemplateFactory : IDisposable
     public CompiledTemplateHelper CreateHelper(
         ProjectMetadata metadata,
         ICollection<GenerationDiagnostic> diagnostics,
-        TemplateRenderDefaults defaults)
+        TemplateRenderDefaults defaults,
+        ProjectMetadataIndex? metadataIndex = null)
     {
         if (_hostType is null || _loadContext is null)
         {
@@ -35,7 +36,8 @@ internal sealed class CompiledTemplateFactory : IDisposable
             defaults: defaults,
             hostType: _hostType,
             loadContext: _loadContext,
-            unloadLoadContextOnDispose: false);
+            unloadLoadContextOnDispose: false,
+            metadataIndex: metadataIndex);
     }
 
     public void Dispose()

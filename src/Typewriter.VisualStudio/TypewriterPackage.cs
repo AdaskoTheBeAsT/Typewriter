@@ -21,6 +21,7 @@ public sealed class TypewriterPackage : AsyncPackage
 {
     private TypewriterDiagnosticReporter? _diagnosticReporter;
     private TypewriterCommandService? _commandService;
+    private TypewriterPersistentGenerationClient? _persistentGenerationClient;
     private TypewriterSaveListener? _saveListener;
     private IVsRunningDocumentTable? _runningDocumentTable;
     private uint _runningDocumentTableCookie;
@@ -50,7 +51,12 @@ public sealed class TypewriterPackage : AsyncPackage
 
         var outputPane = await TypewriterOutputPane.CreateAsync(package: this, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: true);
         _diagnosticReporter = new TypewriterDiagnosticReporter(package: this);
-        _commandService = new TypewriterCommandService(package: this, outputPane: outputPane, diagnosticReporter: _diagnosticReporter);
+        _persistentGenerationClient = new TypewriterPersistentGenerationClient();
+        _commandService = new TypewriterCommandService(
+            package: this,
+            outputPane: outputPane,
+            diagnosticReporter: _diagnosticReporter,
+            persistentGenerationClient: _persistentGenerationClient);
         await _commandService.InitializeAsync(cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: true);
 
         _runningDocumentTable = await GetVisualStudioServiceAsync(serviceType: typeof(SVsRunningDocumentTable), cancellationToken: cancellationToken)
@@ -75,6 +81,7 @@ public sealed class TypewriterPackage : AsyncPackage
             }
 
             _diagnosticReporter?.Dispose();
+            _persistentGenerationClient?.Dispose();
             _saveListener?.Dispose();
             if (ReferenceEquals(objA: Current, objB: this))
             {

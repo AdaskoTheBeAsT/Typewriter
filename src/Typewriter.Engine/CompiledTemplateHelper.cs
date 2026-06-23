@@ -12,7 +12,8 @@ internal sealed class CompiledTemplateHelper : IDisposable
     private TemplateCodeModelAdapterFactory? _adapterFactory;
     private object? _host;
     private TemplateAssemblyLoadContext? _loadContext;
-    private MethodInfo[] _methods;
+    private IReadOnlyDictionary<string, IReadOnlyList<MethodInfo>> _methodsByName;
+    private IReadOnlyDictionary<MethodInfo, ParameterInfo[]> _parametersByMethod;
     private Typewriter.Configuration.Settings? _settings;
 
     public CompiledTemplateHelper(
@@ -28,9 +29,16 @@ internal sealed class CompiledTemplateHelper : IDisposable
         _loadContext = loadContext;
         _unloadLoadContextOnDispose = unloadLoadContextOnDispose;
 #pragma warning disable S3011 // Reflection should not be used to increase accessibility of classes, methods, or fields
-        _methods = host.GetType().GetMethods(
+        var methods = host.GetType().GetMethods(
             bindingAttr: BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
 #pragma warning restore S3011 // Reflection should not be used to increase accessibility of classes, methods, or fields
+        _methodsByName = methods
+            .GroupBy(keySelector: method => method.Name, comparer: StringComparer.Ordinal)
+            .ToDictionary(
+                keySelector: group => group.Key,
+                elementSelector: group => (IReadOnlyList<MethodInfo>)group.ToArray(),
+                comparer: StringComparer.Ordinal);
+        _parametersByMethod = methods.ToDictionary(keySelector: method => method, elementSelector: method => method.GetParameters());
         AssemblyLoadContextReference = new WeakReference(target: loadContext);
     }
 
@@ -43,8 +51,8 @@ internal sealed class CompiledTemplateHelper : IDisposable
 
     public bool HasMethod(string methodName)
     {
-        return _methods.Any(predicate: method => method.Name.Equals(value: methodName, comparisonType: StringComparison.Ordinal)
-                                                 && method.GetParameters().Length is 1 or 2);
+        return _methodsByName.TryGetValue(key: methodName, value: out var methods)
+            && methods.Any(predicate: method => GetParameters(method: method).Length is 1 or 2);
     }
 
     public bool TryInvoke(
@@ -80,9 +88,14 @@ internal sealed class CompiledTemplateHelper : IDisposable
             return false;
         }
 
-        foreach (var method in _methods.Where(predicate: method => method.Name.Equals(value: "OnRenderComplete", comparisonType: StringComparison.Ordinal)))
+        if (!_methodsByName.TryGetValue(key: "OnRenderComplete", value: out var methods))
         {
-            var parameters = method.GetParameters();
+            return false;
+        }
+
+        foreach (var method in methods)
+        {
+            var parameters = GetParameters(method: method);
             object?[] arguments;
             if (parameters.Length == 0)
             {
@@ -167,7 +180,8 @@ internal sealed class CompiledTemplateHelper : IDisposable
             disposable.Dispose();
         }
 
-        _methods = [];
+        _methodsByName = new Dictionary<string, IReadOnlyList<MethodInfo>>(comparer: StringComparer.Ordinal);
+        _parametersByMethod = new Dictionary<MethodInfo, ParameterInfo[]>();
         _adapterFactory = null;
         _host = null;
         _settings = null;
@@ -234,9 +248,14 @@ internal sealed class CompiledTemplateHelper : IDisposable
     {
         value = null;
         error = null;
-        foreach (var method in _methods.Where(predicate: method => method.Name.Equals(value: methodName, comparisonType: StringComparison.Ordinal)))
+        if (!_methodsByName.TryGetValue(key: methodName, value: out var methods))
         {
-            var parameters = method.GetParameters();
+            return false;
+        }
+
+        foreach (var method in methods)
+        {
+            var parameters = GetParameters(method: method);
             if (parameters.Length != contexts.Length
                 || _adapterFactory is null
                 || _host is null)
@@ -279,4 +298,9 @@ internal sealed class CompiledTemplateHelper : IDisposable
 
         return false;
     }
+
+    private ParameterInfo[] GetParameters(MethodInfo method) =>
+        _parametersByMethod.TryGetValue(key: method, value: out var parameters)
+            ? parameters
+            : method.GetParameters();
 }

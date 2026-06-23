@@ -11,8 +11,24 @@ public static class OutputContentFormatter
         ArgumentNullException.ThrowIfNull(argument: content);
         ArgumentNullException.ThrowIfNull(argument: output);
 
-        var formatted = NormalizeToLineFeed(content: content);
-        formatted = ApplyIndentation(content: formatted, style: output.IndentStyle, size: output.IndentSize);
+        var wantsCrLf = output.Newline.Equals(value: "crlf", comparisonType: StringComparison.OrdinalIgnoreCase);
+        if (!wantsCrLf
+            && output.IndentStyle == IndentStyle.Preserve
+            && !output.TrimTrailingWhitespace
+            && !output.InsertFinalNewline
+            && !content.Contains(value: "\r", comparisonType: StringComparison.Ordinal))
+        {
+            return content;
+        }
+
+        var formatted = content.Contains(value: "\r", comparisonType: StringComparison.Ordinal)
+            ? NormalizeToLineFeed(content: content)
+            : content;
+        if (output.IndentStyle != IndentStyle.Preserve)
+        {
+            formatted = ApplyIndentation(content: formatted, style: output.IndentStyle, size: output.IndentSize);
+        }
+
         if (output.TrimTrailingWhitespace)
         {
             formatted = TrimTrailingWhitespace(content: formatted);
@@ -23,7 +39,7 @@ public static class OutputContentFormatter
             formatted = EnsureFinalNewline(content: formatted);
         }
 
-        return output.Newline.Equals(value: "crlf", comparisonType: StringComparison.OrdinalIgnoreCase)
+        return wantsCrLf
             ? formatted.Replace(oldValue: "\n", newValue: "\r\n", comparisonType: StringComparison.Ordinal)
             : formatted;
     }

@@ -99,6 +99,7 @@ internal static class CliCommandLine
             Option<string?> workspace,
             Option<string?> project,
             Option<string?> template,
+            Option<string?> templateSearchPath,
             Option<string?> framework,
             Option<string> output,
             Option<bool> dryRun,
@@ -108,6 +109,7 @@ internal static class CliCommandLine
             Workspace = workspace;
             Project = project;
             Template = template;
+            TemplateSearchPath = templateSearchPath;
             Framework = framework;
             Output = output;
             DryRun = dryRun;
@@ -120,6 +122,8 @@ internal static class CliCommandLine
         private Option<string?> Project { get; }
 
         private Option<string?> Template { get; }
+
+        private Option<string?> TemplateSearchPath { get; }
 
         private Option<string?> Framework { get; }
 
@@ -153,6 +157,10 @@ internal static class CliCommandLine
                 {
                     Description = "Path to a Typewriter template or template directory.",
                 },
+                templateSearchPath: new Option<string?>(name: "--template-search-path")
+                {
+                    Description = "Directory used to discover templates without changing the workspace or project.",
+                },
                 framework: new Option<string?>(name: "--framework")
                 {
                     Description = "Target framework to use when loading project metadata.",
@@ -177,6 +185,7 @@ internal static class CliCommandLine
             command.Options.Add(item: Workspace);
             command.Options.Add(item: Project);
             command.Options.Add(item: Template);
+            command.Options.Add(item: TemplateSearchPath);
             command.Options.Add(item: Framework);
             command.Options.Add(item: Output);
             command.Options.Add(item: DryRun);
@@ -192,6 +201,7 @@ internal static class CliCommandLine
                 WorkspacePath: parseResult.GetValue(option: Workspace),
                 ProjectPath: parseResult.GetValue(option: Project),
                 TemplatePath: parseResult.GetValue(option: Template),
+                TemplateSearchPath: parseResult.GetValue(option: TemplateSearchPath),
                 Framework: parseResult.GetValue(option: Framework),
                 Output: (parseResult.GetValue(option: Output) ?? "text").ToLowerInvariant(),
                 DryRun: parseResult.GetValue(option: DryRun),

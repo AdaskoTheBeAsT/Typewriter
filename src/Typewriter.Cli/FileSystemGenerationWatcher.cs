@@ -60,6 +60,7 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
                 options.WorkspacePath,
                 options.ProjectPath,
                 options.TemplatePath,
+                options.TemplateSearchPath,
             }
             .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
             .Select(selector: ResolveWatchDirectory)
@@ -97,6 +98,11 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
     private bool ShouldWatchPath(string path)
     {
         if (string.IsNullOrWhiteSpace(value: path))
+        {
+            return false;
+        }
+
+        if (!_watchedExtensions.Contains(item: Path.GetExtension(path: path)))
         {
             return false;
         }
