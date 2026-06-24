@@ -75,6 +75,7 @@ public sealed class TypewriterPackage : AsyncPackage
             }
 
             _diagnosticReporter?.Dispose();
+            _saveListener?.Dispose();
             if (ReferenceEquals(objA: Current, objB: this))
             {
                 Current = null;

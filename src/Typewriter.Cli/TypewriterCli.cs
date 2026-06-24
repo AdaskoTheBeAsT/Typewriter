@@ -91,7 +91,8 @@ internal static class TypewriterCli
     {
         try
         {
-            using var watcher = FileSystemGenerationWatcher.Create(options: options);
+            var configuration = await CreateConfigurationAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            using var watcher = FileSystemGenerationWatcher.Create(options: options, configuration: configuration);
             await RunWatchedGenerationAsync(options: options, watcher: watcher, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
 
             while (!cancellationToken.IsCancellationRequested)

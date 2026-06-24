@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
@@ -14,9 +15,13 @@ internal static class TemplateRuntimeCompiler
 {
     private const string HostTypeFullName = "Typewriter.Engine.TemplateRuntime.Generated.TypewriterTemplateHost";
     private const string HostTypeName = "TypewriterTemplateHost";
+    private const int MaxCompiledTemplateCacheEntries = 128;
     private const int MaxRemoteLoadBytes = 1024 * 1024;
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(seconds: 1);
     private static readonly TimeSpan RemoteLoadTimeout = TimeSpan.FromSeconds(seconds: 30);
+    private static readonly ConcurrentDictionary<string, CompiledTemplateCacheEntry> CompiledTemplateCache = new(comparer: StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, int> CompiledTemplateCacheMissCounts = new(comparer: StringComparer.Ordinal);
+    private static readonly ConcurrentQueue<string> CompiledTemplateCacheOrder = new();
     private static readonly ConcurrentDictionary<string, RemoteLoadCacheEntry> RemoteLoadCache = new(comparer: StringComparer.OrdinalIgnoreCase);
 
     public static CompiledTemplateHelper? Compile(
@@ -38,40 +43,39 @@ internal static class TemplateRuntimeCompiler
             return null;
         }
 
-        var source = BuildSource(templatePath: template.Path, codeBlocks: template.CodeBlocks, diagnostics: diagnostics, referenceDirectives: out var referenceDirectives);
-        var resolver = new TemplateReferenceResolver(templatePath: template.Path, diagnostics: diagnostics);
-        var references = resolver.CreateReferences(referenceDirectives: referenceDirectives);
-        var syntaxTree = CSharpSyntaxTree.ParseText(
-            text: source,
-            options: CSharpParseOptions.Default.WithLanguageVersion(version: LanguageVersion.Preview),
-            path: template.Path,
-            encoding: Encoding.UTF8);
-        var compilation = CSharpCompilation.Create(
-            assemblyName: "TypewriterTemplate_" + Guid.NewGuid().ToString(format: "N"),
-            syntaxTrees: [syntaxTree],
-            references: references,
-            options: new CSharpCompilationOptions(
-                outputKind: OutputKind.DynamicallyLinkedLibrary,
-                optimizationLevel: OptimizationLevel.Debug,
-                nullableContextOptions: NullableContextOptions.Disable));
+        var cacheEntry = GetOrCompileCacheEntry(template: template, diagnostics: diagnostics);
+        return cacheEntry is null
+            ? null
+            : CreateHelperFromCacheEntry(
+                templatePath: template.Path,
+                metadata: metadata,
+                diagnostics: diagnostics,
+                defaults: defaults,
+                cacheEntry: cacheEntry);
+    }
 
-        using var assemblyStream = new MemoryStream();
+    internal static CompiledTemplateFactory? CompileFactory(
+        TemplateDocument template,
+        ICollection<GenerationDiagnostic> diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(argument: template);
+        ArgumentNullException.ThrowIfNull(argument: diagnostics);
 
-        // The embedded portable PDB keeps #line-mapped template positions available in
-        // runtime helper exception stack traces.
-        var emitResult = compilation.Emit(
-            peStream: assemblyStream,
-            options: new EmitOptions(debugInformationFormat: DebugInformationFormat.Embedded));
-        if (!emitResult.Success)
+        if (template.CodeBlocks.Count == 0)
         {
-            AddCompileDiagnostics(templatePath: template.Path, diagnostics: diagnostics, compileDiagnostics: emitResult.Diagnostics);
             return null;
         }
 
-        assemblyStream.Position = 0;
+        var cacheEntry = GetOrCompileCacheEntry(template: template, diagnostics: diagnostics);
+        if (cacheEntry is null)
+        {
+            return null;
+        }
+
         var assemblyLoadContext = new TemplateAssemblyLoadContext(
-            name: compilation.AssemblyName ?? "TypewriterTemplate",
-            referencePaths: references.Select(selector: reference => reference.Display));
+            name: cacheEntry.AssemblyName,
+            referencePaths: cacheEntry.ReferencePaths);
+        using var assemblyStream = new MemoryStream(buffer: cacheEntry.AssemblyBytes, writable: false);
         var assembly = assemblyLoadContext.LoadFromStream(assembly: assemblyStream);
         var hostType = assembly.GetType(name: HostTypeFullName, throwOnError: false);
         if (hostType is null)
@@ -88,11 +92,26 @@ internal static class TemplateRuntimeCompiler
             return null;
         }
 
+        return new CompiledTemplateFactory(
+            templatePath: template.Path,
+            hostType: hostType,
+            loadContext: assemblyLoadContext);
+    }
+
+    internal static CompiledTemplateHelper CreateHelper(
+        string templatePath,
+        ProjectMetadata metadata,
+        ICollection<GenerationDiagnostic> diagnostics,
+        TemplateRenderDefaults defaults,
+        Type hostType,
+        TemplateAssemblyLoadContext loadContext,
+        bool unloadLoadContextOnDispose)
+    {
         var settings = new Typewriter.Configuration.Settings
         {
-            TemplatePath = template.Path,
+            TemplatePath = templatePath,
             SolutionFullName = defaults.SolutionFullName,
-            Log = new TemplateDiagnosticsLog(templatePath: template.Path, diagnostics: diagnostics),
+            Log = new TemplateDiagnosticsLog(templatePath: templatePath, diagnostics: diagnostics),
         };
         settings.ApplyConfigurationDefaults(
             strictNullGeneration: defaults.StrictNullGeneration,
@@ -104,7 +123,227 @@ internal static class TemplateRuntimeCompiler
             host: host,
             adapterFactory: adapterFactory,
             settings: settings,
-            loadContext: assemblyLoadContext);
+            loadContext: loadContext,
+            unloadLoadContextOnDispose: unloadLoadContextOnDispose);
+    }
+
+    internal static int GetCompileCacheMissCountForTests(
+        TemplateDocument template,
+        ICollection<GenerationDiagnostic> diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(argument: template);
+        ArgumentNullException.ThrowIfNull(argument: diagnostics);
+
+        if (template.CodeBlocks.Count == 0)
+        {
+            return 0;
+        }
+
+        var source = BuildSource(templatePath: template.Path, codeBlocks: template.CodeBlocks, diagnostics: diagnostics, referenceDirectives: out var referenceDirectives);
+        var resolver = new TemplateReferenceResolver(templatePath: template.Path, diagnostics: diagnostics);
+        var references = resolver.CreateReferences(referenceDirectives: referenceDirectives);
+        var cacheKey = CreateCompiledTemplateCacheKey(source: source, references: references);
+        return CompiledTemplateCacheMissCounts.TryGetValue(key: cacheKey, value: out var count)
+            ? count
+            : 0;
+    }
+
+    internal static void ClearCompileCacheForTests()
+    {
+        CompiledTemplateCache.Clear();
+        CompiledTemplateCacheMissCounts.Clear();
+        while (CompiledTemplateCacheOrder.TryDequeue(result: out var cacheKey))
+        {
+            _ = cacheKey;
+        }
+    }
+
+    private static CompiledTemplateCacheEntry? GetOrCompileCacheEntry(
+        TemplateDocument template,
+        ICollection<GenerationDiagnostic> diagnostics)
+    {
+        var source = BuildSource(templatePath: template.Path, codeBlocks: template.CodeBlocks, diagnostics: diagnostics, referenceDirectives: out var referenceDirectives);
+        var resolver = new TemplateReferenceResolver(templatePath: template.Path, diagnostics: diagnostics);
+        var references = resolver.CreateReferences(referenceDirectives: referenceDirectives);
+        var cacheKey = CreateCompiledTemplateCacheKey(source: source, references: references);
+        if (!CompiledTemplateCache.TryGetValue(key: cacheKey, value: out var cacheEntry))
+        {
+            cacheEntry = CompileToCacheEntry(
+                templatePath: template.Path,
+                source: source,
+                references: references,
+                cacheKey: cacheKey,
+                diagnostics: diagnostics);
+            if (cacheEntry is null)
+            {
+                _ = CompiledTemplateCacheMissCounts.TryRemove(key: cacheKey, value: out _);
+                return null;
+            }
+
+            if (CompiledTemplateCache.TryAdd(key: cacheKey, value: cacheEntry))
+            {
+                CompiledTemplateCacheOrder.Enqueue(item: cacheKey);
+                TrimCompiledTemplateCache();
+            }
+            else
+            {
+                cacheEntry = CompiledTemplateCache[key: cacheKey];
+            }
+        }
+
+        return cacheEntry;
+    }
+
+    private static CompiledTemplateHelper? CreateHelperFromCacheEntry(
+        string templatePath,
+        ProjectMetadata metadata,
+        ICollection<GenerationDiagnostic> diagnostics,
+        TemplateRenderDefaults defaults,
+        CompiledTemplateCacheEntry cacheEntry)
+    {
+        var assemblyLoadContext = new TemplateAssemblyLoadContext(
+            name: cacheEntry.AssemblyName,
+            referencePaths: cacheEntry.ReferencePaths);
+        using var assemblyStream = new MemoryStream(buffer: cacheEntry.AssemblyBytes, writable: false);
+        var assembly = assemblyLoadContext.LoadFromStream(assembly: assemblyStream);
+        var hostType = assembly.GetType(name: HostTypeFullName, throwOnError: false);
+        if (hostType is null)
+        {
+            assemblyLoadContext.Unload();
+            diagnostics.Add(
+                item: new GenerationDiagnostic(
+                    File: templatePath,
+                    Line: null,
+                    Column: null,
+                    Severity: Typewriter.Abstractions.DiagnosticSeverity.Error,
+                    Message: "Compiled template host type was not found.",
+                    Code: DiagnosticCodes.TemplateParseError));
+            return null;
+        }
+
+        return CreateHelper(
+            templatePath: templatePath,
+            metadata: metadata,
+            diagnostics: diagnostics,
+            defaults: defaults,
+            hostType: hostType,
+            loadContext: assemblyLoadContext,
+            unloadLoadContextOnDispose: true);
+    }
+
+    private static CompiledTemplateCacheEntry? CompileToCacheEntry(
+        string templatePath,
+        string source,
+        IReadOnlyList<MetadataReference> references,
+        string cacheKey,
+        ICollection<GenerationDiagnostic> diagnostics)
+    {
+        CompiledTemplateCacheMissCounts.AddOrUpdate(key: cacheKey, addValue: 1, updateValueFactory: (_, count) => count + 1);
+        var syntaxTree = CSharpSyntaxTree.ParseText(
+            text: source,
+            options: CSharpParseOptions.Default.WithLanguageVersion(version: LanguageVersion.Preview),
+            path: templatePath,
+            encoding: Encoding.UTF8);
+        var assemblyName = "TypewriterTemplate_" + cacheKey[..32];
+        var compilation = CSharpCompilation.Create(
+            assemblyName: assemblyName,
+            syntaxTrees: [syntaxTree],
+            references: references,
+            options: new CSharpCompilationOptions(
+                outputKind: OutputKind.DynamicallyLinkedLibrary,
+                optimizationLevel: OptimizationLevel.Debug,
+                nullableContextOptions: NullableContextOptions.Disable));
+
+        using var assemblyStream = new MemoryStream();
+        var emitResult = compilation.Emit(
+            peStream: assemblyStream,
+            options: new EmitOptions(debugInformationFormat: DebugInformationFormat.Embedded));
+        if (!emitResult.Success)
+        {
+            AddCompileDiagnostics(templatePath: templatePath, diagnostics: diagnostics, compileDiagnostics: emitResult.Diagnostics);
+            return null;
+        }
+
+        return new CompiledTemplateCacheEntry(
+            AssemblyName: assemblyName,
+            AssemblyBytes: assemblyStream.ToArray(),
+            ReferencePaths: references.Select(selector: reference => reference.Display).ToArray());
+    }
+
+    private static string CreateCompiledTemplateCacheKey(
+        string source,
+        IReadOnlyList<MetadataReference> references)
+    {
+        using var hash = IncrementalHash.CreateHash(hashAlgorithm: HashAlgorithmName.SHA256);
+        AppendHashValue(hash: hash, value: source);
+        foreach (var fingerprint in references.Select(selector: CreateReferenceFingerprint).Order(comparer: StringComparer.Ordinal))
+        {
+            AppendHashValue(hash: hash, value: fingerprint);
+        }
+
+        return Convert.ToHexString(inArray: hash.GetHashAndReset());
+    }
+
+    private static string CreateReferenceFingerprint(MetadataReference reference)
+    {
+        var display = reference.Display ?? string.Empty;
+        var path = display;
+        long length = 0;
+        long lastWriteTicks = 0;
+        try
+        {
+            if (File.Exists(path: display))
+            {
+#pragma warning disable SCS0018
+                var file = new FileInfo(fileName: display);
+#pragma warning restore SCS0018
+                path = file.FullName;
+                length = file.Length;
+                lastWriteTicks = file.LastWriteTimeUtc.Ticks;
+            }
+        }
+        catch (IOException ex)
+        {
+            _ = ex;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _ = ex;
+        }
+
+        return string.Concat(
+            path,
+            "|",
+            reference.Properties.Kind,
+            "|",
+            string.Join(separator: ',', values: reference.Properties.Aliases),
+            "|",
+            reference.Properties.EmbedInteropTypes,
+            "|",
+            length.ToString(provider: CultureInfo.InvariantCulture),
+            "|",
+            lastWriteTicks.ToString(provider: CultureInfo.InvariantCulture));
+    }
+
+    private static void AppendHashValue(
+        IncrementalHash hash,
+        string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(s: value);
+        hash.AppendData(data: bytes);
+        hash.AppendData(data: [0]);
+    }
+
+    private static void TrimCompiledTemplateCache()
+    {
+        while (CompiledTemplateCache.Count > MaxCompiledTemplateCacheEntries
+            && CompiledTemplateCacheOrder.TryDequeue(result: out var cacheKey))
+        {
+            if (CompiledTemplateCache.TryRemove(key: cacheKey, value: out _))
+            {
+                _ = CompiledTemplateCacheMissCounts.TryRemove(key: cacheKey, value: out _);
+            }
+        }
     }
 
     private static object CreateHost(
@@ -692,6 +931,11 @@ internal static class TemplateRuntimeCompiler
     }
 
     private sealed record LoadDirective(string Path, string? CacheDuration);
+
+    private sealed record CompiledTemplateCacheEntry(
+        string AssemblyName,
+        byte[] AssemblyBytes,
+        IReadOnlyList<string?> ReferencePaths);
 
     private sealed record RemoteLoadCacheEntry(string Source, DateTimeOffset FetchedAtUtc);
 }

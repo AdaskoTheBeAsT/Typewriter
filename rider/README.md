@@ -18,7 +18,7 @@ This is the Rider frontend layer: a Kotlin/IntelliJ Platform plugin for UI, acti
   - Generate Current Template
   - Generate All Templates
   - Validate Current Template
-- Adds Settings | Typewriter project settings for CLI path, CLI arguments, workspace/project/template paths, framework, all-project generation, and save-time generation/validation.
+- Adds Settings | Typewriter project settings for CLI path, CLI arguments, workspace/project/template paths, framework, all-project generation, and save-time generation/validation for files matched by `typewriter.json` `inputExtensions`.
 - Runs the Typewriter CLI directly, using the local repository CLI project when opened from this source tree and falling back to `typewriter` on `PATH`.
 
 ## Build
