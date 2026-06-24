@@ -35,6 +35,7 @@ internal sealed class TypewriterSaveListener : IVsRunningDocTableEvents3, IDispo
 
     private static readonly HashSet<string> TemplateExtensions = new(comparer: StringComparer.OrdinalIgnoreCase)
     {
+        ".tst",
     };
 
     private readonly object _sync = new();

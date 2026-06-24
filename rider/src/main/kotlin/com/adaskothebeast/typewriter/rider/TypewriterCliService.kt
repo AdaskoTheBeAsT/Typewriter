@@ -1,5 +1,7 @@
 package com.adaskothebeast.typewriter.rider
 
+import com.google.gson.JsonParseException
+import com.google.gson.JsonParser
 import com.intellij.execution.ExecutionException
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.CapturingProcessHandler
@@ -15,6 +17,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.Alarm
 import com.intellij.util.execution.ParametersListUtil
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -47,6 +50,10 @@ class TypewriterCliService(private val project: Project) {
 
     private fun createSaveRequest(file: VirtualFile): SaveRequest? {
         val settings = project.service<TypewriterSettingsState>().settings
+        if (!settings.generateOnSave && !settings.validateOnSave) {
+            return null
+        }
+
         val extension = normalizeExtension(file.extension ?: return null).lowercase()
         if (extension !in readConfiguredInputExtensions(file.path)) {
             return null
@@ -354,19 +361,28 @@ class TypewriterCliService(private val project: Project) {
 
     private fun readInputExtensions(configurationPath: Path): Set<String>? {
         return try {
-            val text = Files.readString(configurationPath)
-            val body = Regex(
-                pattern = """"inputExtensions"\s*:\s*\[(.*?)]""",
-                options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
-            ).find(text)?.groupValues?.get(1) ?: return null
-            val extensions = Regex(pattern = """"((?:\\.|[^"\\])*)"""")
-                .findAll(body)
-                .map { normalizeExtension(unescapeJsonString(it.groupValues[1])) }
+            val root = Files.newBufferedReader(configurationPath).use(JsonParser::parseReader)
+            if (!root.isJsonObject) {
+                return null
+            }
+
+            val inputExtensions = root.asJsonObject
+                .entrySet()
+                .firstOrNull { it.key.equals("inputExtensions", ignoreCase = true) }
+                ?.value
+                ?.takeIf { it.isJsonArray }
+                ?: return null
+            val extensions = inputExtensions.asJsonArray
+                .asSequence()
+                .filter { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                .map { normalizeExtension(it.asString) }
                 .filter { it.isNotBlank() }
                 .toSet()
 
             extensions.ifEmpty { DefaultInputExtensions }
-        } catch (_: RuntimeException) {
+        } catch (_: IOException) {
+            null
+        } catch (_: JsonParseException) {
             null
         }
     }
@@ -379,11 +395,6 @@ class TypewriterCliService(private val project: Project) {
             else -> ".$trimmed"
         }
     }
-
-    private fun unescapeJsonString(value: String): String =
-        value
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\")
 
     private fun summarize(stdout: String, stderr: String, timeout: Boolean): String {
         val prefix = if (timeout) "Typewriter CLI timed out.\n" else ""

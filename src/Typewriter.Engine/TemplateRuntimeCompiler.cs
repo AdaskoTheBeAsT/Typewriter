@@ -176,6 +176,7 @@ internal static class TemplateRuntimeCompiler
                 diagnostics: diagnostics);
             if (cacheEntry is null)
             {
+                _ = CompiledTemplateCacheMissCounts.TryRemove(key: cacheKey, value: out _);
                 return null;
             }
 
@@ -338,7 +339,10 @@ internal static class TemplateRuntimeCompiler
         while (CompiledTemplateCache.Count > MaxCompiledTemplateCacheEntries
             && CompiledTemplateCacheOrder.TryDequeue(result: out var cacheKey))
         {
-            _ = CompiledTemplateCache.TryRemove(key: cacheKey, value: out _);
+            if (CompiledTemplateCache.TryRemove(key: cacheKey, value: out _))
+            {
+                _ = CompiledTemplateCacheMissCounts.TryRemove(key: cacheKey, value: out _);
+            }
         }
     }
 
