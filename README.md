@@ -64,6 +64,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.5.0](#450)
     - [4.4.0](#440)
     - [4.3.0](#430)
     - [4.2.0](#420)
@@ -834,6 +835,11 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.5.0
+
+- **Dramatically improved generation performance**, especially for watch mode and IDE generate-on-save workflows. Typewriter now reuses persistent generation processes, scopes template discovery to the owning project, and caches parsed templates, project metadata indexes, glob matchers, generated-file contents, type mappings, and loaded dependencies.
+- Reduced unnecessary rendering, formatting, diagnostics, project traversal, and disk I/O. Editor integrations use the faster persistent path when available and retain the CLI as a compatibility fallback.
 
 ### 4.4.0
 

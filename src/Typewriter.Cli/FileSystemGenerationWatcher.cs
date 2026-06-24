@@ -116,7 +116,7 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
             return false;
         }
 
-        return _watchedExtensions.Contains(item: Path.GetExtension(path: fullPath));
+        return true;
     }
 
     private FileSystemWatcher CreateWatcher(string root)
