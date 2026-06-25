@@ -2,7 +2,7 @@
   "name": "typewriter-vscode",
   "displayName": "Typewriter",
   "description": "VS Code adapter for Typewriter .tst templates.",
-  "version": "3.0.0",
+  "version": "4.5.1",
   "publisher": "adaskothebeast",
   "license": "MIT",
   "icon": "images/icon.png",

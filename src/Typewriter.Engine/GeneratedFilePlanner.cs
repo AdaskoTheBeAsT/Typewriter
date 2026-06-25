@@ -62,17 +62,6 @@ public sealed class GeneratedFilePlanner
         diagnostic = null;
 
         var resolvedOutputPath = ResolveOutputPath(template: template, configuredOutputPath: outputPath, fileNameConvention: fileNameConvention);
-        if (!IsInsideWorkspace(workspacePath: workspace.RootPath, outputPath: resolvedOutputPath))
-        {
-            diagnostic = new GenerationDiagnostic(
-                File: template.Path,
-                Line: null,
-                Column: null,
-                Severity: DiagnosticSeverity.Error,
-                Message: $"Output path is outside the workspace: {resolvedOutputPath}.",
-                Code: DiagnosticCodes.OutputPathOutsideWorkspace);
-            return false;
-        }
 
         if (string.Equals(
             a: Path.GetFullPath(path: template.Path),
@@ -143,24 +132,6 @@ public sealed class GeneratedFilePlanner
             : Path.Combine(path1: templateDirectory, path2: output);
 
         return Path.GetFullPath(path: combined);
-    }
-
-    private static bool IsInsideWorkspace(
-        string workspacePath,
-        string outputPath)
-    {
-        var root = Path.GetFullPath(path: workspacePath);
-        if (File.Exists(path: root))
-        {
-            root = Path.GetDirectoryName(path: root) ?? root;
-        }
-
-        if (!root.EndsWith(value: Path.DirectorySeparatorChar))
-        {
-            root += Path.DirectorySeparatorChar;
-        }
-
-        return outputPath.StartsWith(value: root, comparisonType: StringComparison.OrdinalIgnoreCase);
     }
 
     private static string EnsureGeneratedHeader(string content)
