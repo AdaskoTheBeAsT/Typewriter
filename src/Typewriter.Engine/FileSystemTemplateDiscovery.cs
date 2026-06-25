@@ -31,9 +31,11 @@ public sealed class FileSystemTemplateDiscovery : ITemplateDiscovery
         var includePatterns = request.Configuration.Templates.Count == 0
             ? TypewriterConfiguration.Default.Templates
             : request.Configuration.Templates;
-        var files = Directory.EnumerateFiles(path: root, searchPattern: "*", searchOption: SearchOption.AllDirectories)
-            .Where(predicate: path => includePatterns.Any(predicate: pattern => PathGlob.IsMatch(root: root, path: path, pattern: pattern)))
-            .Where(predicate: path => !IsExcluded(root: root, path: path, excludePatterns: request.Configuration.Exclude))
+        var includeMatchers = includePatterns.Select(selector: pattern => PathGlob.CreateMatcher(root: root, pattern: pattern)).ToArray();
+        var excludeMatchers = request.Configuration.Exclude.Select(selector: pattern => PathGlob.CreateMatcher(root: root, pattern: pattern)).ToArray();
+        var files = EnumerateFiles(root: root, cancellationToken: cancellationToken)
+            .Where(predicate: path => includeMatchers.Any(predicate: matcher => matcher.IsMatch(path: path)))
+            .Where(predicate: path => !IsExcluded(path: path, excludeMatchers: excludeMatchers))
             .Order(comparer: StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -50,20 +52,45 @@ public sealed class FileSystemTemplateDiscovery : ITemplateDiscovery
         return templates;
     }
 
-    private static bool IsExcluded(
+    private static IEnumerable<string> EnumerateFiles(
         string root,
+        CancellationToken cancellationToken)
+    {
+        var pending = new Stack<string>();
+        pending.Push(item: root);
+        while (pending.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var directory = pending.Pop();
+            foreach (var childDirectory in Directory.EnumerateDirectories(path: directory)
+                         .Where(predicate: childDirectory => !IsIgnoredDirectoryName(name: Path.GetFileName(path: childDirectory))))
+            {
+                pending.Push(item: childDirectory);
+            }
+
+            foreach (var file in Directory.EnumerateFiles(path: directory))
+            {
+                yield return file;
+            }
+        }
+    }
+
+    private static bool IsIgnoredDirectoryName(string name) =>
+        name.Equals(value: ".git", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsExcluded(
         string path,
-        IReadOnlyList<string> excludePatterns)
+        IReadOnlyList<PathGlobMatcher> excludeMatchers)
     {
         var segments = Path.GetFullPath(path: path)
             .Split(
                 separator: [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
                 options: StringSplitOptions.RemoveEmptyEntries);
 
-        return segments.Any(
-            predicate: segment => segment.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
-                                  || segment.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase)
-                                  || segment.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase))
-            || excludePatterns.Any(predicate: pattern => PathGlob.IsMatch(root: root, path: path, pattern: pattern));
+        return segments.Any(predicate: IsIgnoredDirectoryName)
+            || excludeMatchers.Any(predicate: matcher => matcher.IsMatch(path: path));
     }
 }

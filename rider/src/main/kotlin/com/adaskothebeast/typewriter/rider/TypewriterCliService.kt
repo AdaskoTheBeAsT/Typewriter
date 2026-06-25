@@ -1,5 +1,6 @@
 package com.adaskothebeast.typewriter.rider
 
+import com.adaskothebeast.typewriter.rider.TypewriterLanguageServerClient.PersistentGenerationRequest
 import com.google.gson.JsonParseException
 import com.google.gson.JsonParser
 import com.intellij.execution.ExecutionException
@@ -61,16 +62,16 @@ class TypewriterCliService(private val project: Project) {
 
         if (extension == ".tst") {
             return when {
-                settings.generateOnSave -> SaveRequest("generate", "Generate saved Typewriter template", file.path, allTemplates = false, projectPath = null)
-                settings.validateOnSave -> SaveRequest("validate", "Validate saved Typewriter template", file.path, allTemplates = false, projectPath = null)
+                settings.generateOnSave -> SaveRequest("generate", "Generate saved Typewriter template", file.path, allTemplates = false, projectPath = null, projectScoped = false)
+                settings.validateOnSave -> SaveRequest("validate", "Validate saved Typewriter template", file.path, allTemplates = false, projectPath = null, projectScoped = false)
                 else -> null
             }
         }
 
         val projectPath = findNearestProjectPathForInput(file)
         return when {
-            settings.generateOnSave -> SaveRequest("generate", "Generate Typewriter templates after save", templatePath = null, allTemplates = true, projectPath = projectPath)
-            settings.validateOnSave -> SaveRequest("validate", "Validate Typewriter templates after save", templatePath = null, allTemplates = true, projectPath = projectPath)
+            settings.generateOnSave -> SaveRequest("generate", "Generate Typewriter templates after save", templatePath = null, allTemplates = true, projectPath = projectPath, projectScoped = true)
+            settings.validateOnSave -> SaveRequest("validate", "Validate Typewriter templates after save", templatePath = null, allTemplates = true, projectPath = projectPath, projectScoped = true)
             else -> null
         }
     }
@@ -103,7 +104,7 @@ class TypewriterCliService(private val project: Project) {
                     current
                 } ?: return
 
-                runCli(request.command, request.title, request.templatePath, request.allTemplates, request.projectPath)
+                runCli(request.command, request.title, request.templatePath, request.allTemplates, request.projectPath, request.projectScoped)
             }
         } finally {
             synchronized(saveLock) {
@@ -150,11 +151,12 @@ class TypewriterCliService(private val project: Project) {
         templatePath: String?,
         allTemplates: Boolean,
         projectPathOverride: String? = null,
+        projectScoped: Boolean = false,
     ) {
         object : Task.Backgroundable(project, "Typewriter: $title", false) {
             override fun run(indicator: ProgressIndicator) {
                 indicator.text = "Running Typewriter CLI"
-                runCli(command, title, templatePath, allTemplates, projectPathOverride)
+                runCli(command, title, templatePath, allTemplates, projectPathOverride, projectScoped)
             }
         }.queue()
     }
@@ -165,6 +167,7 @@ class TypewriterCliService(private val project: Project) {
         templatePath: String?,
         allTemplates: Boolean,
         projectPathOverride: String? = null,
+        projectScoped: Boolean = false,
     ) {
         val settings = project.service<TypewriterSettingsState>().settings
         val workspacePath = resolveWorkspacePath(templatePath ?: projectPathOverride, settings.workspacePath)
@@ -175,6 +178,35 @@ class TypewriterCliService(private val project: Project) {
 
         try {
             val workingDirectory = getPathBase(workspacePath).toString()
+            val projectPath = resolveOptionalPath(settings.projectPath, getPathBase(workspacePath).toString()) ?: projectPathOverride
+            val templateSearchPath = if (projectScoped) {
+                projectPath?.let { Paths.get(it).parent?.toString() }
+            } else {
+                null
+            }
+            val persistentResult = project.service<TypewriterLanguageServerClient>().tryGenerate(
+                request = PersistentGenerationRequest(
+                    command = command,
+                    workspacePath = workspacePath,
+                    projectPath = projectPath,
+                    templatePath = if (allTemplates) null else templatePath,
+                    templateSearchPath = templateSearchPath,
+                    framework = settings.framework.ifBlank { null },
+                    allProjects = allTemplates && settings.allProjects,
+                ),
+                workingDirectory = workingDirectory,
+            )
+            if (persistentResult != null) {
+                val success = persistentResult.get("success")?.asBoolean == true
+                val message = summarizePersistentResult(persistentResult)
+                notify(
+                    title,
+                    message.ifBlank { "Typewriter completed." },
+                    if (success) NotificationType.INFORMATION else NotificationType.WARNING,
+                )
+                return
+            }
+
             val invocation = resolveCliInvocation(settings, workingDirectory)
             val arguments = invocation.arguments.toMutableList()
             arguments += command
@@ -183,7 +215,6 @@ class TypewriterCliService(private val project: Project) {
             arguments += "--output"
             arguments += "text"
 
-            val projectPath = resolveOptionalPath(settings.projectPath, getPathBase(workspacePath).toString()) ?: projectPathOverride
             if (!projectPath.isNullOrBlank()) {
                 arguments += "--project"
                 arguments += projectPath
@@ -192,6 +223,11 @@ class TypewriterCliService(private val project: Project) {
             if (!templatePath.isNullOrBlank() && !allTemplates) {
                 arguments += "--template"
                 arguments += templatePath
+            }
+
+            if (!templateSearchPath.isNullOrBlank()) {
+                arguments += "--template-search-path"
+                arguments += templateSearchPath
             }
 
             if (settings.framework.isNotBlank()) {
@@ -407,6 +443,29 @@ class TypewriterCliService(private val project: Project) {
         }
     }
 
+    private fun summarizePersistentResult(result: com.google.gson.JsonObject): String {
+        val lines = mutableListOf<String>()
+        result.getAsJsonArray("generatedFiles")?.forEach { element ->
+            val file = element.asJsonObject
+            val status = if (file.get("changed")?.asBoolean == true) "updated" else "unchanged"
+            lines += "$status: ${file.get("path")?.asString.orEmpty()}"
+        }
+        result.getAsJsonArray("diagnostics")?.forEach { element ->
+            val diagnostic = element.asJsonObject
+            val severity = diagnostic.get("severity")?.asString ?: "diagnostic"
+            val code = diagnostic.get("code")?.takeUnless { it.isJsonNull }?.asString?.let { " $it" }.orEmpty()
+            lines += "$severity$code: ${diagnostic.get("message")?.asString.orEmpty()}"
+        }
+
+        if (lines.isEmpty()) {
+            val duration = result.get("durationMs")?.asLong
+            return if (duration == null) "Typewriter completed." else "Typewriter completed in $duration ms."
+        }
+
+        val summary = lines.joinToString("\n")
+        return if (summary.length <= MaxNotificationLength) summary else summary.take(MaxNotificationLength) + "..."
+    }
+
     private fun notify(title: String, message: String, type: NotificationType) {
         NotificationGroupManager.getInstance()
             .getNotificationGroup(NotificationGroupId)
@@ -421,6 +480,7 @@ class TypewriterCliService(private val project: Project) {
         val templatePath: String?,
         val allTemplates: Boolean,
         val projectPath: String?,
+        val projectScoped: Boolean,
     ) {
         companion object {
             fun merge(existing: SaveRequest?, incoming: SaveRequest): SaveRequest =

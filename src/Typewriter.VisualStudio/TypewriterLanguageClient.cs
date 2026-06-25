@@ -14,16 +14,19 @@ using Microsoft.VisualStudio.LanguageServer.Client;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
 using Microsoft.VisualStudio.Utilities;
+using StreamJsonRpc;
 
 namespace Typewriter.VisualStudio;
 
 [Export(contractType: typeof(ILanguageClient))]
 [ContentType(name: TypewriterEditorContentTypes.ContentTypeName)]
 [Name(name: "Typewriter Language Server")]
-internal sealed class TypewriterLanguageClient : ILanguageClient
+internal sealed class TypewriterLanguageClient : ILanguageClient, ILanguageClientCustomMessage2
 {
+    private static TypewriterLanguageClient? _activeClient;
     private TypewriterLanguageServerContext? _context;
     private System.Diagnostics.Process? _process;
+    private JsonRpc? _rpc;
 
     public event AsyncEventHandler<EventArgs>? StartAsync;
 
@@ -38,6 +41,10 @@ internal sealed class TypewriterLanguageClient : ILanguageClient
     public IEnumerable<string> FilesToWatch => ["**/*.tst", "**/*.cs", "**/*.csproj"];
 
     public bool ShowNotificationOnInitializeFailed => true;
+
+    public object? MiddleLayer => null;
+
+    public object? CustomMessageTarget => null;
 
     public async Task OnLoadedAsync()
     {
@@ -54,6 +61,52 @@ internal sealed class TypewriterLanguageClient : ILanguageClient
     {
         ActivityLog.TryLogInformation(source: "Typewriter", message: "Typewriter language server initialized.");
         return Task.CompletedTask;
+    }
+
+    public Task AttachForCustomMessageAsync(JsonRpc rpc)
+    {
+        _rpc = rpc;
+        _activeClient = this;
+        rpc.Disconnected += (_, _) =>
+        {
+            if (ReferenceEquals(objA: _activeClient, objB: this))
+            {
+                _activeClient = null;
+            }
+
+            _rpc = null;
+        };
+        return Task.CompletedTask;
+    }
+
+    internal static async Task<CliResult?> TryGenerateAsync(
+        TypewriterGenerationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var rpc = _activeClient?._rpc;
+        if (rpc is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await rpc.InvokeWithParameterObjectAsync<CliResult>(
+                targetName: "typewriter/generate",
+                argument: request,
+                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            ActivityLog.TryLogInformation(
+                source: "Typewriter",
+                message: "Persistent generation unavailable; falling back to the CLI: " + exception.Message);
+            return null;
+        }
     }
 
     public async Task<Connection?> ActivateAsync(CancellationToken token)
@@ -151,7 +204,7 @@ internal sealed class TypewriterLanguageClient : ILanguageClient
             EnableRaisingEvents = true,
         };
 
-    private static async Task DrainErrorAsync(System.Diagnostics.Process process)
+    internal static async Task DrainErrorAsync(System.Diagnostics.Process process)
     {
         try
         {
@@ -175,7 +228,7 @@ internal sealed class TypewriterLanguageClient : ILanguageClient
         }
     }
 
-    private static CliInvocation ResolveLanguageServerInvocation(
+    internal static CliInvocation ResolveLanguageServerInvocation(
         TypewriterOptions options,
         string workspacePath)
     {
@@ -432,6 +485,12 @@ internal sealed class TypewriterLanguageClient : ILanguageClient
 
     private void DisposeProcess()
     {
+        if (ReferenceEquals(objA: _activeClient, objB: this))
+        {
+            _activeClient = null;
+        }
+
+        _rpc = null;
         var process = _process;
         _process = null;
         if (process is null)

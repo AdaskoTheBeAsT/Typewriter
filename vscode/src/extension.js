@@ -99,6 +99,7 @@ function createSaveRequest(document) {
             resourceUri: document.uri,
             allTemplates: true,
             projectPath: findNearestProjectPathForInput(document.uri.fsPath),
+            projectScoped: true,
         };
     }
 
@@ -108,6 +109,7 @@ function createSaveRequest(document) {
             resourceUri: document.uri,
             allTemplates: true,
             projectPath: findNearestProjectPathForInput(document.uri.fsPath),
+            projectScoped: true,
         };
     }
 
@@ -168,6 +170,7 @@ async function executeSaveRequest(context, request) {
         allTemplates: request.allTemplates,
         resourceUri: request.resourceUri,
         projectPath: request.projectPath,
+        projectScoped: request.projectScoped,
     });
 }
 
@@ -270,6 +273,7 @@ async function executeCliCommand(context, command, templatePath, options = {}) {
     const configuration = getConfiguration(templatePath ? vscode.Uri.file(templatePath) : options.resourceUri);
     const args = buildTypewriterArguments(command, workspacePath, templatePath, configuration, options);
     const invocation = resolveCliInvocation(context, workingDirectory, configuration);
+    const generationRequest = buildGenerationRequest(command, workspacePath, templatePath, configuration, options);
 
     await vscode.window.withProgress(
         {
@@ -278,11 +282,17 @@ async function executeCliCommand(context, command, templatePath, options = {}) {
             cancellable: false,
         },
         async () => {
-            outputChannel.appendLine(formatCommand(invocation.command, invocation.args.concat(args)));
-            const result = await runProcess(invocation.command, invocation.args.concat(args), workingDirectory);
-            writeProcessOutput(result);
+            const persistentPayload = await tryRunPersistentGeneration(generationRequest);
+            let payload = persistentPayload;
+            let exitCode = persistentPayload ? 0 : undefined;
+            if (!persistentPayload) {
+                outputChannel.appendLine(formatCommand(invocation.command, invocation.args.concat(args)));
+                const result = await runProcess(invocation.command, invocation.args.concat(args), workingDirectory);
+                writeProcessOutput(result);
+                payload = parseCliPayload(result.stdout);
+                exitCode = result.exitCode;
+            }
 
-            const payload = parseCliPayload(result.stdout);
             if (payload) {
                 publishDiagnostics(payload, workingDirectory);
                 writeResultSummary(payload);
@@ -290,7 +300,7 @@ async function executeCliCommand(context, command, templatePath, options = {}) {
                 diagnostics.clear();
             }
 
-            if (result.exitCode === 0 && payload?.success !== false) {
+            if (exitCode === 0 && payload?.success !== false) {
                 const generated = Array.isArray(payload?.generatedFiles) ? payload.generatedFiles.length : 0;
                 vscode.window.setStatusBarMessage(
                     generated > 0 ? `Typewriter generated ${generated} file(s).` : "Typewriter completed.",
@@ -318,6 +328,11 @@ function buildTypewriterArguments(command, workspacePath, templatePath, configur
     const projectPath = resolveOptionalPath(configuration.get("projectPath"), getPathBase(workspacePath)) || options.projectPath;
     if (projectPath) {
         args.push("--project", projectPath);
+    }
+
+    const templateSearchPath = options.projectScoped && projectPath ? path.dirname(projectPath) : undefined;
+    if (templateSearchPath) {
+        args.push("--template-search-path", templateSearchPath);
     }
 
     if (templatePath && !options.allTemplates) {
@@ -822,6 +837,36 @@ function createTemplateFallbackCompletions(includeDollar) {
         item.insertText = new vscode.SnippetString(`${includeDollar ? "$" : ""}${insertText}`);
         return item;
     });
+}
+
+async function tryRunPersistentGeneration(request) {
+    const client = languageClient;
+    if (!client) {
+        return undefined;
+    }
+
+    try {
+        outputChannel.appendLine("> Typewriter language server: typewriter/generate");
+        return await client.sendRequest("typewriter/generate", request);
+    } catch (error) {
+        outputChannel.appendLine(`Persistent generation unavailable; falling back to the CLI: ${error.message ?? error}`);
+        return undefined;
+    }
+}
+
+function buildGenerationRequest(command, workspacePath, templatePath, configuration, options) {
+    const projectPath = resolveOptionalPath(configuration.get("projectPath"), getPathBase(workspacePath)) || options.projectPath;
+    const templateSearchPath = options.projectScoped && projectPath ? path.dirname(projectPath) : undefined;
+    const framework = configuration.get("framework");
+    return {
+        command,
+        workspacePath,
+        projectPath,
+        templatePath: templatePath && !options.allTemplates ? templatePath : undefined,
+        templateSearchPath,
+        framework: typeof framework === "string" && framework.trim() ? framework.trim() : undefined,
+        allProjects: Boolean(options.allTemplates && configuration.get("allProjects", false)),
+    };
 }
 
 function createCSharpFallbackCompletions(text) {

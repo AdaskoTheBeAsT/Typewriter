@@ -9,7 +9,8 @@ VS Code adapter for Typewriter `.tst` templates, backed by the Typewriter CLI an
 - Provides `Typewriter: Generate Current Template`.
 - Provides `Typewriter: Generate All Templates`.
 - Provides `Typewriter: Validate Current Template`.
-- Runs the Typewriter CLI with JSON output and publishes diagnostics to the Problems panel.
+- Reuses the active language-server process for generation and validation, with CLI fallback, and publishes diagnostics to the Problems panel.
+- Restricts source-file save generation to templates under the owning C# project.
 - Starts the Typewriter language server for live `.tst` diagnostics, completion, hover, definition, and semantic highlighting support.
 - Provides semantic highlighting and basic context-aware completions for Typewriter template expressions, C# helper blocks, and TypeScript output regions.
 - Provides fallback Ctrl+Space completions when the language server is unavailable or still starting.

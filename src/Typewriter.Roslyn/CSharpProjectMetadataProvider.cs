@@ -2,7 +2,10 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
+using System.Security.Cryptography;
+using System.Text;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -16,6 +19,9 @@ namespace Typewriter.Roslyn;
 
 public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 {
+    private static readonly ConcurrentDictionary<ProjectMetadataCacheKey, ProjectMetadataCacheEntry> MetadataCache = [];
+    private static readonly ConcurrentBag<HashSet<ITypeSymbol>> TypeReferenceVisitedSymbolSets = [];
+    private static readonly ConditionalWeakTable<ISymbol, CachedDocComment> DocCommentCache = [];
     private readonly IProjectWorkspaceLoader _projectLoader;
 
     public CSharpProjectMetadataProvider()
@@ -72,6 +78,17 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         var projectPath = Path.GetFullPath(path: project.ProjectPath);
         if (loadedProjects.TryGetValue(key: projectPath, value: out var cachedResult))
         {
+            return cachedResult;
+        }
+
+        var metadataCacheKey = new ProjectMetadataCacheKey(
+            ProjectPath: projectPath,
+            WorkspacePath: Path.GetFullPath(path: project.WorkspacePath),
+            TargetFramework: project.TargetFramework ?? string.Empty,
+            RunFullDiagnostics: project.RunFullDiagnostics);
+        if (TryGetCachedResult(cacheKey: metadataCacheKey, result: out cachedResult))
+        {
+            loadedProjects[key: projectPath] = cachedResult;
             return cachedResult;
         }
 
@@ -136,18 +153,21 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             projectPath: projectPath,
             loadedProject: loadedProject,
             projectReferences: projectReferences,
+            runFullDiagnostics: project.RunFullDiagnostics,
             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        var result = new ProjectMetadataBuildResult(
+            Metadata: MergeProjectMetadata(
+                project: currentProject.Metadata,
+                referencedProjects: referencedProjects.Select(selector: reference => reference.Metadata).ToArray()),
+            Compilation: currentProject.Compilation,
+            CompilationReferences: CreateCompilationReferences(
+                projectPath: projectPath,
+                compilation: currentProject.Compilation,
+                referencedProjects: referencedProjects));
+        AddCachedResult(cacheKey: metadataCacheKey, result: result);
         return CacheResult(
             projectPath: projectPath,
-            result: new ProjectMetadataBuildResult(
-                Metadata: MergeProjectMetadata(
-                    project: currentProject.Metadata,
-                    referencedProjects: referencedProjects.Select(selector: reference => reference.Metadata).ToArray()),
-                Compilation: currentProject.Compilation,
-                CompilationReferences: CreateCompilationReferences(
-                    projectPath: projectPath,
-                    compilation: currentProject.Compilation,
-                    referencedProjects: referencedProjects)),
+            result: result,
             loadedProjects: loadedProjects,
             loadingProjects: loadingProjects);
     }
@@ -157,6 +177,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         string projectPath,
         ProjectLoadResult loadedProject,
         IReadOnlyList<MetadataReference> projectReferences,
+        bool runFullDiagnostics,
         CancellationToken cancellationToken)
 #pragma warning restore MA0051 // Method is too long
     {
@@ -195,13 +216,17 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             parseOptions: parseOptions,
             cancellationToken: cancellationToken,
             diagnostics: out var generatorDiagnostics);
-        var diagnostics = compilation.GetDiagnostics(cancellationToken: cancellationToken)
-            .Concat(second: generatorDiagnostics)
+        var diagnostics = GetCompilationDiagnostics(
+                compilation: compilation,
+                generatorDiagnostics: generatorDiagnostics,
+                runFullDiagnostics: runFullDiagnostics,
+                cancellationToken: cancellationToken)
             .Where(predicate: diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .Select(selector: ToGenerationDiagnostic)
             .ToArray();
 
-        var symbolMetadata = GetSourceTypeSymbols(compilation: compilation, syntaxTrees: syntaxTrees, cancellationToken: cancellationToken)
+        var sourceSymbols = GetSourceSymbols(compilation: compilation, syntaxTrees: syntaxTrees, cancellationToken: cancellationToken);
+        var symbolMetadata = sourceSymbols.Types
             .Select(
                 selector: symbol => new
                 {
@@ -211,7 +236,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 })
             .Where(predicate: item => item.HasMetadata)
             .ToArray();
-        var delegateMetadata = GetSourceDelegateSymbols(compilation: compilation, syntaxTrees: syntaxTrees, cancellationToken: cancellationToken)
+        var delegateMetadata = sourceSymbols.Delegates
             .Select(
                 selector: symbol => new
                 {
@@ -319,6 +344,50 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             if (seenProjectPaths.Add(item: referenceProjectPath))
             {
                 references.Add(item: new ProjectCompilationReference(ProjectPath: referenceProjectPath, Compilation: reference.Compilation));
+            }
+        }
+    }
+
+    private static bool TryGetCachedResult(
+        ProjectMetadataCacheKey cacheKey,
+        out ProjectMetadataBuildResult result)
+    {
+        if (MetadataCache.TryGetValue(key: cacheKey, value: out var entry)
+            && entry.Fingerprint.IsCurrent())
+        {
+            result = entry.Result;
+            return true;
+        }
+
+        _ = MetadataCache.TryRemove(key: cacheKey, value: out _);
+        result = null!;
+        return false;
+    }
+
+    private static void AddCachedResult(
+        ProjectMetadataCacheKey cacheKey,
+        ProjectMetadataBuildResult result)
+    {
+        if (result.Metadata.Diagnostics.Any(predicate: diagnostic => diagnostic.Severity == Typewriter.Abstractions.DiagnosticSeverity.Error))
+        {
+            return;
+        }
+
+        MetadataCache[key: cacheKey] = new ProjectMetadataCacheEntry(
+            Result: result,
+            Fingerprint: ProjectMetadataFingerprint.Create(result: result));
+        TrimMetadataCache();
+    }
+
+    private static void TrimMetadataCache()
+    {
+        const int MaxEntries = 32;
+        while (MetadataCache.Count > MaxEntries)
+        {
+            var key = MetadataCache.Keys.FirstOrDefault();
+            if (key is null || !MetadataCache.TryRemove(key: key, value: out _))
+            {
+                return;
             }
         }
     }
@@ -574,58 +643,62 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         }
     }
 
-    private static IEnumerable<INamedTypeSymbol> GetSourceTypeSymbols(
+    private static IEnumerable<Diagnostic> GetCompilationDiagnostics(
+        CSharpCompilation compilation,
+        ImmutableArray<Diagnostic> generatorDiagnostics,
+        bool runFullDiagnostics,
+        CancellationToken cancellationToken)
+    {
+        return runFullDiagnostics
+            ? compilation.GetDiagnostics(cancellationToken: cancellationToken).Concat(second: generatorDiagnostics)
+            : compilation.GetParseDiagnostics(cancellationToken: cancellationToken)
+                .Concat(second: compilation.GetDeclarationDiagnostics(cancellationToken: cancellationToken))
+                .Concat(second: generatorDiagnostics);
+    }
+
+    private static SourceSymbols GetSourceSymbols(
         CSharpCompilation compilation,
         IEnumerable<SyntaxTree> syntaxTrees,
         CancellationToken cancellationToken)
     {
-        return syntaxTrees
-            .SelectMany(selector: tree => GetSourceTypeSymbols(compilation: compilation, syntaxTree: tree, cancellationToken: cancellationToken))
-            .GroupBy(keySelector: symbol => GetFullName(symbol: symbol) + "`" + symbol.Arity, comparer: StringComparer.Ordinal)
-            .Select(selector: group => group.First());
-    }
-
-    private static IEnumerable<INamedTypeSymbol> GetSourceTypeSymbols(
-        CSharpCompilation compilation,
-        SyntaxTree syntaxTree,
-        CancellationToken cancellationToken)
-    {
-        var semanticModel = compilation.GetSemanticModel(syntaxTree: syntaxTree);
-        var root = syntaxTree.GetRoot(cancellationToken: cancellationToken);
-        foreach (var declaration in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
+        var typesByKey = new Dictionary<string, INamedTypeSymbol>(comparer: StringComparer.Ordinal);
+        var delegatesByKey = new Dictionary<string, INamedTypeSymbol>(comparer: StringComparer.Ordinal);
+        foreach (var syntaxTree in syntaxTrees)
         {
-            if (semanticModel.GetDeclaredSymbol(declarationSyntax: declaration, cancellationToken: cancellationToken) is INamedTypeSymbol symbol)
+            var semanticModel = compilation.GetSemanticModel(syntaxTree: syntaxTree);
+            var root = syntaxTree.GetRoot(cancellationToken: cancellationToken);
+            foreach (var declaration in root.DescendantNodes(
+                         descendIntoChildren: static node => node is CompilationUnitSyntax or BaseNamespaceDeclarationSyntax or BaseTypeDeclarationSyntax))
             {
-                yield return symbol;
+                switch (declaration)
+                {
+                    case BaseTypeDeclarationSyntax typeDeclaration
+                        when semanticModel.GetDeclaredSymbol(declarationSyntax: typeDeclaration, cancellationToken: cancellationToken) is INamedTypeSymbol type:
+                        AddSymbol(symbolsByKey: typesByKey, symbol: type);
+                        break;
+                    case DelegateDeclarationSyntax delegateDeclaration
+                        when semanticModel.GetDeclaredSymbol(declarationSyntax: delegateDeclaration, cancellationToken: cancellationToken) is INamedTypeSymbol { ContainingType: null } @delegate:
+                        AddSymbol(symbolsByKey: delegatesByKey, symbol: @delegate);
+                        break;
+                    default:
+                        break;
+                }
             }
         }
+
+        return new SourceSymbols(
+            Types: typesByKey.Values.ToArray(),
+            Delegates: delegatesByKey.Values.ToArray());
     }
 
-    private static IEnumerable<INamedTypeSymbol> GetSourceDelegateSymbols(
-        CSharpCompilation compilation,
-        IEnumerable<SyntaxTree> syntaxTrees,
-        CancellationToken cancellationToken)
+    private static void AddSymbol(
+        IDictionary<string, INamedTypeSymbol> symbolsByKey,
+        INamedTypeSymbol symbol)
     {
-        return syntaxTrees
-            .SelectMany(selector: tree => GetSourceDelegateSymbols(compilation: compilation, syntaxTree: tree, cancellationToken: cancellationToken))
-            .Where(predicate: symbol => symbol.ContainingType is null)
-            .GroupBy(keySelector: symbol => GetFullName(symbol: symbol) + "`" + symbol.Arity, comparer: StringComparer.Ordinal)
-            .Select(selector: group => group.First());
-    }
-
-    private static IEnumerable<INamedTypeSymbol> GetSourceDelegateSymbols(
-        CSharpCompilation compilation,
-        SyntaxTree syntaxTree,
-        CancellationToken cancellationToken)
-    {
-        var semanticModel = compilation.GetSemanticModel(syntaxTree: syntaxTree);
-        var root = syntaxTree.GetRoot(cancellationToken: cancellationToken);
-        foreach (var declaration in root.DescendantNodes().OfType<DelegateDeclarationSyntax>())
+        var key = GetFullName(symbol: symbol) + "`" + symbol.Arity.ToString(provider: CultureInfo.InvariantCulture);
+        if (!symbolsByKey.ContainsKey(key: key))
         {
-            if (semanticModel.GetDeclaredSymbol(declarationSyntax: declaration, cancellationToken: cancellationToken) is INamedTypeSymbol symbol)
-            {
-                yield return symbol;
-            }
+            symbolsByKey[key: key] = symbol;
         }
     }
 
@@ -659,13 +732,16 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         }
 
         var docComment = GetDocComment(symbol: symbol);
+        var members = symbol.GetMembers();
+        var typeMembers = symbol.GetTypeMembers();
+        var nestedTypes = GetNestedTypes(members: typeMembers, compilation: compilation).ToArray();
         metadata = new TypeMetadata(
             Name: symbol.Name,
             FullName: GetFullName(symbol: symbol),
             Namespace: GetNamespace(symbol: symbol),
             Kind: kind.Value,
             Accessibility: MapAccessibility(accessibility: symbol.DeclaredAccessibility),
-            Properties: GetProperties(symbol: symbol).ToArray(),
+            Properties: GetProperties(symbol: symbol, members: members).ToArray(),
             Attributes: GetAttributes(attributes: symbol.GetAttributes()).ToArray(),
             BaseTypes: GetBaseTypes(symbol: symbol).ToArray(),
             EnumValues: GetEnumValues(symbol: symbol).ToArray(),
@@ -685,31 +761,32 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             IsStatic = symbol.IsStatic,
             IsAbstract = symbol.IsAbstract,
             ContainingTypeFullName = symbol.ContainingType is null ? string.Empty : GetFullName(symbol: symbol.ContainingType),
-            Methods = GetMethods(symbol: symbol).ToArray(),
-            Constants = GetConstants(symbol: symbol).ToArray(),
-            Fields = GetFields(symbol: symbol).ToArray(),
-            StaticReadOnlyFields = GetStaticReadOnlyFields(symbol: symbol).ToArray(),
-            Events = GetEvents(symbol: symbol).ToArray(),
-            Delegates = GetDelegates(symbol: symbol, compilation: compilation).ToArray(),
+            Methods = GetMethods(symbol: symbol, members: members).ToArray(),
+            Constants = GetConstants(symbol: symbol, members: members).ToArray(),
+            Fields = GetFields(symbol: symbol, members: members).ToArray(),
+            StaticReadOnlyFields = GetStaticReadOnlyFields(symbol: symbol, members: members).ToArray(),
+            Events = GetEvents(symbol: symbol, members: members).ToArray(),
+            Delegates = GetDelegates(members: typeMembers, compilation: compilation).ToArray(),
             TypeParameters = GetTypeParameters(symbols: symbol.TypeParameters).ToArray(),
             TypeArguments = symbol.TypeArguments
                 .Zip(
                     second: symbol.TypeArgumentNullableAnnotations,
                     resultSelector: static (argument, annotation) => CreateTypeReference(symbol: argument, nullableAnnotation: annotation))
                 .ToArray(),
-            NestedClasses = GetNestedTypes(symbol: symbol, kind: TypeMetadataKind.Class, compilation: compilation).ToArray(),
-            NestedRecords = GetNestedTypes(symbol: symbol, kind: TypeMetadataKind.Record, compilation: compilation).ToArray(),
-            NestedStructs = GetNestedTypes(symbol: symbol, kind: TypeMetadataKind.Struct, compilation: compilation).ToArray(),
-            NestedEnums = GetNestedTypes(symbol: symbol, kind: TypeMetadataKind.Enum, compilation: compilation).ToArray(),
-            NestedInterfaces = GetNestedTypes(symbol: symbol, kind: TypeMetadataKind.Interface, compilation: compilation).ToArray(),
+            NestedClasses = nestedTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Class).ToArray(),
+            NestedRecords = nestedTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Record).ToArray(),
+            NestedStructs = nestedTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Struct).ToArray(),
+            NestedEnums = nestedTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Enum).ToArray(),
+            NestedInterfaces = nestedTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Interface).ToArray(),
         };
         return true;
     }
 
-    private static IEnumerable<PropertyMetadata> GetProperties(INamedTypeSymbol symbol)
+    private static IEnumerable<PropertyMetadata> GetProperties(
+        INamedTypeSymbol symbol,
+        IEnumerable<ISymbol> members)
     {
-        return symbol.GetMembers()
-            .OfType<IPropertySymbol>()
+        return members.OfType<IPropertySymbol>()
             .Where(predicate: property => !property.IsStatic)
             .Where(predicate: property => property.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
             .Where(predicate: property => property.GetMethod is not null)
@@ -742,10 +819,11 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 });
     }
 
-    private static IEnumerable<MethodMetadata> GetMethods(INamedTypeSymbol symbol)
+    private static IEnumerable<MethodMetadata> GetMethods(
+        INamedTypeSymbol symbol,
+        IEnumerable<ISymbol> members)
     {
-        return symbol.GetMembers()
-            .OfType<IMethodSymbol>()
+        return members.OfType<IMethodSymbol>()
             .Where(predicate: method => method.MethodKind == MethodKind.Ordinary)
             .Where(predicate: method => !method.IsImplicitlyDeclared)
             .Where(predicate: method => method.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
@@ -812,15 +890,16 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             });
     }
 
-    private static IEnumerable<ConstantMetadata> GetConstants(INamedTypeSymbol symbol)
+    private static IEnumerable<ConstantMetadata> GetConstants(
+        INamedTypeSymbol symbol,
+        IEnumerable<ISymbol> members)
     {
         if (symbol.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum)
         {
             return [];
         }
 
-        return symbol.GetMembers()
-            .OfType<IFieldSymbol>()
+        return members.OfType<IFieldSymbol>()
             .Where(predicate: field => field.HasConstantValue)
             .Where(predicate: field => field.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
             .Select(
@@ -844,15 +923,16 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 });
     }
 
-    private static IEnumerable<FieldMetadata> GetFields(INamedTypeSymbol symbol)
+    private static IEnumerable<FieldMetadata> GetFields(
+        INamedTypeSymbol symbol,
+        IEnumerable<ISymbol> members)
     {
         if (symbol.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum)
         {
             return [];
         }
 
-        return symbol.GetMembers()
-            .OfType<IFieldSymbol>()
+        return members.OfType<IFieldSymbol>()
             .Where(predicate: field => !field.IsImplicitlyDeclared)
             .Where(predicate: field => !field.IsConst)
             .Where(predicate: field => !field.IsStatic)
@@ -878,15 +958,16 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 });
     }
 
-    private static IEnumerable<StaticReadOnlyFieldMetadata> GetStaticReadOnlyFields(INamedTypeSymbol symbol)
+    private static IEnumerable<StaticReadOnlyFieldMetadata> GetStaticReadOnlyFields(
+        INamedTypeSymbol symbol,
+        IEnumerable<ISymbol> members)
     {
         if (symbol.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum)
         {
             return [];
         }
 
-        return symbol.GetMembers()
-            .OfType<IFieldSymbol>()
+        return members.OfType<IFieldSymbol>()
             .Where(predicate: field => !field.IsImplicitlyDeclared)
             .Where(predicate: field => field.IsStatic)
             .Where(predicate: field => field.IsReadOnly)
@@ -913,10 +994,11 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 });
     }
 
-    private static IEnumerable<EventMetadata> GetEvents(INamedTypeSymbol symbol)
+    private static IEnumerable<EventMetadata> GetEvents(
+        INamedTypeSymbol symbol,
+        IEnumerable<ISymbol> members)
     {
-        return symbol.GetMembers()
-            .OfType<IEventSymbol>()
+        return members.OfType<IEventSymbol>()
             .Where(predicate: @event => !@event.IsImplicitlyDeclared)
             .Where(predicate: @event => @event.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
             .Select(
@@ -940,10 +1022,10 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
     }
 
     private static IEnumerable<DelegateMetadata> GetDelegates(
-        INamedTypeSymbol symbol,
+        IEnumerable<INamedTypeSymbol> members,
         Compilation compilation)
     {
-        return symbol.GetTypeMembers()
+        return members
             .Where(predicate: member => member.TypeKind == Microsoft.CodeAnalysis.TypeKind.Delegate)
             .Select(
                 selector: member => new
@@ -956,18 +1038,17 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
     }
 
     private static IEnumerable<TypeMetadata> GetNestedTypes(
-        INamedTypeSymbol symbol,
-        TypeMetadataKind kind,
+        IEnumerable<INamedTypeSymbol> members,
         Compilation compilation)
     {
-        return symbol.GetTypeMembers()
+        return members
             .Select(
                 selector: member => new
                 {
                     HasMetadata = TryCreateType(symbol: member, compilation: compilation, metadata: out var metadata),
                     Metadata = metadata,
                 })
-            .Where(predicate: item => item.HasMetadata && item.Metadata.Kind == kind)
+            .Where(predicate: item => item.HasMetadata)
             .Select(selector: item => item.Metadata);
     }
 
@@ -1154,11 +1235,21 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
     private static TypeMetadataReference CreateTypeReference(
         ITypeSymbol symbol,
-        NullableAnnotation nullableAnnotation) =>
-        CreateTypeReference(
-            symbol: symbol,
-            nullableAnnotation: nullableAnnotation,
-            visitedSymbols: new HashSet<ITypeSymbol>(comparer: SymbolEqualityComparer.Default));
+        NullableAnnotation nullableAnnotation)
+    {
+        var visitedSymbols = RentVisitedSymbols();
+        try
+        {
+            return CreateTypeReference(
+                symbol: symbol,
+                nullableAnnotation: nullableAnnotation,
+                visitedSymbols: visitedSymbols);
+        }
+        finally
+        {
+            ReturnVisitedSymbols(visitedSymbols: visitedSymbols);
+        }
+    }
 
     private static TypeMetadataReference CreateTypeReference(
         ITypeSymbol symbol,
@@ -1178,6 +1269,17 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             visitedSymbols.Remove(item: symbol);
         }
+    }
+
+    private static HashSet<ITypeSymbol> RentVisitedSymbols() =>
+        TypeReferenceVisitedSymbolSets.TryTake(result: out var visitedSymbols)
+            ? visitedSymbols
+            : new HashSet<ITypeSymbol>(comparer: SymbolEqualityComparer.Default);
+
+    private static void ReturnVisitedSymbols(HashSet<ITypeSymbol> visitedSymbols)
+    {
+        visitedSymbols.Clear();
+        TypeReferenceVisitedSymbolSets.Add(item: visitedSymbols);
     }
 
     private static TypeMetadataReference CreateTypeReferenceCore(
@@ -1501,7 +1603,10 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             Column: lineSpan.StartLinePosition.Character + 1);
     }
 
-    private static DocCommentMetadata? GetDocComment(ISymbol symbol)
+    private static DocCommentMetadata? GetDocComment(ISymbol symbol) =>
+        DocCommentCache.GetValue(key: symbol, createValueCallback: static cachedSymbol => new CachedDocComment(ReadDocComment(symbol: cachedSymbol))).Value;
+
+    private static DocCommentMetadata? ReadDocComment(ISymbol symbol)
     {
         var documentation = symbol.GetDocumentationCommentXml(
             preferredCulture: CultureInfo.InvariantCulture,
@@ -1633,6 +1738,211 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             Message: diagnostic.GetMessage(formatProvider: CultureInfo.InvariantCulture),
             Code: "TW0004");
     }
+
+    private sealed record SourceSymbols(
+        IReadOnlyList<INamedTypeSymbol> Types,
+        IReadOnlyList<INamedTypeSymbol> Delegates);
+
+    private sealed record ProjectMetadataCacheKey(
+        string ProjectPath,
+        string WorkspacePath,
+        string TargetFramework,
+        bool RunFullDiagnostics);
+
+    private sealed record ProjectMetadataCacheEntry(
+        ProjectMetadataBuildResult Result,
+        ProjectMetadataFingerprint Fingerprint);
+
+    private sealed record ProjectMetadataFingerprint(
+        IReadOnlyList<string> Paths,
+        IReadOnlyList<string> Directories,
+        string Hash)
+    {
+        public static ProjectMetadataFingerprint Create(ProjectMetadataBuildResult result)
+        {
+            var paths = new SortedSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+            AddPath(paths: paths, path: result.Metadata.ProjectPath);
+            foreach (var sourceFile in result.Metadata.SourceFiles)
+            {
+                AddPath(paths: paths, path: sourceFile.Path);
+            }
+
+            foreach (var reference in result.CompilationReferences)
+            {
+                AddPath(paths: paths, path: reference.ProjectPath);
+            }
+
+            if (result.Compilation is not null)
+            {
+                foreach (var referencePath in result.Compilation.References.Select(selector: reference => reference.Display))
+                {
+                    AddPath(paths: paths, path: referencePath);
+                }
+            }
+
+            var directories = new SortedSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+            foreach (var projectPath in result.CompilationReferences.Select(selector: reference => reference.ProjectPath).Append(element: result.Metadata.ProjectPath))
+            {
+                var projectDirectory = Path.GetDirectoryName(path: projectPath);
+                if (!string.IsNullOrWhiteSpace(value: projectDirectory) && Directory.Exists(path: projectDirectory))
+                {
+                    foreach (var directory in EnumerateDirectoriesForFingerprint(root: projectDirectory))
+                    {
+                        directories.Add(item: directory);
+                    }
+                }
+            }
+
+            foreach (var sourceDirectory in result.Metadata.SourceFiles
+                         .Select(selector: sourceFile => Path.GetDirectoryName(path: sourceFile.Path))
+                         .Where(predicate: sourceDirectory => !string.IsNullOrWhiteSpace(value: sourceDirectory)))
+            {
+                directories.Add(item: Path.GetFullPath(path: sourceDirectory!));
+            }
+
+            var pathList = paths.ToArray();
+            var directoryList = directories.ToArray();
+            return new ProjectMetadataFingerprint(
+                Paths: pathList,
+                Directories: directoryList,
+                Hash: ComputeFingerprintHash(paths: pathList, directories: directoryList));
+        }
+
+        public bool IsCurrent() =>
+            Hash.Equals(value: ComputeFingerprintHash(paths: Paths, directories: Directories), comparisonType: StringComparison.Ordinal);
+
+        private static void AddPath(
+            ISet<string> paths,
+            string? path)
+        {
+            if (string.IsNullOrWhiteSpace(value: path))
+            {
+                return;
+            }
+
+            try
+            {
+                paths.Add(item: Path.GetFullPath(path: path));
+            }
+            catch (ArgumentException ex)
+            {
+                _ = ex;
+            }
+            catch (NotSupportedException ex)
+            {
+                _ = ex;
+            }
+        }
+
+        private static IEnumerable<string> EnumerateDirectoriesForFingerprint(string root)
+        {
+            var pending = new Stack<string>();
+            pending.Push(item: Path.GetFullPath(path: root));
+            while (pending.Count > 0)
+            {
+                var directory = pending.Pop();
+                yield return directory;
+                foreach (var childDirectory in Directory.EnumerateDirectories(path: directory)
+                             .Where(predicate: childDirectory => !IsIgnoredDirectoryForFingerprint(name: Path.GetFileName(path: childDirectory))))
+                {
+                    pending.Push(item: childDirectory);
+                }
+            }
+        }
+
+        private static bool IsIgnoredDirectoryForFingerprint(string name) =>
+            name.Equals(value: ".git", comparisonType: StringComparison.OrdinalIgnoreCase)
+            || name.Equals(value: "artifacts", comparisonType: StringComparison.OrdinalIgnoreCase)
+            || name.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
+            || name.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase)
+            || name.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase);
+
+        private static string ComputeFingerprintHash(
+            IEnumerable<string> paths,
+            IEnumerable<string> directories)
+        {
+            using var hash = IncrementalHash.CreateHash(hashAlgorithm: HashAlgorithmName.SHA256);
+            foreach (var path in paths)
+            {
+                AppendHashValue(hash: hash, value: "file");
+                AppendPathFingerprint(hash: hash, path: path);
+            }
+
+            foreach (var directory in directories)
+            {
+                AppendHashValue(hash: hash, value: nameof(directory));
+                AppendDirectoryFingerprint(hash: hash, directory: directory);
+            }
+
+            return Convert.ToHexString(inArray: hash.GetHashAndReset());
+        }
+
+        private static void AppendPathFingerprint(
+            IncrementalHash hash,
+            string path)
+        {
+            AppendHashValue(hash: hash, value: path);
+            try
+            {
+                if (!File.Exists(path: path))
+                {
+                    AppendHashValue(hash: hash, value: "missing");
+                    return;
+                }
+
+#pragma warning disable SCS0018
+                var file = new FileInfo(fileName: path);
+#pragma warning restore SCS0018
+                AppendHashValue(hash: hash, value: file.Length.ToString(provider: CultureInfo.InvariantCulture));
+                AppendHashValue(hash: hash, value: file.LastWriteTimeUtc.Ticks.ToString(provider: CultureInfo.InvariantCulture));
+            }
+            catch (IOException)
+            {
+                AppendHashValue(hash: hash, value: "unreadable");
+            }
+            catch (UnauthorizedAccessException)
+            {
+                AppendHashValue(hash: hash, value: "unreadable");
+            }
+        }
+
+        private static void AppendDirectoryFingerprint(
+            IncrementalHash hash,
+            string directory)
+        {
+            AppendHashValue(hash: hash, value: directory);
+            try
+            {
+                if (!Directory.Exists(path: directory))
+                {
+                    AppendHashValue(hash: hash, value: "missing");
+                    return;
+                }
+
+                var info = new DirectoryInfo(path: directory);
+                AppendHashValue(hash: hash, value: info.LastWriteTimeUtc.Ticks.ToString(provider: CultureInfo.InvariantCulture));
+            }
+            catch (IOException)
+            {
+                AppendHashValue(hash: hash, value: "unreadable");
+            }
+            catch (UnauthorizedAccessException)
+            {
+                AppendHashValue(hash: hash, value: "unreadable");
+            }
+        }
+
+        private static void AppendHashValue(
+            IncrementalHash hash,
+            string value)
+        {
+            var bytes = Encoding.UTF8.GetBytes(s: value);
+            hash.AppendData(data: bytes);
+            hash.AppendData(data: [0]);
+        }
+    }
+
+    private sealed record CachedDocComment(DocCommentMetadata? Value);
 
     private sealed record ProjectMetadataBuildResult(
         ProjectMetadata Metadata,

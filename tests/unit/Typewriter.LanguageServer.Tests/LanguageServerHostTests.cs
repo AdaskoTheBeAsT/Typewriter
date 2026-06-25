@@ -92,7 +92,26 @@ public sealed class LanguageServerHostTests
                                 uri = templateUri,
                             },
                         }),
-                    CreateRequest(id: 4, method: "shutdown", parameters: new { }), CreateNotification(method: "exit", parameters: new { })
+                    CreateRequest(
+                        id: 4,
+                        method: "typewriter/generate",
+                        parameters: new
+                        {
+                            command = "generate",
+                            workspacePath = directory,
+                            templatePath,
+                        }),
+                    CreateRequest(
+                        id: 5,
+                        method: "textDocument/semanticTokens/full",
+                        parameters: new
+                        {
+                            textDocument = new
+                            {
+                                uri = templateUri,
+                            },
+                        }),
+                    CreateRequest(id: 6, method: "shutdown", parameters: new { }), CreateNotification(method: "exit", parameters: new { })
                 ]);
             await using var output = new MemoryStream();
             using var connection = new JsonRpcConnection(input: input, output: output);
@@ -100,6 +119,7 @@ public sealed class LanguageServerHostTests
             var host = new LanguageServerHost(
                 connection: connection,
                 diagnosticService: new NoopDiagnosticService(),
+                generationService: new StubGenerationService(),
                 featureService: templateFeatureService);
 
             await host.RunAsync(cancellationToken: CancellationToken.None);
@@ -132,6 +152,14 @@ public sealed class LanguageServerHostTests
 
             semanticLegend.Should().Contain("macro");
             semanticLegend.Should().Contain("keyword");
+            initializeResponse
+                .GetProperty(propertyName: "result")
+                .GetProperty(propertyName: "capabilities")
+                .GetProperty(propertyName: "experimental")
+                .GetProperty(propertyName: "typewriterGenerationProvider")
+                .GetBoolean()
+                .Should()
+                .BeTrue();
 
             var completionResponse = FindResponse(messages: messages, id: 2);
             var labels = new List<string?>();
@@ -157,7 +185,18 @@ public sealed class LanguageServerHostTests
                 semanticTokensEnumerator.MoveNext().Should().BeTrue();
             }
 
-            var shutdownResponse = FindResponse(messages: messages, id: 4);
+            var generationResponse = FindResponse(messages: messages, id: 4);
+            generationResponse
+                .GetProperty(propertyName: "result")
+                .GetProperty(propertyName: "durationMs")
+                .GetInt64()
+                .Should()
+                .Be(12);
+            FindResponseIndex(messages: messages, id: 5)
+                .Should()
+                .BeLessThan(FindResponseIndex(messages: messages, id: 4));
+
+            var shutdownResponse = FindResponse(messages: messages, id: 6);
             shutdownResponse.TryGetProperty(propertyName: "result", value: out _).Should().BeTrue();
         }
         finally
@@ -261,6 +300,17 @@ public sealed class LanguageServerHostTests
                                   && idElement.ValueKind == JsonValueKind.Number
                                   && idElement.GetInt32() == id);
 
+    private static int FindResponseIndex(
+        IReadOnlyList<JsonElement> messages,
+        int id) =>
+        messages
+            .Select(selector: (message, index) => new { Message = message, Index = index })
+            .Single(
+                predicate: item => item.Message.TryGetProperty(propertyName: nameof(id), value: out var idElement)
+                                   && idElement.ValueKind == JsonValueKind.Number
+                                   && idElement.GetInt32() == id)
+            .Index;
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(
@@ -310,6 +360,26 @@ public sealed class LanguageServerHostTests
             _ = settings;
             _ = cancellationToken;
             return Task.FromResult<IReadOnlyList<GenerationDiagnostic>>(result: []);
+        }
+    }
+
+    private sealed class StubGenerationService : IWorkspaceGenerationService
+    {
+        public async Task<WorkspaceGenerationResult> GenerateAsync(
+            WorkspaceGenerationRequest request,
+            LanguageServerSettings settings,
+            CancellationToken cancellationToken)
+        {
+            request.Command.Should().Be("generate");
+            request.TemplatePath.Should().NotBeNullOrWhiteSpace();
+            settings.WorkspacePath.Should().NotBeNullOrWhiteSpace();
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Delay(millisecondsDelay: 50, cancellationToken: cancellationToken);
+            return new WorkspaceGenerationResult(
+                Success: true,
+                DurationMs: 12,
+                GeneratedFiles: [],
+                Diagnostics: []);
         }
     }
 }

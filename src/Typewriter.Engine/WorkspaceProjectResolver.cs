@@ -62,9 +62,7 @@ internal static class WorkspaceProjectResolver
                 root = Path.GetDirectoryName(path: root) ?? root;
             }
 
-            projects = Directory.EnumerateFiles(path: root, searchPattern: "*.csproj", searchOption: SearchOption.AllDirectories)
-                .Where(predicate: path => !path.Contains(value: $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", comparisonType: StringComparison.OrdinalIgnoreCase))
-                .Where(predicate: path => !path.Contains(value: $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", comparisonType: StringComparison.OrdinalIgnoreCase))
+            projects = EnumerateProjectFiles(root: root)
                 .Order(comparer: StringComparer.OrdinalIgnoreCase)
                 .ToArray();
         }
@@ -162,6 +160,33 @@ internal static class WorkspaceProjectResolver
             ? Path.GetDirectoryName(path: root) ?? root
             : root;
     }
+
+    private static IEnumerable<string> EnumerateProjectFiles(string root)
+    {
+        var pending = new Stack<string>();
+        pending.Push(item: root);
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+            foreach (var childDirectory in Directory.EnumerateDirectories(path: directory)
+                         .Where(predicate: childDirectory => !IsIgnoredDirectory(name: Path.GetFileName(path: childDirectory))))
+            {
+                pending.Push(item: childDirectory);
+            }
+
+            foreach (var projectPath in Directory.EnumerateFiles(path: directory, searchPattern: "*.csproj", searchOption: SearchOption.TopDirectoryOnly))
+            {
+                yield return projectPath;
+            }
+        }
+    }
+
+    private static bool IsIgnoredDirectory(string name) =>
+        name.Equals(value: ".git", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "artifacts", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase);
 
     private static bool IsSameOrChildPath(
         string path,

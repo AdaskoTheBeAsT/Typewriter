@@ -60,6 +60,7 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
                 options.WorkspacePath,
                 options.ProjectPath,
                 options.TemplatePath,
+                options.TemplateSearchPath,
             }
             .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
             .Select(selector: ResolveWatchDirectory)
@@ -101,6 +102,11 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
             return false;
         }
 
+        if (!_watchedExtensions.Contains(item: Path.GetExtension(path: path)))
+        {
+            return false;
+        }
+
         var fullPath = Path.GetFullPath(path: path);
         var segments = fullPath.Split(
             separator: [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
@@ -110,7 +116,7 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
             return false;
         }
 
-        return _watchedExtensions.Contains(item: Path.GetExtension(path: fullPath));
+        return true;
     }
 
     private FileSystemWatcher CreateWatcher(string root)

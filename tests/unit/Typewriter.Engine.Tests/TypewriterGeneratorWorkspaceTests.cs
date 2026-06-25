@@ -205,6 +205,61 @@ public sealed class TypewriterGeneratorWorkspaceTests
     }
 
     [Fact]
+    public async Task GenerateAsyncRestrictsTemplateDiscoveryToExplicitSearchPath()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectDirectory = Path.Combine(path1: directory, path2: "App");
+            var siblingDirectory = Path.Combine(path1: directory, path2: "Sibling");
+            Directory.CreateDirectory(path: projectDirectory);
+            Directory.CreateDirectory(path: siblingDirectory);
+
+            var projectPath = Path.Combine(path1: projectDirectory, path2: "App.csproj");
+            await File.WriteAllTextAsync(path: projectPath, contents: "<Project />");
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: projectDirectory, path2: "App.tst"),
+                contents: """
+                          // output: app.ts
+                          export const app = true;
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: siblingDirectory, path2: "Sibling.tst"),
+                contents: """
+                          // output: sibling.ts
+                          export const sibling = true;
+                          """);
+
+            var metadataProvider = new CapturingMetadataProvider();
+            var generator = new TypewriterGenerator(
+                templateDiscovery: new FileSystemTemplateDiscovery(),
+                metadataProvider: metadataProvider,
+                fileWriter: new PassthroughFileWriter());
+
+            var result = await generator.GenerateAsync(
+                request: new GenerationRequest(
+                    WorkspacePath: directory,
+                    ProjectPath: projectPath,
+                    TemplatePath: null,
+                    Mode: GenerationMode.Generate,
+                    Configuration: TypewriterConfiguration.Default,
+                    TemplateSearchPath: projectDirectory),
+                cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            result.GeneratedFiles.Should().ContainSingle()
+                .Which.Path.Should().Be(Path.Combine(path1: projectDirectory, path2: "app.ts"));
+            metadataProvider.Project.Should().NotBeNull();
+            metadataProvider.Project!.ProjectPath.Should().Be(projectPath);
+            metadataProvider.Project.WorkspacePath.Should().Be(directory);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GenerateAsyncFansOutBySourceFileUsingSourceFilenameWhenNoOutputFilenameFactoryIsConfigured()
     {
         var directory = CreateProjectDirectory();
@@ -695,6 +750,58 @@ public sealed class TypewriterGeneratorWorkspaceTests
             diagnostic.Severity.Should().Be(DiagnosticSeverity.Warning);
             diagnostic.Message.Should().Contain("more than one template");
             result.GeneratedFiles.Should().HaveCount(2);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task GenerateAsyncInvalidatesParsedTemplateCacheWhenTemplateChanges()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            var templatePath = Path.Combine(path1: directory, path2: "Models.tst");
+            await File.WriteAllTextAsync(path: projectPath, contents: "<Project />");
+            await File.WriteAllTextAsync(
+                path: templatePath,
+                contents: """
+                          // output: generated.ts
+                          export const value = "first";
+                          """);
+            var originalLastWriteTime = File.GetLastWriteTimeUtc(path: templatePath);
+
+            var generator = new TypewriterGenerator(
+                templateDiscovery: new FileSystemTemplateDiscovery(),
+                metadataProvider: new CapturingMetadataProvider(),
+                fileWriter: new PassthroughFileWriter());
+            var request = new GenerationRequest(
+                WorkspacePath: directory,
+                ProjectPath: projectPath,
+                TemplatePath: templatePath,
+                Mode: GenerationMode.Generate,
+                Configuration: TypewriterConfiguration.Default);
+
+            var firstResult = await generator.GenerateAsync(request: request, cancellationToken: CancellationToken.None);
+
+            await File.WriteAllTextAsync(
+                path: templatePath,
+                contents: """
+                          // output: generated.ts
+                          export const value = "other";
+                          """);
+            File.SetLastWriteTimeUtc(path: templatePath, lastWriteTimeUtc: originalLastWriteTime);
+            var secondResult = await generator.GenerateAsync(request: request, cancellationToken: CancellationToken.None);
+
+            firstResult.Success.Should().BeTrue();
+            secondResult.Success.Should().BeTrue();
+            firstResult.GeneratedFiles.Should().ContainSingle()
+                .Which.Content.Should().Contain("first");
+            secondResult.GeneratedFiles.Should().ContainSingle()
+                .Which.Content.Should().Contain("other");
         }
         finally
         {

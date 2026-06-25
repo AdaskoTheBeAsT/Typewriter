@@ -33,6 +33,7 @@ The official Typewriter plugins for Visual Studio, VS Code, and JetBrains Rider 
 | Go to definition | Navigation from template references to the matching source location when available. |
 | Semantic tokens | Rich `.tst` highlighting for template syntax and embedded language regions. |
 | Document sync | Open, change, save, and close notifications for responsive validation. |
+| Persistent generation | `typewriter/generate` reuses project metadata and template caches across editor commands and save events. |
 
 ## 🎛️ Configuration
 
@@ -55,6 +56,10 @@ The official Typewriter plugins for Visual Studio, VS Code, and JetBrains Rider 
 | `projectPath` | Optional C# project used for metadata loading. Relative paths resolve from the workspace. |
 | `framework` | Optional target framework used when loading metadata, for example `net10.0`. |
 | `allProjects` | Analyze every project in a multi-project workspace. Defaults to `false`. |
+
+## Persistent generation
+
+Official IDE adapters send `typewriter/generate` with `command`, `workspacePath`, `projectPath`, `templatePath`, `templateSearchPath`, `framework`, and `allProjects`. Save-triggered source generation uses `templateSearchPath` to restrict discovery to the owning project without changing solution-level configuration or metadata context. The response uses the CLI JSON result shape without embedding generated contents. Visual Studio can lazily start a package-scoped server when its editor LSP is inactive. Adapters fall back to the CLI when the request is unavailable.
 
 ## ✅ Best fit
 
