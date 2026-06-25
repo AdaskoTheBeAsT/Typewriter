@@ -50,6 +50,37 @@ public sealed class GeneratedFilePlannerTests
         }
     }
 
+    [Fact]
+    public async Task TryPlanAllowsOutputOutsideWorkspace()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var backendDirectory = Path.Combine(path1: directory, path2: "backend");
+            var templatePath = Path.Combine(path1: backendDirectory, path2: "Models.tst");
+            var expectedOutputPath = Path.Combine(path1: directory, path2: "frontend", path3: "generated", path4: "models.ts");
+            Directory.CreateDirectory(path: backendDirectory);
+            await File.WriteAllTextAsync(path: templatePath, contents: string.Empty);
+
+            var planner = new GeneratedFilePlanner();
+            var planned = planner.TryPlan(
+                workspace: new WorkspaceContext(RootPath: backendDirectory),
+                template: new TemplateDocument(Path: templatePath, Content: string.Empty, OutputPath: "../frontend/generated/models.ts"),
+                content: "export interface Customer {}",
+                generatedFile: out var generatedFile,
+                diagnostic: out var diagnostic);
+
+            planned.Should().BeTrue(because: diagnostic?.Message);
+            diagnostic.Should().BeNull();
+            generatedFile.Should().NotBeNull();
+            generatedFile!.Path.Should().Be(expectedOutputPath);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(

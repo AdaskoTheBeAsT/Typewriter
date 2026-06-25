@@ -147,6 +147,55 @@ public sealed class CliIntegrationTests
     }
 
     [Fact]
+    public async Task RunAsyncGenerateWritesFileOutsideWorkspace()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var backendDirectory = Path.Combine(path1: directory, path2: "backend");
+            var generatedPath = Path.Combine(path1: directory, path2: "frontend", path3: "generated", path4: "models.ts");
+            var project = await CreateSimpleProjectAsync(
+                directory: backendDirectory,
+                templateContent: """
+                                 // output: ../frontend/generated/models.ts
+                                 $Classes[
+                                 export interface $Name {
+                                 $Properties[
+                                   $name: $Type;]
+                                 }
+                                 ]
+                                 """);
+
+            var result = await RunCliAsync(
+                "generate",
+                "--workspace",
+                backendDirectory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+
+            result.ExitCode.Should().Be(0);
+            result.Success.Should().BeTrue(because: result.StandardError);
+            result.Diagnostics.Should().BeEmpty();
+
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            generatedFile.Path.Should().Be(generatedPath);
+
+            var generatedContent = await File.ReadAllTextAsync(path: generatedPath);
+            generatedContent.Should().Contain("export interface Customer");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task RunAsyncGenerateAllProjectsWritesEveryProjectTemplate()
     {
         var directory = CreateProjectDirectory();

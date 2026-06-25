@@ -87,56 +87,7 @@ jobs:
         shell: pwsh
         env:
           VERSION: ${{ steps.apply_version.outputs.version }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:VERSION)) {
-            throw "Resolved release version is empty."
-          }
-
-          npm --prefix vscode version $env:VERSION --no-git-tag-version --allow-same-version
-
-          $directoryBuildPropsPath = "Directory.Build.props"
-          $resolvedDirectoryBuildPropsPath = (Resolve-Path -LiteralPath $directoryBuildPropsPath).Path
-          $directoryBuildProps = New-Object System.Xml.XmlDocument
-          $directoryBuildProps.PreserveWhitespace = $true
-          $directoryBuildProps.Load($resolvedDirectoryBuildPropsPath)
-          $versionNode = $directoryBuildProps.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='Version']")
-          if ($null -eq $versionNode) {
-            throw "Unable to find Version in $directoryBuildPropsPath."
-          }
-
-          $versionNode.InnerText = $env:VERSION
-          $directoryBuildProps.Save($resolvedDirectoryBuildPropsPath)
-
-          $manifestPath = "src/Typewriter.VisualStudio/source.extension.vsixmanifest"
-          $resolvedManifestPath = (Resolve-Path -LiteralPath $manifestPath).Path
-          $manifest = New-Object System.Xml.XmlDocument
-          $manifest.PreserveWhitespace = $true
-          $manifest.Load($resolvedManifestPath)
-          $identity = $manifest.SelectSingleNode("/*[local-name()='PackageManifest']/*[local-name()='Metadata']/*[local-name()='Identity']")
-          if ($null -eq $identity) {
-            throw "Unable to find VSIX identity in $manifestPath."
-          }
-
-          $identity.SetAttribute("Version", $env:VERSION)
-          $manifest.Save($resolvedManifestPath)
-
-          $gradlePropertiesPath = "rider/gradle.properties"
-          $pluginVersionFound = $false
-          $gradleProperties = Get-Content -LiteralPath $gradlePropertiesPath | ForEach-Object {
-            if ($_ -match "^\s*pluginVersion\s*=") {
-              $pluginVersionFound = $true
-              "pluginVersion=$env:VERSION"
-            } else {
-              $_
-            }
-          }
-
-          if (-not $pluginVersionFound) {
-            throw "Unable to find pluginVersion in $gradlePropertiesPath."
-          }
-
-          $gradleProperties | Set-Content -LiteralPath $gradlePropertiesPath
-          Write-Host "Stamped release version: $env:VERSION"
+        run: .\setver.ps1 -Version $env:VERSION
 
       - name: Validate NuGet publishing configuration
         shell: pwsh

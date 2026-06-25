@@ -10,7 +10,7 @@ using Microsoft.VisualStudio.Shell.Interop;
 namespace Typewriter.VisualStudio;
 
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-[InstalledProductRegistration(productName: "Typewriter", productDetails: "Generates TypeScript from C# Typewriter templates.", productId: "3.0.0")]
+[InstalledProductRegistration(productName: "Typewriter", productDetails: "Generates TypeScript from C# Typewriter templates.", productId: "4.5.1")]
 [ProvideMenuResource(resourceID: "Menus.ctmenu", version: 1)]
 [ProvideOptionPage(pageType: typeof(TypewriterOptions), categoryName: "Typewriter", pageName: "General", categoryResourceID: 0, pageNameResourceID: 0, supportsAutomation: true)]
 [ProvideAutoLoad(cmdUiContextGuid: VSConstants.UICONTEXT.SolutionExists_string, flags: PackageAutoLoadFlags.BackgroundLoad)]
