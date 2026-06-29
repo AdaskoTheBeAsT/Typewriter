@@ -2338,6 +2338,41 @@ public sealed class TemplateRendererTests
     }
 
     [Fact]
+    public void TypeScriptMapperPreservesClosedGenericTypeArguments()
+    {
+        var mapper = new TypeScriptTypeMapper();
+        var intType = TypeReference(name: "Int32", fullName: "System.Int32", isNullable: false);
+        var stringType = TypeReference(name: "String", fullName: "System.String", isNullable: false);
+        var boxOfIntType = TypeReference(
+            name: "Box",
+            fullName: "App.Box",
+            isNullable: false,
+            isPrimitive: false,
+            typeArguments: [intType]);
+        var listOfBoxType = TypeReference(
+            name: "List",
+            fullName: "System.Collections.Generic.List",
+            isNullable: false,
+            isPrimitive: false,
+            isCollection: true,
+            elementType: boxOfIntType,
+            typeArguments: [boxOfIntType]);
+        var dictionaryOfBoxType = TypeReference(
+            name: "Dictionary",
+            fullName: "System.Collections.Generic.Dictionary",
+            isNullable: false,
+            isPrimitive: false,
+            isCollection: true,
+            isDictionary: true,
+            elementType: TypeReference(name: "KeyValuePair", fullName: "System.Collections.Generic.KeyValuePair", isNullable: false, isPrimitive: false),
+            typeArguments: [stringType, boxOfIntType]);
+
+        mapper.Map(type: boxOfIntType).Should().Be("Box<number>");
+        mapper.Map(type: listOfBoxType).Should().Be("Box<number>[]");
+        mapper.Map(type: dictionaryOfBoxType).Should().Be("Record<string, Box<number>>");
+    }
+
+    [Fact]
     public void TypeScriptMapperParenthesizesNullableCollectionElementType()
     {
         var mapper = new TypeScriptTypeMapper();

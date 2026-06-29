@@ -839,6 +839,7 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 
 ### 4.5.2
 
+- Fixed closed generic type mapping so custom generic types keep their arguments, for example `Box<int>` now emits `Box<number>`, `List<Box<int>>` emits `Box<number>[]`, and `Dictionary<string, Box<int>>` emits `Record<string, Box<number>>`.
 - Fixed IDE generate-on-save for C# source changes when templates are stored outside the saved file's project directory.
 - Fixed duplicate assembly identity loading during analyzer/source-generator and template helper resolution, avoiding intermittent "assembly already loaded" failures.
 - Updated the Rider plugin build to IntelliJ Platform Gradle Plugin `2.17.0`.

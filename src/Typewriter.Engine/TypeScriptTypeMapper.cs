@@ -157,11 +157,7 @@ public sealed class TypeScriptTypeMapper
 
         if (type.IsDictionary)
         {
-            var valueType = type.TypeArguments.Count > 1
-                ? Map(type: type.TypeArguments[index: 1], strictNull: strictNull)
-                : "unknown";
-
-            return $"Record<string, {valueType}>";
+            return MapDictionaryType(type: type, strictNull: strictNull);
         }
 
         if (type.IsCollection && type.ElementType is not null)
@@ -206,7 +202,30 @@ public sealed class TypeScriptTypeMapper
             return "unknown";
         }
 
-        return type.Name;
+        return type.TypeArguments.Count > 0
+            ? MapGenericType(type: type, strictNull: strictNull)
+            : type.Name;
+    }
+
+    private string MapDictionaryType(
+        TypeMetadataReference type,
+        bool strictNull)
+    {
+        var valueType = type.TypeArguments.Count > 1
+            ? Map(type: type.TypeArguments[index: 1], strictNull: strictNull)
+            : "unknown";
+
+        return $"Record<string, {valueType}>";
+    }
+
+    private string MapGenericType(
+        TypeMetadataReference type,
+        bool strictNull)
+    {
+        var arguments = string.Join(
+            separator: ", ",
+            values: type.TypeArguments.Select(selector: argument => Map(type: argument, strictNull: strictNull)));
+        return type.Name + "<" + arguments + ">";
     }
 
     private string MapUncached(

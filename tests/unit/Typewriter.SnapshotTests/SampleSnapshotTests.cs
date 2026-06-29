@@ -16,6 +16,7 @@ public sealed class SampleSnapshotTests
     [InlineData(data: ["WebApiServices", "WebApiServices.csproj", "Services.tst", "generated/users.service.ts"])]
     [InlineData(data: ["WebApiServices", "WebApiServices.csproj", "Constants.tst", "generated/constants.ts"])]
     [InlineData(data: ["SignalRHubs", "SignalRHubs.csproj", "SignalRHubs.tst", "generated/signalr-chat.service.ts"])]
+    [InlineData(data: ["issue90", "App/App.csproj", "App/Models.tst", "App/Models.ts"])]
     public async Task GenerateAsyncMatchesModelsSnapshot(
         string sampleName,
         string projectPath,
