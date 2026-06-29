@@ -132,7 +132,9 @@ internal static class TemplateRuntimeCompiler
         settings.ApplyConfigurationDefaults(
             strictNullGeneration: defaults.StrictNullGeneration,
             utf8BomGeneration: defaults.Utf8BomGeneration,
-            stringLiteralCharacter: defaults.StringLiteralCharacter);
+            stringLiteralCharacter: defaults.StringLiteralCharacter,
+            dateTypeGeneration: defaults.DateTypeGeneration,
+            decimalTypeGeneration: defaults.DecimalTypeGeneration);
         var adapterFactory = new TemplateCodeModelAdapterFactory(metadata: metadata, settings: settings, metadataIndex: metadataIndex);
         var host = CreateHost(hostType: hostType, settings: settings, file: adapterFactory.CreateFile(project: metadata));
         return new CompiledTemplateHelper(

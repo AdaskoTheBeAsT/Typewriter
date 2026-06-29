@@ -25,6 +25,10 @@ public class Settings
 
     public virtual char StringLiteralCharacter => _stringLiteralCharacter;
 
+    public virtual string DateTypeGeneration { get; private set; } = "Date";
+
+    public virtual string DecimalTypeGeneration { get; private set; } = "number";
+
     public virtual bool StrictNullGeneration { get; private set; } = true;
 
     public virtual bool Utf8BomGeneration { get; private set; } = true;
@@ -66,6 +70,22 @@ public class Settings
         return this;
     }
 
+    public virtual Settings UseDateType(string dateType)
+    {
+        DateTypeGeneration = string.IsNullOrWhiteSpace(value: dateType)
+            ? "Date"
+            : dateType.Trim();
+        return this;
+    }
+
+    public virtual Settings UseDecimalType(string decimalType)
+    {
+        DecimalTypeGeneration = string.IsNullOrWhiteSpace(value: decimalType)
+            ? "number"
+            : decimalType.Trim();
+        return this;
+    }
+
     public virtual Settings DisableStrictNullGeneration()
     {
         StrictNullGeneration = false;
@@ -81,10 +101,14 @@ public class Settings
     internal void ApplyConfigurationDefaults(
         bool strictNullGeneration,
         bool utf8BomGeneration,
-        char stringLiteralCharacter)
+        char stringLiteralCharacter,
+        string dateTypeGeneration,
+        string decimalTypeGeneration)
     {
         StrictNullGeneration = strictNullGeneration;
         Utf8BomGeneration = utf8BomGeneration;
         _stringLiteralCharacter = stringLiteralCharacter;
+        UseDateType(dateType: dateTypeGeneration);
+        UseDecimalType(decimalType: decimalTypeGeneration);
     }
 }

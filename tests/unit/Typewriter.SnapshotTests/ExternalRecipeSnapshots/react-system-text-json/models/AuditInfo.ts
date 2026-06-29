@@ -11,12 +11,12 @@
 
 export interface IAuditInfo {
   createdBy?: string;
-  createdAt?: string;
+  createdAt?: Date;
 }
 
 export class AuditInfo implements IAuditInfo {
   public createdBy: string;
-  public createdAt: string;
+  public createdAt: Date;
 
   constructor(initObj?: IAuditInfo) {
     if (initObj) {

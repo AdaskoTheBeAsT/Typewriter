@@ -11,7 +11,9 @@ public sealed record OutputConfiguration(
     int IndentSize,
     bool InsertFinalNewline,
     bool TrimTrailingWhitespace,
-    QuoteStyle QuoteStyle)
+    QuoteStyle QuoteStyle,
+    string DateType,
+    string DecimalType)
 {
     public static OutputConfiguration Default { get; } = new(
         Newline: "lf",
@@ -24,5 +26,7 @@ public sealed record OutputConfiguration(
         IndentSize: 4,
         InsertFinalNewline: false,
         TrimTrailingWhitespace: false,
-        QuoteStyle: QuoteStyle.Double);
+        QuoteStyle: QuoteStyle.Double,
+        DateType: "Date",
+        DecimalType: "number");
 }

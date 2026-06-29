@@ -49,6 +49,13 @@ public static class TypeExtensions
             return "false";
         }
 
+        if (type.FullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal)
+            && type.Settings?.DecimalTypeGeneration is { } decimalType
+            && !decimalType.Equals(value: "number", comparisonType: StringComparison.Ordinal))
+        {
+            return $"new {decimalType}(0)";
+        }
+
         if (type.Name.Equals(value: "number", comparisonType: StringComparison.OrdinalIgnoreCase)
             || (type.IsPrimitive
                 && !type.Name.Equals(value: "string", comparisonType: StringComparison.OrdinalIgnoreCase)

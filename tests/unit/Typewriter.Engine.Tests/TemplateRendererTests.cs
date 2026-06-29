@@ -2373,6 +2373,200 @@ public sealed class TemplateRendererTests
     }
 
     [Fact]
+    public void TypeScriptMapperUsesDictionaryKeyType()
+    {
+        var mapper = new TypeScriptTypeMapper();
+        var intType = TypeReference(name: "Int32", fullName: "System.Int32", isNullable: false);
+        var stringType = TypeReference(name: "String", fullName: "System.String", isNullable: false);
+        var dictionaryType = TypeReference(
+            name: "Dictionary",
+            fullName: "System.Collections.Generic.Dictionary",
+            isNullable: false,
+            isPrimitive: false,
+            isCollection: true,
+            isDictionary: true,
+            elementType: TypeReference(name: "KeyValuePair", fullName: "System.Collections.Generic.KeyValuePair", isNullable: false, isPrimitive: false),
+            typeArguments: [intType, stringType]);
+
+        var result = mapper.Map(type: dictionaryType);
+
+        result.Should().Be("Record<number, string>");
+    }
+
+    [Fact]
+    public void TypeScriptMapperUsesDateByDefaultAndAllowsDateTypeOverride()
+    {
+        var mapper = new TypeScriptTypeMapper();
+        var dateType = TypeReference(
+            name: "DateTime",
+            fullName: "System.DateTime",
+            isNullable: false,
+            isPrimitive: false,
+            isDateLike: true);
+
+        mapper.Map(type: dateType).Should().Be("Date");
+        mapper.Map(type: dateType, strictNull: true, dateType: "Dayjs").Should().Be("Dayjs");
+    }
+
+    [Fact]
+    public void TypeScriptMapperMapsNumericPrimitivesToNumberAndAllowsDecimalOverride()
+    {
+        var mapper = new TypeScriptTypeMapper();
+
+        mapper.Map(type: TypeReference(name: "Int32", fullName: "System.Int32", isNullable: false)).Should().Be("number");
+        mapper.Map(type: TypeReference(name: "Single", fullName: "System.Single", isNullable: false)).Should().Be("number");
+        mapper.Map(type: TypeReference(name: "Double", fullName: "System.Double", isNullable: false)).Should().Be("number");
+
+        var decimalType = TypeReference(name: "Decimal", fullName: "System.Decimal", isNullable: false);
+        var nullableDecimalType = decimalType with
+        {
+            IsNullable = true,
+        };
+
+        mapper.Map(type: decimalType).Should().Be("number");
+        mapper.Map(type: decimalType, strictNull: true, dateType: "Date", decimalType: "Decimal").Should().Be("Decimal");
+        mapper.Map(type: nullableDecimalType, strictNull: true, dateType: "Date", decimalType: "Decimal").Should().Be("Decimal | null");
+    }
+
+    [Fact]
+    public void RenderExposesGenericTypeParametersInFullName()
+    {
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "Box",
+                    FullName: "Sample.Box",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties: [],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true)
+                {
+                    TypeParameters = [new TypeParameterMetadata(Name: "T")],
+                },
+            ],
+            Diagnostics: []);
+        var document = new TemplateDocument(Path: "models.tst", Content: "$Classes[$FullName]", OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Trim().Should().Be("Sample.Box<T>");
+    }
+
+    [Fact]
+    public void CompiledCodeModelExposesGenericTypeParametersInFullName()
+    {
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "Box",
+                    FullName: "Sample.Box",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties: [],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true)
+                {
+                    TypeParameters = [new TypeParameterMetadata(Name: "T")],
+                },
+            ],
+            Diagnostics: []);
+        const string template = """
+            ${
+                string GetFullName(Class c) => c.FullName;
+            }
+            $Classes[$GetFullName]
+            """;
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "models.tst", Content: template), diagnostics: diagnostics);
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Trim().Should().Be("Sample.Box<T>");
+    }
+
+    [Fact]
+    public void CompiledCodeModelTreatsPrimitiveCollectionsAsPrimitive()
+    {
+        var intType = TypeReference(name: "Int32", fullName: "System.Int32", isNullable: false);
+        var listType = TypeReference(
+            name: "List",
+            fullName: "System.Collections.Generic.List",
+            isNullable: false,
+            isPrimitive: false,
+            isCollection: true,
+            elementType: intType,
+            typeArguments: [intType]);
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "Holder",
+                    FullName: "Sample.Holder",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties:
+                    [
+                        new PropertyMetadata(
+                            Name: "Numbers",
+                            FullName: "Sample.Holder.Numbers",
+                            Type: listType,
+                            Accessibility: MetadataAccessibility.Public,
+                            HasGetter: true,
+                            HasSetter: true,
+                            IsRequired: false,
+                            Attributes: []),
+                    ],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+            ],
+            Diagnostics: []);
+        const string template = """
+            ${
+                using Typewriter.Extensions.Types;
+
+                string ImportClass(Class c)
+                {
+                    return string.Join(Environment.NewLine, c.Properties
+                        .Where(p => !p.Type.IsPrimitive)
+                        .Select(p => $"import {{ {p.Type.ClassName()} }} from \"./{p.Type.ClassName()}\";"));
+                }
+            }
+            $Classes[$ImportClass]
+            """;
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "models.tst", Content: template), diagnostics: diagnostics);
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Trim().Should().BeEmpty();
+    }
+
+    [Fact]
     public void TypeScriptMapperParenthesizesNullableCollectionElementType()
     {
         var mapper = new TypeScriptTypeMapper();

@@ -6,7 +6,9 @@ public sealed record TemplateRenderDefaults(
     bool StrictNullGeneration,
     bool Utf8BomGeneration,
     string SolutionFullName,
-    char StringLiteralCharacter = '"')
+    char StringLiteralCharacter = '"',
+    string DateTypeGeneration = TypeScriptTypeMapper.DefaultDateType,
+    string DecimalTypeGeneration = TypeScriptTypeMapper.DefaultDecimalType)
 {
     // Matches the original Typewriter defaults: strict null unions and a UTF-8 BOM.
     public static TemplateRenderDefaults Default { get; } = new(
@@ -24,7 +26,9 @@ public sealed record TemplateRenderDefaults(
             StrictNullGeneration: configuration.Output.StrictNull,
             Utf8BomGeneration: configuration.Output.Encoding.Equals(value: "utf-8-bom", comparisonType: StringComparison.OrdinalIgnoreCase),
             SolutionFullName: solutionFullName ?? string.Empty,
-            StringLiteralCharacter: ToStringLiteralCharacter(quoteStyle: configuration.Output.QuoteStyle));
+            StringLiteralCharacter: ToStringLiteralCharacter(quoteStyle: configuration.Output.QuoteStyle),
+            DateTypeGeneration: configuration.Output.DateType,
+            DecimalTypeGeneration: configuration.Output.DecimalType);
     }
 
     private static char ToStringLiteralCharacter(QuoteStyle quoteStyle)

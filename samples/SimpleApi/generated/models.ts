@@ -6,7 +6,7 @@ export interface Order {
   id: number;
   total: number;
   status: OrderStatus;
-  createdAt: string;
+  createdAt: Date;
 }
 
 export interface User {

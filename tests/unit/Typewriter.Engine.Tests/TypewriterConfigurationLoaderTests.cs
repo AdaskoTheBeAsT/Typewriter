@@ -73,7 +73,9 @@ public sealed class TypewriterConfigurationLoaderTests
                               "indentSize": 2,
                               "insertFinalNewline": true,
                               "trimTrailingWhitespace": true,
-                              "quoteStyle": "backtick"
+                              "quoteStyle": "backtick",
+                              "dateType": "Dayjs",
+                              "decimalType": "Decimal"
                             }
                           }
                           """);
@@ -88,6 +90,8 @@ public sealed class TypewriterConfigurationLoaderTests
             configuration.Output.InsertFinalNewline.Should().BeTrue();
             configuration.Output.TrimTrailingWhitespace.Should().BeTrue();
             configuration.Output.QuoteStyle.Should().Be(QuoteStyle.Backtick);
+            configuration.Output.DateType.Should().Be("Dayjs");
+            configuration.Output.DecimalType.Should().Be("Decimal");
         }
         finally
         {

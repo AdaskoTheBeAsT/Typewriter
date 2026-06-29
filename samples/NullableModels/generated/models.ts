@@ -6,7 +6,7 @@ export interface Profile {
   id: string;
   displayName: string | null;
   score: number | null;
-  birthDate: string | null;
+  birthDate: Date | null;
   isActive: boolean;
   balances: Record<string, number>;
 }

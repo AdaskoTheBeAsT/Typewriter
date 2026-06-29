@@ -179,6 +179,31 @@ internal sealed class TemplateCodeModelAdapterFactory
                || type.FullName.Equals(value: "System.Object", comparisonType: StringComparison.Ordinal);
     }
 
+    private static string FormatGenericFullName(TypeMetadata type)
+    {
+        if (type.TypeParameters.Count == 0
+            || type.FullName.Contains(value: '<', comparisonType: StringComparison.Ordinal))
+        {
+            return type.FullName;
+        }
+
+        return string.Concat(
+            str0: type.FullName,
+            str1: "<",
+            str2: string.Join(separator: ", ", values: type.TypeParameters.Select(selector: parameter => parameter.Name)),
+            str3: ">");
+    }
+
+    private static bool IsPrimitiveType(TypeMetadataReference type)
+    {
+        var effectiveType = type.IsCollection && type.ElementType is not null
+            ? type.ElementType
+            : type;
+        return effectiveType.IsPrimitive
+            || effectiveType.IsDateLike
+            || effectiveType.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal);
+    }
+
     private static string GetDefaultValue(TypeMetadata type)
     {
         return type.Kind == TypeMetadataKind.Enum
@@ -290,7 +315,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             BaseClass = CreateBaseClass(type: type),
@@ -333,7 +358,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             BaseRecord = CreateBaseRecord(type: type),
@@ -375,7 +400,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             ContainingClass = CreateContainingClass(type: type),
@@ -406,7 +431,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             ContainingClass = CreateContainingClass(type: type),
@@ -440,7 +465,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             ContainingClass = CreateContainingClass(type: type),
@@ -458,7 +483,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             BaseClass = CreateBaseClass(type: type),
@@ -492,7 +517,11 @@ internal sealed class TemplateCodeModelAdapterFactory
     private CodeType CreateType(TypeMetadataReference type)
     {
         var typeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: CreateType));
-        var mappedName = _typeMapper.Map(type: type, strictNull: _settings.StrictNullGeneration);
+        var mappedName = _typeMapper.Map(
+            type: type,
+            strictNull: _settings.StrictNullGeneration,
+            dateType: _settings.DateTypeGeneration,
+            decimalType: _settings.DecimalTypeGeneration);
         var isStruct = _typesByFullName.TryGetValue(key: type.FullName, value: out var metadata)
                        && metadata.Kind == TypeMetadataKind.Struct;
         return new CodeType
@@ -510,9 +539,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsGuid = type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal),
             IsGeneric = typeArguments.Count > 0,
             IsNullable = type.IsNullable,
-            IsPrimitive = type.IsPrimitive
-                || type.IsDateLike
-                || type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal),
+            IsPrimitive = IsPrimitiveType(type: type),
             IsStruct = isStruct,
             IsTask = IsTaskLike(fullName: type.FullName),
             IsTimeSpan = type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal),
@@ -866,7 +893,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             IsAbstract = type.IsAbstract,
@@ -884,7 +911,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             IsAbstract = type.IsAbstract,
@@ -901,7 +928,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
@@ -918,7 +945,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
@@ -934,7 +961,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             IsFlags = HasAttribute(attributes: type.Attributes, name: "Flags"),
@@ -948,7 +975,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
-            FullName = type.FullName,
+            FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             FileLocations = type.FileLocations,
@@ -1059,6 +1086,18 @@ internal sealed class TemplateCodeModelAdapterFactory
             return "[]";
         }
 
+        var stringLiteralCharacter = _settings.StringLiteralCharacter;
+        if (type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal))
+        {
+            return $"{stringLiteralCharacter}00:00:00{stringLiteralCharacter}";
+        }
+
+        if (type.FullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal)
+            && !_settings.DecimalTypeGeneration.Equals(value: TypeScriptTypeMapper.DefaultDecimalType, comparisonType: StringComparison.Ordinal))
+        {
+            return $"new {_settings.DecimalTypeGeneration}(0)";
+        }
+
         if (type.IsDateLike)
         {
             return "new Date()";
@@ -1085,7 +1124,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
         return type.Name.Equals(value: "String", comparisonType: StringComparison.OrdinalIgnoreCase)
             || type.FullName.Equals(value: "System.String", comparisonType: StringComparison.OrdinalIgnoreCase)
-                ? "\"\""
+                ? $"{stringLiteralCharacter}{stringLiteralCharacter}"
                 : "null";
     }
 
