@@ -179,11 +179,7 @@ class TypewriterCliService(private val project: Project) {
         try {
             val workingDirectory = getPathBase(workspacePath).toString()
             val projectPath = resolveOptionalPath(settings.projectPath, getPathBase(workspacePath).toString()) ?: projectPathOverride
-            val templateSearchPath = if (projectScoped) {
-                projectPath?.let { Paths.get(it).parent?.toString() }
-            } else {
-                null
-            }
+            val templateSearchPath = if (projectScoped) resolveProjectTemplateSearchPath(projectPath) else null
             val persistentResult = project.service<TypewriterLanguageServerClient>().tryGenerate(
                 request = PersistentGenerationRequest(
                     command = command,
@@ -365,6 +361,34 @@ class TypewriterCliService(private val project: Project) {
         return null
     }
 
+    private fun resolveProjectTemplateSearchPath(projectPath: String?): String? {
+        if (projectPath.isNullOrBlank()) {
+            return null
+        }
+
+        val projectDirectory = Paths.get(projectPath).parent ?: return null
+        return if (containsTemplateFile(projectDirectory)) projectDirectory.toString() else null
+    }
+
+    private fun containsTemplateFile(root: Path): Boolean {
+        return try {
+            Files.walk(root).use { paths ->
+                paths.anyMatch { candidate ->
+                    !hasIgnoredInputSegment(candidate) &&
+                        Files.isRegularFile(candidate) &&
+                        candidate.fileName.toString().endsWith(".tst", ignoreCase = true)
+                }
+            }
+        } catch (_: IOException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
+    }
+
+    private fun hasIgnoredInputSegment(path: Path): Boolean =
+        path.any { it.toString().lowercase() in IgnoredInputDirectories }
+
     private fun readConfiguredInputExtensions(filePath: String): Set<String> {
         var extensions = DefaultInputExtensions
         for (configurationPath in findConfigurationFiles(filePath)) {
@@ -500,5 +524,6 @@ class TypewriterCliService(private val project: Project) {
         const val SaveDebounceMillis = 300
         val ConfigurationFileNames = listOf("typewriter.json", "typewriter.config.json", ".typewriterrc.json")
         val DefaultInputExtensions = setOf(".cs", ".csproj", ".json", ".props", ".sln", ".slnx", ".targets", ".tst")
+        val IgnoredInputDirectories = setOf("bin", "obj", "node_modules", "generated")
     }
 }

@@ -64,6 +64,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.5.2](#452)
     - [4.5.0](#450)
     - [4.4.0](#440)
     - [4.3.0](#430)
@@ -794,7 +795,7 @@ dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build -m
 npm ci --prefix vscode
 npm --prefix vscode run lint
 npm --prefix vscode run bundle
-npm --prefix vscode run package -- --out ../artifacts/packages/typewriter-vscode-3.0.0.vsix
+npm --prefix vscode run package -- --out ../artifacts/packages/typewriter-vscode-4.5.2.vsix
 
 # JetBrains Rider plugin
 ./rider/gradlew -p rider verifyPluginProjectConfiguration
@@ -835,6 +836,12 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.5.2
+
+- Fixed IDE generate-on-save for C# source changes when templates are stored outside the saved file's project directory.
+- Fixed duplicate assembly identity loading during analyzer/source-generator and template helper resolution, avoiding intermittent "assembly already loaded" failures.
+- Updated the Rider plugin build to IntelliJ Platform Gradle Plugin `2.17.0`.
 
 ### 4.5.0
 

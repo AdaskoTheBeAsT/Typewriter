@@ -60,6 +60,66 @@ public sealed class WorkspaceGenerationServiceTests
         }
     }
 
+    [Fact]
+    public async Task GenerateAsyncRefreshesOutputAfterSourceFileChanges()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "App.csproj");
+            var sourcePath = Path.Combine(path1: directory, path2: "Model.cs");
+            var outputPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                    <Project Sdk="Microsoft.NET.Sdk">
+                      <PropertyGroup>
+                        <TargetFramework>net10.0</TargetFramework>
+                      </PropertyGroup>
+                    </Project>
+                    """);
+            await File.WriteAllTextAsync(
+                path: sourcePath,
+                contents: "namespace App; public sealed class Model { public string Name { get; set; } = string.Empty; }");
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Models.tst"),
+                contents: """
+                    // output: generated/models.ts
+                    $Classes[export interface $Name {
+                    $Properties[  $name: $Type;
+                    ]}]
+                    """);
+
+            using var service = new WorkspaceGenerationService();
+            var request = new WorkspaceGenerationRequest(
+                Command: "generate",
+                WorkspacePath: directory,
+                ProjectPath: projectPath,
+                TemplatePath: null,
+                TemplateSearchPath: directory,
+                Framework: null,
+                AllProjects: false);
+            var settings = LanguageServerSettings.Default;
+
+            var first = await service.GenerateAsync(request: request, settings: settings, cancellationToken: CancellationToken.None);
+            await File.WriteAllTextAsync(
+                path: sourcePath,
+                contents: "namespace App; public sealed class Model { public string Name { get; set; } = string.Empty; public int Age { get; set; } }");
+            var second = await service.GenerateAsync(request: request, settings: settings, cancellationToken: CancellationToken.None);
+
+            first.Success.Should().BeTrue();
+            second.Success.Should().BeTrue();
+            second.GeneratedFiles.Should().ContainSingle().Which.Changed.Should().BeTrue();
+            var output = await File.ReadAllTextAsync(path: outputPath);
+            output.Should().Contain("  name: string;");
+            output.Should().Contain("  age: number;");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(

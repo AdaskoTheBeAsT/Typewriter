@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Typewriter.Abstractions;
 using Typewriter.Roslyn;
 using Xunit;
@@ -1164,6 +1166,52 @@ public sealed class CSharpProjectMetadataProviderTests
         }
     }
 
+    [Fact]
+    public async Task GetMetadataHandlesDuplicateAnalyzerAssemblyIdentities()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var firstAnalyzerPath = Path.Combine(path1: directory, path2: "first", path3: "DuplicateGenerator.dll");
+            var secondAnalyzerPath = Path.Combine(path1: directory, path2: "second", path3: "DuplicateGenerator.dll");
+            Directory.CreateDirectory(path: Path.GetDirectoryName(path: firstAnalyzerPath)!);
+            Directory.CreateDirectory(path: Path.GetDirectoryName(path: secondAnalyzerPath)!);
+            EmitSourceGeneratorAssembly(path: firstAnalyzerPath);
+            File.Copy(sourceFileName: firstAnalyzerPath, destFileName: secondAnalyzerPath);
+
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: $$"""
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <Analyzer Include="{{firstAnalyzerPath}}" />
+                              <Analyzer Include="{{secondAnalyzerPath}}" />
+                            </ItemGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Model.cs"),
+                contents: "namespace Sample; public sealed class Model { public string Name { get; set; } = string.Empty; }");
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().NotContain(diagnostic => diagnostic.Message.Contains(value: "already loaded", comparisonType: StringComparison.OrdinalIgnoreCase));
+            metadata.Types.Should().ContainSingle(type => type.Name == "Model");
+            ForceGarbageCollection();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(
@@ -1173,6 +1221,58 @@ public sealed class CSharpProjectMetadataProviderTests
         Directory.CreateDirectory(path: directory);
         return directory;
     }
+
+    private static void EmitSourceGeneratorAssembly(string path)
+    {
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "DuplicateGenerator",
+            syntaxTrees:
+            [
+                CSharpSyntaxTree.ParseText(
+                    text: """
+                          using Microsoft.CodeAnalysis;
+
+                          [Generator]
+                          public sealed class DuplicateGenerator : ISourceGenerator
+                          {
+                              public void Initialize(GeneratorInitializationContext context)
+                              {
+                              }
+
+                              public void Execute(GeneratorExecutionContext context)
+                              {
+                              }
+                          }
+                          """),
+            ],
+            references: GetSourceGeneratorReferences(),
+            options: new CSharpCompilationOptions(outputKind: OutputKind.DynamicallyLinkedLibrary));
+
+        using var stream = File.Create(path: path);
+        var result = compilation.Emit(peStream: stream);
+        result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics));
+    }
+
+    private static IReadOnlyList<MetadataReference> GetSourceGeneratorReferences()
+    {
+        var trustedAssemblies = (string?)AppContext.GetData(name: "TRUSTED_PLATFORM_ASSEMBLIES");
+        trustedAssemblies.Should().NotBeNullOrWhiteSpace();
+        return trustedAssemblies!
+            .Split(separator: Path.PathSeparator, options: StringSplitOptions.RemoveEmptyEntries)
+            .Append(element: typeof(ISourceGenerator).Assembly.Location)
+            .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
+            .Select(selector: path => MetadataReference.CreateFromFile(path: path))
+            .ToArray();
+    }
+
+#pragma warning disable S1215
+    private static void ForceGarbageCollection()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+    }
+#pragma warning restore S1215
 
     private static async Task DeleteDirectoryWithRetryAsync(string directory)
     {
