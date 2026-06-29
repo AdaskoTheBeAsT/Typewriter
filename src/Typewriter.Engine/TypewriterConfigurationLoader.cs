@@ -114,6 +114,8 @@ public static class TypewriterConfigurationLoader
                 InsertFinalNewline = loaded.Output?.InsertFinalNewline ?? current.Output.InsertFinalNewline,
                 TrimTrailingWhitespace = loaded.Output?.TrimTrailingWhitespace ?? current.Output.TrimTrailingWhitespace,
                 QuoteStyle = loaded.Output?.QuoteStyle ?? current.Output.QuoteStyle,
+                DateType = loaded.Output?.DateType ?? current.Output.DateType,
+                DecimalType = loaded.Output?.DecimalType ?? current.Output.DecimalType,
             },
             Diagnostics = current.Diagnostics with
             {
@@ -133,6 +135,10 @@ public static class TypewriterConfigurationLoader
             {
                 Newline = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_NEWLINE")
                     ?? configuration.Output.Newline,
+                DateType = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DATE_TYPE")
+                    ?? configuration.Output.DateType,
+                DecimalType = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DECIMAL_TYPE")
+                    ?? configuration.Output.DecimalType,
             },
             Diagnostics = configuration.Diagnostics with
             {
@@ -223,6 +229,10 @@ public static class TypewriterConfigurationLoader
         public bool? TrimTrailingWhitespace { get; init; }
 
         public QuoteStyle? QuoteStyle { get; init; }
+
+        public string? DateType { get; init; }
+
+        public string? DecimalType { get; init; }
     }
 
     internal sealed record DiagnosticsConfigurationFile

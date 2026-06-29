@@ -1,10 +1,14 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using Typewriter.Abstractions;
 
 namespace Typewriter.Engine;
 
 public sealed class TypeScriptTypeMapper
 {
+    public const string DefaultDateType = "Date";
+    public const string DefaultDecimalType = "number";
+
     private readonly ConcurrentDictionary<MapCacheKey, string> _cache = new();
 
     public string Map(TypeMetadataReference type) =>
@@ -12,13 +16,26 @@ public sealed class TypeScriptTypeMapper
 
     public string Map(
         TypeMetadataReference type,
-        bool strictNull)
+        bool strictNull) =>
+        Map(type: type, strictNull: strictNull, dateType: DefaultDateType, decimalType: DefaultDecimalType);
+
+    public string Map(
+        TypeMetadataReference type,
+        bool strictNull,
+        string? dateType,
+        string? decimalType = null)
     {
         ArgumentNullException.ThrowIfNull(argument: type);
 
+        var normalizedDateType = NormalizeDateType(dateType: dateType);
+        var normalizedDecimalType = NormalizeDecimalType(decimalType: decimalType);
         return _cache.GetOrAdd(
-            key: new MapCacheKey(Type: type, StrictNull: strictNull),
-            valueFactory: static (key, mapper) => mapper.MapUncached(type: key.Type, strictNull: key.StrictNull),
+            key: new MapCacheKey(Type: type, StrictNull: strictNull, DateType: normalizedDateType, DecimalType: normalizedDecimalType),
+            valueFactory: static (key, mapper) => mapper.MapUncached(
+                type: key.Type,
+                strictNull: key.StrictNull,
+                dateType: key.DateType,
+                decimalType: key.DecimalType),
             factoryArgument: this);
     }
 
@@ -44,8 +61,25 @@ public sealed class TypeScriptTypeMapper
         || fullName.Equals(value: "System.Int64", comparisonType: StringComparison.Ordinal)
         || fullName.Equals(value: "System.UInt64", comparisonType: StringComparison.Ordinal)
         || fullName.Equals(value: "System.Single", comparisonType: StringComparison.Ordinal)
-        || fullName.Equals(value: "System.Double", comparisonType: StringComparison.Ordinal)
-        || fullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal);
+        || fullName.Equals(value: "System.Double", comparisonType: StringComparison.Ordinal);
+
+    private static bool IsDecimal(string fullName) =>
+        fullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal);
+
+    private static string NormalizeDateType(string? dateType) =>
+        string.IsNullOrWhiteSpace(value: dateType)
+            ? DefaultDateType
+            : dateType.Trim();
+
+    private static string NormalizeDecimalType(string? decimalType) =>
+        string.IsNullOrWhiteSpace(value: decimalType)
+            ? DefaultDecimalType
+            : decimalType.Trim();
+
+    private static bool IsConfigurableDate(string fullName) =>
+        fullName.Equals(value: "System.DateTime", comparisonType: StringComparison.Ordinal)
+        || fullName.Equals(value: "System.DateTimeOffset", comparisonType: StringComparison.Ordinal)
+        || fullName.Equals(value: "System.DateOnly", comparisonType: StringComparison.Ordinal);
 
     private static string FormatArrayElementType(string mapped)
     {
@@ -144,95 +178,163 @@ public sealed class TypeScriptTypeMapper
             && mapped[index: start + 3] == 'l';
     }
 
-    private string MapCore(
+    private static bool TryMapKnownType(
         TypeMetadataReference type,
-        bool strictNull)
+        string dateType,
+        string decimalType,
+        [NotNullWhen(returnValue: true)] out string? mapped)
     {
-        if (IsTaskLike(fullName: type.FullName))
-        {
-            return type.TypeArguments.Count > 0
-                ? Map(type: type.TypeArguments[index: 0], strictNull: strictNull)
-                : "void";
-        }
-
-        if (type.IsDictionary)
-        {
-            return MapDictionaryType(type: type, strictNull: strictNull);
-        }
-
-        if (type.IsCollection && type.ElementType is not null)
-        {
-            return $"{FormatArrayElementType(mapped: Map(type: type.ElementType, strictNull: strictNull))}[]";
-        }
-
         if (type.IsEnum)
         {
-            return type.Name;
+            mapped = type.Name;
+            return true;
         }
 
         if (type.IsDateLike)
         {
-            return "string";
+            mapped = IsConfigurableDate(fullName: type.FullName) ? dateType : "string";
+            return true;
         }
 
         var fullName = type.FullName;
         if (IsBoolean(fullName: fullName))
         {
-            return "boolean";
+            mapped = "boolean";
+            return true;
+        }
+
+        if (IsDecimal(fullName: fullName))
+        {
+            mapped = decimalType;
+            return true;
         }
 
         if (IsNumber(fullName: fullName))
         {
-            return "number";
+            mapped = "number";
+            return true;
         }
 
         if (IsString(fullName: fullName))
         {
-            return "string";
+            mapped = "string";
+            return true;
         }
 
         if (fullName.Equals(value: "System.Void", comparisonType: StringComparison.Ordinal))
         {
-            return "void";
+            mapped = "void";
+            return true;
         }
 
         if (fullName.Equals(value: "dynamic", comparisonType: StringComparison.OrdinalIgnoreCase)
             || fullName.Equals(value: "System.Object", comparisonType: StringComparison.Ordinal))
         {
-            return "unknown";
+            mapped = "unknown";
+            return true;
+        }
+
+        mapped = null;
+        return false;
+    }
+
+    private string MapCore(
+        TypeMetadataReference type,
+        bool strictNull,
+        string dateType,
+        string decimalType)
+    {
+        if (IsTaskLike(fullName: type.FullName))
+        {
+            return type.TypeArguments.Count > 0
+                ? Map(type: type.TypeArguments[index: 0], strictNull: strictNull, dateType: dateType, decimalType: decimalType)
+                : "void";
+        }
+
+        if (type.IsDictionary)
+        {
+            return MapDictionaryType(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType);
+        }
+
+        if (type.IsCollection && type.ElementType is not null)
+        {
+            return $"{FormatArrayElementType(mapped: Map(type: type.ElementType, strictNull: strictNull, dateType: dateType, decimalType: decimalType))}[]";
+        }
+
+        if (TryMapKnownType(type: type, dateType: dateType, decimalType: decimalType, mapped: out var mapped))
+        {
+            return mapped;
         }
 
         return type.TypeArguments.Count > 0
-            ? MapGenericType(type: type, strictNull: strictNull)
+            ? MapGenericType(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType)
             : type.Name;
     }
 
     private string MapDictionaryType(
         TypeMetadataReference type,
-        bool strictNull)
+        bool strictNull,
+        string dateType,
+        string decimalType)
     {
+        var keyType = type.TypeArguments.Count > 0
+            ? type.TypeArguments[index: 0]
+            : null;
         var valueType = type.TypeArguments.Count > 1
-            ? Map(type: type.TypeArguments[index: 1], strictNull: strictNull)
+            ? Map(type: type.TypeArguments[index: 1], strictNull: strictNull, dateType: dateType, decimalType: decimalType)
             : "unknown";
+        var keyTypeName = keyType is null
+            ? "string"
+            : MapDictionaryKeyType(type: keyType, dateType: dateType);
 
-        return $"Record<string, {valueType}>";
+        return keyTypeName is "string" or "number"
+            || keyType?.IsEnum == true
+            ? $"Record<{keyTypeName}, {valueType}>"
+            : $"Map<{keyTypeName}, {valueType}>";
+    }
+
+    private string MapDictionaryKeyType(
+        TypeMetadataReference type,
+        string dateType)
+    {
+        if (type.IsEnum)
+        {
+            return type.Name;
+        }
+
+        if (IsNumber(fullName: type.FullName)
+            || IsDecimal(fullName: type.FullName))
+        {
+            return "number";
+        }
+
+        if (IsString(fullName: type.FullName))
+        {
+            return "string";
+        }
+
+        return Map(type: type, strictNull: false, dateType: dateType);
     }
 
     private string MapGenericType(
         TypeMetadataReference type,
-        bool strictNull)
+        bool strictNull,
+        string dateType,
+        string decimalType)
     {
         var arguments = string.Join(
             separator: ", ",
-            values: type.TypeArguments.Select(selector: argument => Map(type: argument, strictNull: strictNull)));
+            values: type.TypeArguments.Select(selector: argument => Map(type: argument, strictNull: strictNull, dateType: dateType, decimalType: decimalType)));
         return type.Name + "<" + arguments + ">";
     }
 
     private string MapUncached(
         TypeMetadataReference type,
-        bool strictNull)
+        bool strictNull,
+        string dateType,
+        string decimalType)
     {
-        var mapped = MapCore(type: type, strictNull: strictNull);
+        var mapped = MapCore(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType);
         if (strictNull && type.IsNullable && !HasTopLevelNullUnion(mapped: mapped))
         {
             return $"{mapped} | null";
@@ -243,5 +345,7 @@ public sealed class TypeScriptTypeMapper
 
     private sealed record MapCacheKey(
         TypeMetadataReference Type,
-        bool StrictNull);
+        bool StrictNull,
+        string DateType,
+        string DecimalType);
 }

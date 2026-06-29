@@ -12,13 +12,13 @@
 export interface IAuditInfo {
   $type?: string;
   createdBy?: string;
-  createdAt?: string;
+  createdAt?: Date;
 }
 
 export class AuditInfo implements IAuditInfo {
   public $type: string;
   public createdBy: string;
-  public createdAt: string;
+  public createdAt: Date;
 
   constructor(initObj?: IAuditInfo) {
     this.$type = 'AngularWebApiSample.Models.AuditInfo,'

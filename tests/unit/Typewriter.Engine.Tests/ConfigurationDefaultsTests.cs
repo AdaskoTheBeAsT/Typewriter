@@ -156,6 +156,92 @@ public sealed class ConfigurationDefaultsTests
     }
 
     [Fact]
+    public void RenderUsesConfiguredDateTypeForDefaults()
+    {
+        var metadata = CreateDateMetadata();
+        var document = new TemplateDocument(Path: "models.tst", Content: "$Classes[$Properties[$name: $Type;]]", OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var defaults = TemplateRenderDefaults.FromConfiguration(
+            configuration: CreateConfiguration(strictNull: true, dateType: "Dayjs"));
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics, defaults: defaults);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("createdAt: Dayjs;");
+    }
+
+    [Fact]
+    public void TemplateOverrideUsesConfiguredDateType()
+    {
+        var metadata = CreateDateMetadata();
+        var diagnostics = new List<GenerationDiagnostic>();
+        var document = TemplateDocument.Parse(
+            template: new TemplateFile(
+                Path: Path.Combine(path1: Path.GetTempPath(), path2: "configured-date.tst"),
+                Content: """
+                         ${
+                             Template(Settings settings)
+                             {
+                                 settings.UseDateType("DateTime");
+                             }
+                         }
+                         // output: configured-date.ts
+                         $Classes[$Properties[$name: $Type;]]
+                         """),
+            diagnostics: diagnostics);
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("createdAt: DateTime;");
+    }
+
+    [Fact]
+    public void RenderUsesConfiguredDecimalTypeForDefaults()
+    {
+        var metadata = CreateDecimalMetadata();
+        var document = new TemplateDocument(Path: "models.tst", Content: "$Classes[$Properties[$name: $Type = $Type[$Default];]]", OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var defaults = TemplateRenderDefaults.FromConfiguration(
+            configuration: CreateConfiguration(strictNull: true, decimalType: "Decimal"));
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics, defaults: defaults);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("amount: Decimal = new Decimal(0);");
+    }
+
+    [Fact]
+    public void TemplateOverrideUsesConfiguredDecimalType()
+    {
+        var metadata = CreateDecimalMetadata();
+        var diagnostics = new List<GenerationDiagnostic>();
+        var document = TemplateDocument.Parse(
+            template: new TemplateFile(
+                Path: Path.Combine(path1: Path.GetTempPath(), path2: "configured-decimal.tst"),
+                Content: """
+                         ${
+                             Template(Settings settings)
+                             {
+                                 settings.UseDecimalType("Decimal");
+                             }
+                         }
+                         // output: configured-decimal.ts
+                         $Classes[$Properties[$name: $Type = $Type[$Default];]]
+                         """),
+            diagnostics: diagnostics);
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("amount: Decimal = new Decimal(0);");
+    }
+
+    [Fact]
     public void ConfiguredQuoteStyleFlowsIntoCompiledTemplateAndTemplateOverrideWins()
     {
         var metadata = CreateGuidIdMetadata();
@@ -293,7 +379,9 @@ public sealed class ConfigurationDefaultsTests
     private static TypewriterConfiguration CreateConfiguration(
         bool strictNull,
         string encoding = "utf-8",
-        QuoteStyle quoteStyle = QuoteStyle.Double) =>
+        QuoteStyle quoteStyle = QuoteStyle.Double,
+        string dateType = "Date",
+        string decimalType = "number") =>
         TypewriterConfiguration.Default with
         {
             Output = TypewriterConfiguration.Default.Output with
@@ -301,6 +389,8 @@ public sealed class ConfigurationDefaultsTests
                 StrictNull = strictNull,
                 Encoding = encoding,
                 QuoteStyle = quoteStyle,
+                DateType = dateType,
+                DecimalType = decimalType,
             },
         };
 
@@ -381,6 +471,96 @@ public sealed class ConfigurationDefaultsTests
                             Name: "Email",
                             FullName: "Sample.User.Email",
                             Type: nullableStringType,
+                            Accessibility: MetadataAccessibility.Public,
+                            HasGetter: true,
+                            HasSetter: true,
+                            IsRequired: false,
+                            Attributes: []),
+                    ],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+            ],
+            Diagnostics: []);
+    }
+
+    private static ProjectMetadata CreateDateMetadata()
+    {
+        var dateType = new TypeMetadataReference(
+            Name: "DateTime",
+            FullName: "System.DateTime",
+            Namespace: "System",
+            IsNullable: false,
+            IsCollection: false,
+            IsDictionary: false,
+            IsEnum: false,
+            IsPrimitive: false,
+            IsDateLike: true,
+            ElementType: null,
+            TypeArguments: []);
+        return new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "AuditInfo",
+                    FullName: "Sample.AuditInfo",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties:
+                    [
+                        new PropertyMetadata(
+                            Name: "CreatedAt",
+                            FullName: "Sample.AuditInfo.CreatedAt",
+                            Type: dateType,
+                            Accessibility: MetadataAccessibility.Public,
+                            HasGetter: true,
+                            HasSetter: true,
+                            IsRequired: false,
+                            Attributes: []),
+                    ],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+            ],
+            Diagnostics: []);
+    }
+
+    private static ProjectMetadata CreateDecimalMetadata()
+    {
+        var decimalType = new TypeMetadataReference(
+            Name: "Decimal",
+            FullName: "System.Decimal",
+            Namespace: "System",
+            IsNullable: false,
+            IsCollection: false,
+            IsDictionary: false,
+            IsEnum: false,
+            IsPrimitive: true,
+            IsDateLike: false,
+            ElementType: null,
+            TypeArguments: []);
+        return new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "Payment",
+                    FullName: "Sample.Payment",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties:
+                    [
+                        new PropertyMetadata(
+                            Name: "Amount",
+                            FullName: "Sample.Payment.Amount",
+                            Type: decimalType,
                             Accessibility: MetadataAccessibility.Public,
                             HasGetter: true,
                             HasSetter: true,
