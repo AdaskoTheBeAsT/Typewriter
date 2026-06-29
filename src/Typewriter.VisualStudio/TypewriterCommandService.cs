@@ -814,7 +814,28 @@ internal sealed class TypewriterCommandService
             return null;
         }
 
-        var projectDirectory = Path.GetDirectoryName(path: Path.GetFullPath(path: projectPath));
+        string? projectDirectory;
+        try
+        {
+            projectDirectory = Path.GetDirectoryName(path: Path.GetFullPath(path: projectPath));
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+
         if (string.IsNullOrWhiteSpace(value: projectDirectory) || !Directory.Exists(path: projectDirectory))
         {
             return null;
@@ -857,7 +878,12 @@ internal sealed class TypewriterCommandService
     }
 
     private static bool IsIgnoredTemplateDirectory(string name) =>
-        name.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
+        name.Equals(value: ".git", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: ".gradle", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: ".idea", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: ".vs", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: ".vscode", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
         || name.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase)
         || name.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase)
         || name.Equals(value: "generated", comparisonType: StringComparison.OrdinalIgnoreCase);

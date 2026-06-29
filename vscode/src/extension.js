@@ -12,7 +12,7 @@ const saveDebounceDelayMs = 300;
 const configurationFileNames = ["typewriter.json", "typewriter.config.json", ".typewriterrc.json"];
 const defaultInputExtensions = [".cs", ".csproj", ".json", ".props", ".sln", ".slnx", ".targets", ".tst"];
 const templateExtensions = new Set([".tst"]);
-const ignoredInputDirectories = new Set(["bin", "obj", "node_modules", "generated"]);
+const ignoredInputDirectories = new Set([".git", ".gradle", ".idea", ".vs", ".vscode", "bin", "obj", "node_modules", "generated"]);
 const saveQueue = {
     pending: undefined,
     timer: undefined,
