@@ -5,6 +5,7 @@ namespace Typewriter.Engine;
 
 internal sealed class TemplateAssemblyLoadContext : AssemblyLoadContext
 {
+    private readonly Lock _loadLock = new();
     private readonly IReadOnlyDictionary<string, string> _referencePaths;
 
     public TemplateAssemblyLoadContext(
@@ -29,10 +30,16 @@ internal sealed class TemplateAssemblyLoadContext : AssemblyLoadContext
             return sharedAssembly;
         }
 
+        var loadedAssembly = FindLoadedAssembly(assemblyName: assemblyName);
+        if (loadedAssembly is not null)
+        {
+            return loadedAssembly;
+        }
+
         if (assemblyName.Name is not null
             && _referencePaths.TryGetValue(key: assemblyName.Name, value: out var referencePath))
         {
-            return LoadFromAssemblyPath(assemblyPath: referencePath);
+            return LoadFromAssemblyPathOnce(assemblyPath: referencePath, requestedName: assemblyName);
         }
 
         return null;
@@ -60,4 +67,53 @@ internal sealed class TemplateAssemblyLoadContext : AssemblyLoadContext
             return null;
         }
     }
+
+    private static AssemblyName? TryGetAssemblyName(string path)
+    {
+        try
+        {
+            return AssemblyName.GetAssemblyName(assemblyFile: path);
+        }
+        catch (BadImageFormatException)
+        {
+            return null;
+        }
+        catch (FileLoadException)
+        {
+            return null;
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private Assembly LoadFromAssemblyPathOnce(
+        string assemblyPath,
+        AssemblyName requestedName)
+    {
+        var fullPath = Path.GetFullPath(path: assemblyPath);
+        var candidateName = TryGetAssemblyName(path: fullPath) ?? requestedName;
+        lock (_loadLock)
+        {
+            var loadedAssembly = FindLoadedAssembly(assemblyName: candidateName);
+            if (loadedAssembly is not null)
+            {
+                return loadedAssembly;
+            }
+
+            try
+            {
+                return LoadFromAssemblyPath(assemblyPath: fullPath);
+            }
+            catch (FileLoadException) when (FindLoadedAssembly(assemblyName: candidateName) is not null)
+            {
+                return FindLoadedAssembly(assemblyName: candidateName)!;
+            }
+        }
+    }
+
+    private Assembly? FindLoadedAssembly(AssemblyName assemblyName) =>
+        Assemblies.FirstOrDefault(
+            predicate: assembly => AssemblyName.ReferenceMatchesDefinition(reference: assemblyName, definition: assembly.GetName()));
 }

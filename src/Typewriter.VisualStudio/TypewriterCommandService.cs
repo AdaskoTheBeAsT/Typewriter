@@ -298,7 +298,7 @@ internal sealed class TypewriterCommandService
 
         var resolvedWorkspacePath = workspacePath ?? string.Empty;
         var templateSearchPath = inputPath is not null && !string.IsNullOrWhiteSpace(value: projectPath)
-            ? Path.GetDirectoryName(path: projectPath)
+            ? ResolveProjectTemplateSearchPath(projectPath: projectPath)
             : null;
         return new GenerationContext(
             workspacePath: resolvedWorkspacePath,
@@ -806,6 +806,87 @@ internal sealed class TypewriterCommandService
             .FirstOrDefault(predicate: projectPath =>
                 IsPathBelowDirectory(path: fullInputPath, directory: Path.GetDirectoryName(path: projectPath) ?? string.Empty));
     }
+
+    private static string? ResolveProjectTemplateSearchPath(string? projectPath)
+    {
+        if (string.IsNullOrWhiteSpace(value: projectPath))
+        {
+            return null;
+        }
+
+        string? projectDirectory;
+        try
+        {
+            projectDirectory = Path.GetDirectoryName(path: Path.GetFullPath(path: projectPath));
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(value: projectDirectory) || !Directory.Exists(path: projectDirectory))
+        {
+            return null;
+        }
+
+        return ContainsTemplateFile(directory: projectDirectory)
+            ? projectDirectory
+            : null;
+    }
+
+    private static bool ContainsTemplateFile(string directory)
+    {
+        var pending = new Stack<string>();
+        pending.Push(item: directory);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            try
+            {
+                if (Directory.EnumerateFiles(path: current, searchPattern: "*.tst", searchOption: SearchOption.TopDirectoryOnly).Any())
+                {
+                    return true;
+                }
+
+                foreach (var childDirectory in Directory.EnumerateDirectories(path: current)
+                             .Where(predicate: childDirectory => !IsIgnoredTemplateDirectory(name: Path.GetFileName(path: childDirectory))))
+                {
+                    pending.Push(item: childDirectory);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsIgnoredTemplateDirectory(string name) =>
+        name.Equals(value: ".git", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: ".gradle", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: ".idea", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: ".vs", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: ".vscode", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || name.Equals(value: "generated", comparisonType: StringComparison.OrdinalIgnoreCase);
 
     private static IEnumerable<Project> EnumerateProjects(Projects projects)
     {

@@ -91,8 +91,8 @@ jobs:
       - name: Collect editor packages
         shell: pwsh
         run: |
-          Copy-Item src/Typewriter.VisualStudio/bin/Release/net472/Typewriter.VisualStudio.vsix artifacts/packages/Typewriter.VisualStudio-4.5.1.vsix
-          Copy-Item rider/build/distributions/typewriter-rider-4.5.1.zip artifacts/packages/Typewriter-Rider-4.5.1.zip
+          Copy-Item src/Typewriter.VisualStudio/bin/Release/net472/Typewriter.VisualStudio.vsix artifacts/packages/Typewriter.VisualStudio-4.5.2.vsix
+          Copy-Item rider/build/distributions/typewriter-rider-4.5.2.zip artifacts/packages/Typewriter-Rider-4.5.2.zip
 
       - name: Upload packages
         uses: actions/upload-artifact@v4

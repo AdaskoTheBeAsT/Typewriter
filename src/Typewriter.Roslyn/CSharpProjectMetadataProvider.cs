@@ -2021,6 +2021,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             private readonly ConcurrentDictionary<string, byte> _dependencyLocations = new(comparer: StringComparer.OrdinalIgnoreCase);
             private readonly ConcurrentDictionary<string, string> _referencePaths = new(comparer: StringComparer.OrdinalIgnoreCase);
+            private readonly Lock _loadLock = new();
 
             public AnalyzerAssemblyLoadContext()
                 : base(name: "Typewriter.SourceGenerators", isCollectible: true)
@@ -2064,9 +2065,8 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
             public Assembly LoadAnalyzerAssembly(string assemblyPath)
             {
-#pragma warning disable SCS0018
-                return LoadFromAssemblyPath(assemblyPath: assemblyPath);
-#pragma warning restore SCS0018
+                var analyzerPath = Path.GetFullPath(path: assemblyPath);
+                return LoadFromAssemblyPathOnce(assemblyPath: analyzerPath, requestedName: TryGetAssemblyName(path: analyzerPath));
             }
 
             protected override Assembly? Load(AssemblyName assemblyName)
@@ -2078,15 +2078,39 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                     return sharedAssembly;
                 }
 
+                var loadedAssembly = FindLoadedAssembly(assemblyName: assemblyName);
+                if (loadedAssembly is not null)
+                {
+                    return loadedAssembly;
+                }
+
                 if (assemblyName.Name is not null
                     && _referencePaths.TryGetValue(key: assemblyName.Name, value: out var referencePath))
                 {
-#pragma warning disable SCS0018
-                    return LoadFromAssemblyPath(assemblyPath: referencePath);
-#pragma warning restore SCS0018
+                    return LoadFromAssemblyPathOnce(assemblyPath: referencePath, requestedName: assemblyName);
                 }
 
                 return LoadFromDependencyDirectory(assemblyName: assemblyName);
+            }
+
+            private static AssemblyName? TryGetAssemblyName(string path)
+            {
+                try
+                {
+                    return AssemblyName.GetAssemblyName(assemblyFile: path);
+                }
+                catch (BadImageFormatException)
+                {
+                    return null;
+                }
+                catch (FileLoadException)
+                {
+                    return null;
+                }
+                catch (FileNotFoundException)
+                {
+                    return null;
+                }
             }
 
             private Assembly? LoadFromDependencyDirectory(AssemblyName assemblyName)
@@ -2108,13 +2132,56 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                     var candidate = Path.Combine(path1: directory, path2: assemblyFileName);
                     if (File.Exists(path: candidate))
                     {
-#pragma warning disable SCS0018
-                        return LoadFromAssemblyPath(assemblyPath: candidate);
-#pragma warning restore SCS0018
+                        return LoadFromAssemblyPathOnce(assemblyPath: candidate, requestedName: assemblyName);
                     }
                 }
 
                 return null;
+            }
+
+            private Assembly LoadFromAssemblyPathOnce(
+                string assemblyPath,
+                AssemblyName? requestedName)
+            {
+                var fullPath = Path.GetFullPath(path: assemblyPath);
+                var candidateName = TryGetAssemblyName(path: fullPath) ?? requestedName;
+                lock (_loadLock)
+                {
+                    var loadedAssembly = candidateName is null
+                        ? FindLoadedAssemblyByPath(assemblyPath: fullPath)
+                        : FindLoadedAssembly(assemblyName: candidateName);
+                    if (loadedAssembly is not null)
+                    {
+                        return loadedAssembly;
+                    }
+
+                    try
+                    {
+#pragma warning disable SCS0018
+                        return LoadFromAssemblyPath(assemblyPath: fullPath);
+#pragma warning restore SCS0018
+                    }
+                    catch (FileLoadException) when (candidateName is not null && FindLoadedAssembly(assemblyName: candidateName) is not null)
+                    {
+                        return FindLoadedAssembly(assemblyName: candidateName)!;
+                    }
+                    catch (FileLoadException) when (FindLoadedAssemblyByPath(assemblyPath: fullPath) is not null)
+                    {
+                        return FindLoadedAssemblyByPath(assemblyPath: fullPath)!;
+                    }
+                }
+            }
+
+            private Assembly? FindLoadedAssembly(AssemblyName assemblyName) =>
+                Assemblies.FirstOrDefault(
+                    predicate: assembly => AssemblyName.ReferenceMatchesDefinition(reference: assemblyName, definition: assembly.GetName()));
+
+            private Assembly? FindLoadedAssemblyByPath(string assemblyPath)
+            {
+                var fullPath = Path.GetFullPath(path: assemblyPath);
+                return Assemblies.FirstOrDefault(
+                    predicate: assembly => assembly.Location.Length > 0
+                                           && string.Equals(a: Path.GetFullPath(path: assembly.Location), b: fullPath, comparisonType: StringComparison.OrdinalIgnoreCase));
             }
         }
     }

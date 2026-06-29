@@ -20,9 +20,13 @@ import com.intellij.util.Alarm
 import com.intellij.util.execution.ParametersListUtil
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 
 @Service(Service.Level.PROJECT)
 class TypewriterCliService(private val project: Project) {
@@ -179,11 +183,7 @@ class TypewriterCliService(private val project: Project) {
         try {
             val workingDirectory = getPathBase(workspacePath).toString()
             val projectPath = resolveOptionalPath(settings.projectPath, getPathBase(workspacePath).toString()) ?: projectPathOverride
-            val templateSearchPath = if (projectScoped) {
-                projectPath?.let { Paths.get(it).parent?.toString() }
-            } else {
-                null
-            }
+            val templateSearchPath = if (projectScoped) resolveProjectTemplateSearchPath(projectPath) else null
             val persistentResult = project.service<TypewriterLanguageServerClient>().tryGenerate(
                 request = PersistentGenerationRequest(
                     command = command,
@@ -365,6 +365,53 @@ class TypewriterCliService(private val project: Project) {
         return null
     }
 
+    private fun resolveProjectTemplateSearchPath(projectPath: String?): String? {
+        if (projectPath.isNullOrBlank()) {
+            return null
+        }
+
+        val projectDirectory = try {
+            Paths.get(projectPath).parent ?: return null
+        } catch (_: InvalidPathException) {
+            return null
+        }
+
+        return if (containsTemplateFile(projectDirectory)) projectDirectory.toString() else null
+    }
+
+    private fun containsTemplateFile(root: Path): Boolean {
+        var found = false
+        return try {
+            Files.walkFileTree(root, object : SimpleFileVisitor<Path>() {
+                override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    if (dir != root && dir.fileName.toString().lowercase() in IgnoredInputDirectories) {
+                        return FileVisitResult.SKIP_SUBTREE
+                    }
+
+                    return FileVisitResult.CONTINUE
+                }
+
+                override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    if (file.fileName.toString().endsWith(".tst", ignoreCase = true)) {
+                        found = true
+                        return FileVisitResult.TERMINATE
+                    }
+
+                    return FileVisitResult.CONTINUE
+                }
+
+                override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult =
+                    FileVisitResult.CONTINUE
+            })
+
+            found
+        } catch (_: IOException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
+    }
+
     private fun readConfiguredInputExtensions(filePath: String): Set<String> {
         var extensions = DefaultInputExtensions
         for (configurationPath in findConfigurationFiles(filePath)) {
@@ -500,5 +547,6 @@ class TypewriterCliService(private val project: Project) {
         const val SaveDebounceMillis = 300
         val ConfigurationFileNames = listOf("typewriter.json", "typewriter.config.json", ".typewriterrc.json")
         val DefaultInputExtensions = setOf(".cs", ".csproj", ".json", ".props", ".sln", ".slnx", ".targets", ".tst")
+        val IgnoredInputDirectories = setOf(".git", ".gradle", ".idea", ".vs", ".vscode", "bin", "obj", "node_modules", "generated")
     }
 }

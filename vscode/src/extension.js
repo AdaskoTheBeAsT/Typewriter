@@ -12,7 +12,7 @@ const saveDebounceDelayMs = 300;
 const configurationFileNames = ["typewriter.json", "typewriter.config.json", ".typewriterrc.json"];
 const defaultInputExtensions = [".cs", ".csproj", ".json", ".props", ".sln", ".slnx", ".targets", ".tst"];
 const templateExtensions = new Set([".tst"]);
-const ignoredInputDirectories = new Set(["bin", "obj", "node_modules", "generated"]);
+const ignoredInputDirectories = new Set([".git", ".gradle", ".idea", ".vs", ".vscode", "bin", "obj", "node_modules", "generated"]);
 const saveQueue = {
     pending: undefined,
     timer: undefined,
@@ -330,7 +330,7 @@ function buildTypewriterArguments(command, workspacePath, templatePath, configur
         args.push("--project", projectPath);
     }
 
-    const templateSearchPath = options.projectScoped && projectPath ? path.dirname(projectPath) : undefined;
+    const templateSearchPath = options.projectScoped ? resolveProjectTemplateSearchPath(projectPath) : undefined;
     if (templateSearchPath) {
         args.push("--template-search-path", templateSearchPath);
     }
@@ -603,6 +603,44 @@ function findNearestProjectPathForInput(filePath) {
     return undefined;
 }
 
+function resolveProjectTemplateSearchPath(projectPath) {
+    if (!projectPath) {
+        return undefined;
+    }
+
+    const projectDirectory = path.dirname(projectPath);
+    return containsTemplateFile(projectDirectory) ? projectDirectory : undefined;
+}
+
+function containsTemplateFile(directory) {
+    const pending = [directory];
+    while (pending.length > 0) {
+        const current = pending.pop();
+        let entries;
+        try {
+            entries = fs.readdirSync(current, { withFileTypes: true });
+        } catch {
+            continue;
+        }
+
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                if (!ignoredInputDirectories.has(entry.name.toLowerCase())) {
+                    pending.push(path.join(current, entry.name));
+                }
+
+                continue;
+            }
+
+            if (entry.isFile() && templateExtensions.has(path.extname(entry.name).toLowerCase())) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 function readConfiguredInputExtensions(filePath) {
     let extensions = defaultInputExtensions;
     for (const configurationPath of findConfigurationFiles(filePath)) {
@@ -856,7 +894,7 @@ async function tryRunPersistentGeneration(request) {
 
 function buildGenerationRequest(command, workspacePath, templatePath, configuration, options) {
     const projectPath = resolveOptionalPath(configuration.get("projectPath"), getPathBase(workspacePath)) || options.projectPath;
-    const templateSearchPath = options.projectScoped && projectPath ? path.dirname(projectPath) : undefined;
+    const templateSearchPath = options.projectScoped ? resolveProjectTemplateSearchPath(projectPath) : undefined;
     const framework = configuration.get("framework");
     return {
         command,
