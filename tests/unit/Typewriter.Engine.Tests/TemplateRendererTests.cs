@@ -2409,6 +2409,49 @@ public sealed class TemplateRendererTests
     }
 
     [Fact]
+    public void TypeScriptMapperUsesSeparateDateOnlyAndTimeOnlyOverrides()
+    {
+        var mapper = new TypeScriptTypeMapper();
+        var dateOnlyType = TypeReference(name: "DateOnly", fullName: "System.DateOnly", isNullable: false, isPrimitive: false, isDateLike: true);
+        var timeOnlyType = TypeReference(name: "TimeOnly", fullName: "System.TimeOnly", isNullable: false, isPrimitive: false, isDateLike: true);
+        var localDateType = TypeReference(name: "LocalDate", fullName: "NodaTime.LocalDate", isNullable: false, isPrimitive: false);
+        var localTimeType = TypeReference(name: "LocalTime", fullName: "NodaTime.LocalTime", isNullable: false, isPrimitive: false);
+
+        mapper.Map(type: dateOnlyType).Should().Be("Date");
+        mapper.Map(type: timeOnlyType).Should().Be("string");
+        mapper.Map(type: dateOnlyType, strictNull: true, dateType: "DateTime", dateOnlyType: "LocalDate", timeOnlyType: "LocalTime").Should().Be("LocalDate");
+        mapper.Map(type: timeOnlyType, strictNull: true, dateType: "DateTime", dateOnlyType: "LocalDate", timeOnlyType: "LocalTime").Should().Be("LocalTime");
+        mapper.Map(type: localDateType, strictNull: true, dateType: "DateTime", dateOnlyType: "LocalDate", timeOnlyType: "LocalTime").Should().Be("LocalDate");
+        mapper.Map(type: localTimeType, strictNull: true, dateType: "DateTime", dateOnlyType: "LocalDate", timeOnlyType: "LocalTime").Should().Be("LocalTime");
+    }
+
+    [Fact]
+    public void TypeScriptMapperUsesStringForGuidByDefaultAndAllowsGuidTypeOverride()
+    {
+        var mapper = new TypeScriptTypeMapper();
+        var guidType = TypeReference(name: "Guid", fullName: "System.Guid", isNullable: false);
+        var nullableGuidType = guidType with
+        {
+            IsNullable = true,
+        };
+
+        mapper.Map(type: guidType).Should().Be("string");
+        mapper.Map(type: guidType, strictNull: true, dateType: "Date", guidType: "uuid").Should().Be("uuid");
+        mapper.Map(type: nullableGuidType, strictNull: true, dateType: "Date", guidType: "uuid").Should().Be("uuid | null");
+
+        var dictionaryType = TypeReference(
+            name: "Dictionary",
+            fullName: "System.Collections.Generic.Dictionary",
+            isNullable: false,
+            isPrimitive: false,
+            isCollection: true,
+            isDictionary: true,
+            elementType: TypeReference(name: "KeyValuePair", fullName: "System.Collections.Generic.KeyValuePair", isNullable: false, isPrimitive: false),
+            typeArguments: [guidType, TypeReference(name: "String", fullName: "System.String", isNullable: false)]);
+        mapper.Map(type: dictionaryType, strictNull: true, dateType: "Date", guidType: "uuid").Should().Be("Record<uuid, string>");
+    }
+
+    [Fact]
     public void TypeScriptMapperMapsNumericPrimitivesToNumberAndAllowsDecimalOverride()
     {
         var mapper = new TypeScriptTypeMapper();

@@ -134,6 +134,12 @@ internal static class TemplateRuntimeCompiler
             utf8BomGeneration: defaults.Utf8BomGeneration,
             stringLiteralCharacter: defaults.StringLiteralCharacter,
             dateTypeGeneration: defaults.DateTypeGeneration,
+            dateInitializerGeneration: defaults.DateInitializerGeneration,
+            dateOnlyTypeGeneration: defaults.DateOnlyTypeGeneration,
+            dateOnlyInitializerGeneration: defaults.DateOnlyInitializerGeneration,
+            timeOnlyTypeGeneration: defaults.TimeOnlyTypeGeneration,
+            timeOnlyInitializerGeneration: defaults.TimeOnlyInitializerGeneration,
+            guidTypeGeneration: defaults.GuidTypeGeneration,
             decimalTypeGeneration: defaults.DecimalTypeGeneration);
         var adapterFactory = new TemplateCodeModelAdapterFactory(metadata: metadata, settings: settings, metadataIndex: metadataIndex);
         var host = CreateHost(hostType: hostType, settings: settings, file: adapterFactory.CreateFile(project: metadata));

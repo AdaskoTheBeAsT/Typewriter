@@ -156,23 +156,144 @@ public sealed class ConfigurationDefaultsTests
     }
 
     [Fact]
-    public void RenderUsesConfiguredDateTypeForDefaults()
+    public void RenderUsesConfiguredGuidType()
     {
-        var metadata = CreateDateMetadata();
-        var document = new TemplateDocument(Path: "models.tst", Content: "$Classes[$Properties[$name: $Type;]]", OutputPath: "models.ts");
+        var metadata = CreateGuidIdMetadata();
+        var document = new TemplateDocument(Path: "models.tst", Content: "$Classes[$Properties[$name: $Type = $Type[$Default];]]", OutputPath: "models.ts");
         var diagnostics = new List<GenerationDiagnostic>();
         var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
         var defaults = TemplateRenderDefaults.FromConfiguration(
-            configuration: CreateConfiguration(strictNull: true, dateType: "Dayjs"));
+            configuration: CreateConfiguration(strictNull: true, guidType: "uuid"));
 
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics, defaults: defaults);
 
         diagnostics.Should().BeEmpty();
-        output.Should().Contain("createdAt: Dayjs;");
+        output.Should().Contain("id: uuid = \"00000000-0000-0000-0000-000000000000\";");
     }
 
     [Fact]
-    public void TemplateOverrideUsesConfiguredDateType()
+    public void OutputConfigurationLegacyConstructorUsesDateTypeForDateOnlyType()
+    {
+        var output = new OutputConfiguration(
+            Newline: "crlf",
+            Encoding: "utf-8-bom",
+            WriteOnlyWhenChanged: false,
+            DryRun: true,
+            FileNameConvention: FileNameConvention.Camel,
+            StrictNull: false,
+            IndentStyle: IndentStyle.Space,
+            IndentSize: 2,
+            InsertFinalNewline: true,
+            TrimTrailingWhitespace: true,
+            QuoteStyle: QuoteStyle.Single,
+            DateType: "Dayjs",
+            DecimalType: "Decimal");
+
+        output.DateInitializer.Should().Be(TypeScriptTypeMapper.DefaultDateInitializer);
+        output.DateOnlyType.Should().Be("Dayjs");
+        output.DateOnlyInitializer.Should().Be(TypeScriptTypeMapper.DefaultDateOnlyInitializer);
+        output.TimeOnlyType.Should().Be(TypeScriptTypeMapper.DefaultTimeOnlyType);
+        output.TimeOnlyInitializer.Should().Be(TypeScriptTypeMapper.DefaultTimeOnlyInitializer);
+        output.GuidType.Should().Be(TypeScriptTypeMapper.DefaultGuidType);
+        output.DecimalType.Should().Be("Decimal");
+
+        output.Deconstruct(
+            out var newline,
+            out _,
+            out _,
+            out _,
+            out _,
+            out _,
+            out _,
+            out _,
+            out _,
+            out _,
+            out _,
+            out var dateType,
+            out var decimalType);
+
+        newline.Should().Be("crlf");
+        dateType.Should().Be("Dayjs");
+        decimalType.Should().Be("Decimal");
+    }
+
+    [Fact]
+    public void CompiledTypeDefaultValueUsesGuidDefault()
+    {
+        var metadata = CreateGuidIdMetadata();
+        var diagnostics = new List<GenerationDiagnostic>();
+        var document = TemplateDocument.Parse(
+            template: new TemplateFile(
+                Path: Path.Combine(path1: Path.GetTempPath(), path2: "compiled-guid-default.tst"),
+                Content: """
+                         ${
+                             Template(Settings settings)
+                             {
+                                 settings.UseStringLiteralCharacter('\'');
+                             }
+
+                             string Defaults(Type type)
+                             {
+                                 return type.Default() + "|" + type.DefaultValue;
+                             }
+                         }
+                         // output: compiled-guid-default.ts
+                         $Classes[$Properties[$name=$Type[$Defaults];]]
+                         """),
+            diagnostics: diagnostics);
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("id='00000000-0000-0000-0000-000000000000'|'00000000-0000-0000-0000-000000000000';");
+    }
+
+    [Fact]
+    public void TemplateOverrideUsesConfiguredGuidType()
+    {
+        var metadata = CreateGuidIdMetadata();
+        var diagnostics = new List<GenerationDiagnostic>();
+        var document = TemplateDocument.Parse(
+            template: new TemplateFile(
+                Path: Path.Combine(path1: Path.GetTempPath(), path2: "configured-guid.tst"),
+                Content: """
+                         ${
+                             Template(Settings settings)
+                             {
+                                 settings.UseGuidType("UUID");
+                             }
+                         }
+                         // output: configured-guid.ts
+                         $Classes[$Properties[$name: $Type;]]
+                         """),
+            diagnostics: diagnostics);
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("id: UUID;");
+    }
+
+    [Fact]
+    public void RenderUsesConfiguredDateTypeForDefaults()
+    {
+        var metadata = CreateDateMetadata();
+        var document = new TemplateDocument(Path: "models.tst", Content: "$Classes[$Properties[$name: $Type = $Type[$Default];]]", OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var defaults = TemplateRenderDefaults.FromConfiguration(
+            configuration: CreateConfiguration(strictNull: true, dateType: "Dayjs", dateInitializer: "dayjs()"));
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics, defaults: defaults);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("createdAt: Dayjs = dayjs();");
+    }
+
+    [Fact]
+    public void TemplateOverrideUsesConfiguredDateTypeAndInitializer()
     {
         var metadata = CreateDateMetadata();
         var diagnostics = new List<GenerationDiagnostic>();
@@ -184,10 +305,11 @@ public sealed class ConfigurationDefaultsTests
                              Template(Settings settings)
                              {
                                  settings.UseDateType("DateTime");
+                                 settings.UseDateInitializer("DateTime.now()");
                              }
                          }
                          // output: configured-date.ts
-                         $Classes[$Properties[$name: $Type;]]
+                         $Classes[$Properties[$name: $Type = $Type[$Default];]]
                          """),
             diagnostics: diagnostics);
         var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
@@ -195,7 +317,128 @@ public sealed class ConfigurationDefaultsTests
         var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
         diagnostics.Should().BeEmpty();
-        output.Should().Contain("createdAt: DateTime;");
+        output.Should().Contain("createdAt: DateTime = DateTime.now();");
+    }
+
+    [Fact]
+    public void ConfiguredDateInitializerFlowsIntoCompiledTypeDefaultHelper()
+    {
+        var metadata = CreateDateMetadata();
+        var diagnostics = new List<GenerationDiagnostic>();
+        var document = TemplateDocument.Parse(
+            template: new TemplateFile(
+                Path: Path.Combine(path1: Path.GetTempPath(), path2: "compiled-date-default.tst"),
+                Content: """
+                         ${
+                             Template(Settings settings)
+                             {
+                                 settings.UseDateType("Dayjs");
+                                 settings.UseDateInitializer("dayjs()");
+                             }
+
+                             string Initializer(Type type)
+                             {
+                                 return type.Default();
+                             }
+                         }
+                         // output: compiled-date-default.ts
+                         $Classes[$Properties[$name: $Type = $Type[$Initializer];]]
+                         """),
+            diagnostics: diagnostics);
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("createdAt: Dayjs = dayjs();");
+    }
+
+    [Fact]
+    public void TemplateOverrideUsesConfiguredDateOnlyAndTimeOnlyTypesAndInitializers()
+    {
+        var metadata = CreateDateOnlyTimeOnlyMetadata();
+        var diagnostics = new List<GenerationDiagnostic>();
+        var document = TemplateDocument.Parse(
+            template: new TemplateFile(
+                Path: Path.Combine(path1: Path.GetTempPath(), path2: "configured-date-only-time-only.tst"),
+                Content: """
+                         ${
+                             Template(Settings settings)
+                             {
+                                 settings.UseDateOnlyType("Temporal.PlainDate");
+                                 settings.UseDateOnlyInitializer("Temporal.Now.plainDateISO()");
+                                 settings.UseTimeOnlyType("Temporal.PlainTime");
+                                 settings.UseTimeOnlyInitializer("Temporal.Now.plainTimeISO()");
+                             }
+
+                             string Initializer(Type type)
+                             {
+                                 return type.Default();
+                             }
+                         }
+                         // output: configured-date-only-time-only.ts
+                         $Classes[$Properties[$name: $Type = $Type[$Initializer];]]
+                         """),
+            diagnostics: diagnostics);
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("birthDate: Temporal.PlainDate = Temporal.Now.plainDateISO();");
+        output.Should().Contain("startsAt: Temporal.PlainTime = Temporal.Now.plainTimeISO();");
+        output.Should().Contain("localDate: Temporal.PlainDate = Temporal.Now.plainDateISO();");
+        output.Should().Contain("localTime: Temporal.PlainTime = Temporal.Now.plainTimeISO();");
+    }
+
+    [Fact]
+    public void RenderUsesConfiguredQuoteStyleForDefaultTimeOnlyInitializer()
+    {
+        var metadata = CreateDateOnlyTimeOnlyMetadata();
+        var document = new TemplateDocument(Path: "models.tst", Content: "$Classes[$Properties[$name = $Type[$Default];]]", OutputPath: "models.ts");
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var defaults = TemplateRenderDefaults.FromConfiguration(
+            configuration: CreateConfiguration(strictNull: true, quoteStyle: QuoteStyle.Single));
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics, defaults: defaults);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("startsAt = '00:00:00';");
+        output.Should().Contain("localTime = '00:00:00';");
+    }
+
+    [Fact]
+    public void CompiledTypeDefaultUsesConfiguredQuoteStyleForDefaultTimeOnlyInitializer()
+    {
+        var metadata = CreateDateOnlyTimeOnlyMetadata();
+        var diagnostics = new List<GenerationDiagnostic>();
+        var document = TemplateDocument.Parse(
+            template: new TemplateFile(
+                Path: Path.Combine(path1: Path.GetTempPath(), path2: "compiled-time-only-default.tst"),
+                Content: """
+                         ${
+                             Template(Settings settings)
+                             {
+                                 settings.UseStringLiteralCharacter('\'');
+                             }
+
+                             string Defaults(Type type)
+                             {
+                                 return type.Default() + "|" + type.DefaultValue;
+                             }
+                         }
+                         // output: compiled-time-only-default.ts
+                         $Classes[$Properties[$name=$Type[$Defaults];]]
+                         """),
+            diagnostics: diagnostics);
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Should().Contain("startsAt='00:00:00'|'00:00:00';");
+        output.Should().Contain("localTime='00:00:00'|'00:00:00';");
     }
 
     [Fact]
@@ -381,6 +624,12 @@ public sealed class ConfigurationDefaultsTests
         string encoding = "utf-8",
         QuoteStyle quoteStyle = QuoteStyle.Double,
         string dateType = "Date",
+        string dateInitializer = "new Date()",
+        string dateOnlyType = "Date",
+        string dateOnlyInitializer = "new Date()",
+        string timeOnlyType = "string",
+        string timeOnlyInitializer = "\"00:00:00\"",
+        string guidType = "string",
         string decimalType = "number") =>
         TypewriterConfiguration.Default with
         {
@@ -390,6 +639,12 @@ public sealed class ConfigurationDefaultsTests
                 Encoding = encoding,
                 QuoteStyle = quoteStyle,
                 DateType = dateType,
+                DateInitializer = dateInitializer,
+                DateOnlyType = dateOnlyType,
+                DateOnlyInitializer = dateOnlyInitializer,
+                TimeOnlyType = timeOnlyType,
+                TimeOnlyInitializer = timeOnlyInitializer,
+                GuidType = guidType,
                 DecimalType = decimalType,
             },
         };
@@ -528,6 +783,76 @@ public sealed class ConfigurationDefaultsTests
                     IsNullableAware: true),
             ],
             Diagnostics: []);
+    }
+
+    private static ProjectMetadata CreateDateOnlyTimeOnlyMetadata()
+    {
+        var dateOnlyType = new TypeMetadataReference(
+            Name: "DateOnly",
+            FullName: "System.DateOnly",
+            Namespace: "System",
+            IsNullable: false,
+            IsCollection: false,
+            IsDictionary: false,
+            IsEnum: false,
+            IsPrimitive: false,
+            IsDateLike: true,
+            ElementType: null,
+            TypeArguments: []);
+        var timeOnlyType = dateOnlyType with
+        {
+            Name = "TimeOnly",
+            FullName = "System.TimeOnly",
+        };
+        var localDateType = dateOnlyType with
+        {
+            Name = "LocalDate",
+            FullName = "NodaTime.LocalDate",
+            Namespace = "NodaTime",
+        };
+        var localTimeType = dateOnlyType with
+        {
+            Name = "LocalTime",
+            FullName = "NodaTime.LocalTime",
+            Namespace = "NodaTime",
+        };
+        return new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "Schedule",
+                    FullName: "Sample.Schedule",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties:
+                    [
+                        CreateProperty(name: "BirthDate", type: dateOnlyType),
+                        CreateProperty(name: "StartsAt", type: timeOnlyType),
+                        CreateProperty(name: "LocalDate", type: localDateType),
+                        CreateProperty(name: "LocalTime", type: localTimeType),
+                    ],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+            ],
+            Diagnostics: []);
+
+        static PropertyMetadata CreateProperty(
+            string name,
+            TypeMetadataReference type) =>
+            new(
+                Name: name,
+                FullName: "Sample.Schedule." + name,
+                Type: type,
+                Accessibility: MetadataAccessibility.Public,
+                HasGetter: true,
+                HasSetter: true,
+                IsRequired: false,
+                Attributes: []);
     }
 
     private static ProjectMetadata CreateDecimalMetadata()

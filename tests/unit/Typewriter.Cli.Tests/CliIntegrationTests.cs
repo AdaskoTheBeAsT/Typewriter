@@ -43,6 +43,14 @@ public sealed class CliIntegrationTests
             output.GetProperty(propertyName: "writeOnlyWhenChanged").GetBoolean().Should().BeTrue();
             output.GetProperty(propertyName: "dryRun").GetBoolean().Should().BeFalse();
             output.GetProperty(propertyName: "fileNameConvention").GetString().Should().Be("preserve");
+            output.GetProperty(propertyName: "dateType").GetString().Should().Be("Date");
+            output.GetProperty(propertyName: "dateInitializer").GetString().Should().Be("new Date()");
+            output.GetProperty(propertyName: "dateOnlyType").GetString().Should().Be("Date");
+            output.GetProperty(propertyName: "dateOnlyInitializer").GetString().Should().Be("new Date()");
+            output.GetProperty(propertyName: "timeOnlyType").GetString().Should().Be("string");
+            output.GetProperty(propertyName: "timeOnlyInitializer").GetString().Should().Be("\"00:00:00\"");
+            output.GetProperty(propertyName: "guidType").GetString().Should().Be("string");
+            output.GetProperty(propertyName: "decimalType").GetString().Should().Be("number");
 
             var diagnostics = root.GetProperty(propertyName: "diagnostics");
             diagnostics.GetProperty(propertyName: "failOnWarning").GetBoolean().Should().BeFalse();

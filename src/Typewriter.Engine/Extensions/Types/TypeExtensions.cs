@@ -1,4 +1,5 @@
 using System.Globalization;
+using Typewriter.Engine;
 using Type = Typewriter.CodeModel.Type;
 
 namespace Typewriter.Extensions.Types;
@@ -51,22 +52,9 @@ public static class TypeExtensions
 
         if (type.FullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal)
             && type.Settings?.DecimalTypeGeneration is { } decimalType
-            && !decimalType.Equals(value: "number", comparisonType: StringComparison.Ordinal))
+            && !decimalType.Equals(value: TypeScriptTypeMapper.DefaultDecimalType, comparisonType: StringComparison.Ordinal))
         {
             return $"new {decimalType}(0)";
-        }
-
-        if (type.Name.Equals(value: "number", comparisonType: StringComparison.OrdinalIgnoreCase)
-            || (type.IsPrimitive
-                && !type.Name.Equals(value: "string", comparisonType: StringComparison.OrdinalIgnoreCase)
-                && !type.FullName.Equals(value: "System.String", comparisonType: StringComparison.OrdinalIgnoreCase)))
-        {
-            return "0";
-        }
-
-        if (type.Name.Equals(value: "void", comparisonType: StringComparison.OrdinalIgnoreCase))
-        {
-            return "void(0)";
         }
 
         var stringLiteralCharacter = type.Settings?.StringLiteralCharacter ?? '"';
@@ -80,9 +68,34 @@ public static class TypeExtensions
             return $"{stringLiteralCharacter}00:00:00{stringLiteralCharacter}";
         }
 
-        if (type.IsDate)
+        if (TypeScriptTemporalTypes.IsDateOnly(fullName: type.FullName))
         {
-            return "new Date()";
+            return type.Settings?.DateOnlyInitializerGeneration ?? TypeScriptTypeMapper.DefaultDateOnlyInitializer;
+        }
+
+        if (TypeScriptTemporalTypes.IsTimeOnly(fullName: type.FullName))
+        {
+            return TypeScriptTemporalTypes.FormatTimeOnlyInitializer(
+                initializer: type.Settings?.TimeOnlyInitializerGeneration ?? TypeScriptTypeMapper.DefaultTimeOnlyInitializer,
+                stringLiteralCharacter: stringLiteralCharacter);
+        }
+
+        if (type.IsDate || TypeScriptTemporalTypes.IsDateTime(fullName: type.FullName))
+        {
+            return type.Settings?.DateInitializerGeneration ?? TypeScriptTypeMapper.DefaultDateInitializer;
+        }
+
+        if (type.Name.Equals(value: "number", comparisonType: StringComparison.OrdinalIgnoreCase)
+            || (type.IsPrimitive
+                && !type.Name.Equals(value: "string", comparisonType: StringComparison.OrdinalIgnoreCase)
+                && !type.FullName.Equals(value: "System.String", comparisonType: StringComparison.OrdinalIgnoreCase)))
+        {
+            return "0";
+        }
+
+        if (type.Name.Equals(value: "void", comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            return "void(0)";
         }
 
         if (type.IsEnum)
