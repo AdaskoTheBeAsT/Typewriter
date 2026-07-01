@@ -1,3 +1,4 @@
+using Microsoft.Build.Framework;
 using Typewriter.Abstractions;
 
 namespace Typewriter.Buildalyzer;
@@ -101,27 +102,21 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         var result = SelectResult(results: results, requestedTargetFramework: requestedTargetFramework);
         if (result is null)
         {
-            state.Diagnostics.Add(
-                item: new GenerationDiagnostic(
-                    File: projectPath,
-                    Line: null,
-                    Column: null,
-                    Severity: DiagnosticSeverity.Error,
-                    Message: $"Buildalyzer did not return metadata for project: {projectPath}.",
-                    Code: "TW0003"));
+            state.Diagnostics.AddRange(
+                collection: CreateBuildErrorDiagnostics(
+                    results: results,
+                    projectPath: projectPath,
+                    fallbackMessage: $"Buildalyzer did not return metadata for project: {projectPath}."));
             return;
         }
 
         if (!result.Succeeded && result.SourceFiles.Length == 0)
         {
-            state.Diagnostics.Add(
-                item: new GenerationDiagnostic(
-                    File: projectPath,
-                    Line: null,
-                    Column: null,
-                    Severity: DiagnosticSeverity.Error,
-                    Message: $"Buildalyzer could not evaluate project: {projectPath}.",
-                    Code: "TW0003"));
+            state.Diagnostics.AddRange(
+                collection: CreateBuildErrorDiagnostics(
+                    results: results,
+                    projectPath: projectPath,
+                    fallbackMessage: $"Buildalyzer could not evaluate project: {projectPath}."));
             return;
         }
 
@@ -193,6 +188,86 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
 
         return results.Results.FirstOrDefault(predicate: result => result.Succeeded && result.SourceFiles.Length > 0)
             ?? results.Results.FirstOrDefault();
+    }
+
+    private static IReadOnlyList<GenerationDiagnostic> CreateBuildErrorDiagnostics(
+        global::Buildalyzer.IAnalyzerResults results,
+        string projectPath,
+        string fallbackMessage)
+    {
+        var diagnostics = results.BuildEventArguments
+            .OfType<BuildErrorEventArgs>()
+            .Select(selector: error => CreateBuildErrorDiagnostic(error: error, projectPath: projectPath))
+            .DistinctBy(
+                keySelector: diagnostic => new
+                {
+                    File = diagnostic.File ?? string.Empty,
+                    diagnostic.Line,
+                    diagnostic.Column,
+                    diagnostic.Message,
+                    Code = diagnostic.Code ?? string.Empty,
+                })
+            .ToArray();
+        return diagnostics.Length > 0
+            ? diagnostics
+            : [
+                new GenerationDiagnostic(
+                    File: projectPath,
+                    Line: null,
+                    Column: null,
+                    Severity: DiagnosticSeverity.Error,
+                    Message: fallbackMessage,
+                    Code: "TW0003"),
+            ];
+    }
+
+    private static GenerationDiagnostic CreateBuildErrorDiagnostic(
+        BuildErrorEventArgs error,
+        string projectPath) =>
+        new(
+            File: ResolveBuildErrorFile(errorFile: error.File, projectPath: projectPath),
+            Line: error.LineNumber > 0 ? error.LineNumber : null,
+            Column: error.ColumnNumber > 0 ? error.ColumnNumber : null,
+            Severity: DiagnosticSeverity.Error,
+            Message: FormatBuildErrorMessage(error: error),
+            Code: "TW0003");
+
+    private static string FormatBuildErrorMessage(BuildErrorEventArgs error)
+    {
+        var message = string.IsNullOrWhiteSpace(value: error.Message)
+            ? "MSBuild reported an error while evaluating project."
+            : error.Message;
+        if (string.IsNullOrWhiteSpace(value: error.Code)
+            || message.Contains(value: error.Code, comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            return message;
+        }
+
+        return error.Code + ": " + message;
+    }
+
+    private static string ResolveBuildErrorFile(
+        string? errorFile,
+        string projectPath)
+    {
+        if (string.IsNullOrWhiteSpace(value: errorFile))
+        {
+            return projectPath;
+        }
+
+        try
+        {
+            return Path.IsPathRooted(path: errorFile)
+                ? Path.GetFullPath(path: errorFile)
+                : Path.GetFullPath(
+                    path: Path.Combine(
+                        path1: Path.GetDirectoryName(path: projectPath) ?? Environment.CurrentDirectory,
+                        path2: errorFile));
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+            return errorFile;
+        }
     }
 
     private static global::Buildalyzer.AnalyzerManager CreateAnalyzerManager(string workspacePath)

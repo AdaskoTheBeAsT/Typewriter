@@ -120,6 +120,59 @@ public sealed class WorkspaceGenerationServiceTests
         }
     }
 
+    [Fact]
+    public async Task GenerateAsyncPreservesDetailedProjectLoadDiagnostics()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "App.csproj");
+            var templatePath = Path.Combine(path1: directory, path2: "Models.tst");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                    <Project Sdk="Microsoft.NET.Sdk">
+                      <PropertyGroup>
+                        <TargetFramework>net10.0</TargetFramework>
+                      </PropertyGroup>
+                      <Target Name="FailBeforeCompile" BeforeTargets="CoreCompile">
+                        <Error Text="Detailed project evaluation failure." />
+                      </Target>
+                    </Project>
+                    """);
+            await File.WriteAllTextAsync(path: Path.Combine(path1: directory, path2: "Model.cs"), contents: "namespace App; public sealed class Model { }");
+            await File.WriteAllTextAsync(
+                path: templatePath,
+                contents: """
+                    // output: generated/models.ts
+                    $Classes[]
+                    """);
+
+            using var service = new WorkspaceGenerationService();
+            var request = new WorkspaceGenerationRequest(
+                Command: "generate",
+                WorkspacePath: directory,
+                ProjectPath: projectPath,
+                TemplatePath: templatePath,
+                Framework: null,
+                AllProjects: false);
+
+            var result = await service.GenerateAsync(request: request, settings: LanguageServerSettings.Default, cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeFalse();
+            var diagnostic = result.Diagnostics.Should().ContainSingle().Which;
+            diagnostic.Code.Should().Be("TW0003");
+            diagnostic.Severity.Should().Be("error");
+            diagnostic.File.Should().Be(projectPath);
+            diagnostic.Line.Should().BePositive();
+            diagnostic.Message.Should().Contain("Detailed project evaluation failure.");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(

@@ -619,6 +619,63 @@ public sealed class CliIntegrationTests
     }
 
     [Fact]
+    public async Task RunAsyncProjectEvaluationFailureReturnsDetailedJsonDiagnostic()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                            </PropertyGroup>
+                            <Target Name="FailBeforeCompile" BeforeTargets="CoreCompile">
+                              <Error Text="Detailed project evaluation failure." />
+                            </Target>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(path: Path.Combine(path1: directory, path2: "Model.cs"), contents: "namespace Sample; public sealed class Model { }");
+            var templatePath = Path.Combine(path1: directory, path2: "Models.tst");
+            await File.WriteAllTextAsync(
+                path: templatePath,
+                contents: """
+                          // output: generated/models.ts
+                          $Classes[]
+                          """);
+
+            var result = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                projectPath,
+                "--template",
+                templatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+
+            result.ExitCode.Should().Be(3);
+            result.Success.Should().BeFalse();
+
+            var diagnostic = result.Diagnostics.Should().ContainSingle().Which;
+            diagnostic.Code.Should().Be("TW0003");
+            diagnostic.Severity.Should().Be("error");
+            diagnostic.File.Should().Be(projectPath);
+            diagnostic.Line.Should().BePositive();
+            diagnostic.Message.Should().Contain("Detailed project evaluation failure.");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task RunAsyncTemplateParseFailureReturnsTemplateExitCodeAndJsonDiagnostic()
     {
         var directory = CreateProjectDirectory();
@@ -840,12 +897,26 @@ public sealed class CliIntegrationTests
             var diagnostic = diagnosticEnumerator.Current;
             diagnostics.Add(
                 item: new CliDiagnostic(
+                    File: diagnostic.GetProperty(propertyName: "file").GetString(),
+                    Line: ReadNullableInt(element: diagnostic, propertyName: "line"),
+                    Column: ReadNullableInt(element: diagnostic, propertyName: "column"),
                     Severity: diagnostic.GetProperty(propertyName: "severity").GetString() ?? string.Empty,
                     Message: diagnostic.GetProperty(propertyName: "message").GetString() ?? string.Empty,
-                    Code: diagnostic.GetProperty(propertyName: "code").GetString()));
+                    Code: diagnostic.GetProperty(propertyName: "code").GetString(),
+                    HelpLink: diagnostic.GetProperty(propertyName: "helpLink").GetString()));
         }
 
         return diagnostics;
+    }
+
+    private static int? ReadNullableInt(
+        JsonElement element,
+        string propertyName)
+    {
+        var property = element.GetProperty(propertyName: propertyName);
+        return property.ValueKind == JsonValueKind.Null
+            ? null
+            : property.GetInt32();
     }
 
     private static IReadOnlyList<string?> ReadStringArray(JsonElement element)
@@ -1037,7 +1108,11 @@ public sealed class CliIntegrationTests
     private sealed record CliGeneratedFile(string Path, bool Changed);
 
     private sealed record CliDiagnostic(
+        string? File,
+        int? Line,
+        int? Column,
         string Severity,
         string Message,
-        string? Code);
+        string? Code,
+        string? HelpLink);
 }
