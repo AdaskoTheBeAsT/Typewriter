@@ -1472,7 +1472,15 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             || fullName.Equals(value: "System.DateTimeOffset", comparisonType: StringComparison.Ordinal)
             || fullName.Equals(value: "System.DateOnly", comparisonType: StringComparison.Ordinal)
             || fullName.Equals(value: "System.TimeOnly", comparisonType: StringComparison.Ordinal)
-            || fullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal);
+            || fullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal)
+            || fullName.Equals(value: "NodaTime.Instant", comparisonType: StringComparison.Ordinal)
+            || fullName.Equals(value: "NodaTime.LocalDate", comparisonType: StringComparison.Ordinal)
+            || fullName.Equals(value: "NodaTime.LocalTime", comparisonType: StringComparison.Ordinal)
+            || fullName.Equals(value: "NodaTime.LocalDateTime", comparisonType: StringComparison.Ordinal)
+            || fullName.Equals(value: "NodaTime.OffsetDate", comparisonType: StringComparison.Ordinal)
+            || fullName.Equals(value: "NodaTime.OffsetTime", comparisonType: StringComparison.Ordinal)
+            || fullName.Equals(value: "NodaTime.OffsetDateTime", comparisonType: StringComparison.Ordinal)
+            || fullName.Equals(value: "NodaTime.ZonedDateTime", comparisonType: StringComparison.Ordinal);
     }
 
     private static bool IsNullableValueType(INamedTypeSymbol symbol)

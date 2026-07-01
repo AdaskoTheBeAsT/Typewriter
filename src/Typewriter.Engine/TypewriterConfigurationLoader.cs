@@ -115,6 +115,12 @@ public static class TypewriterConfigurationLoader
                 TrimTrailingWhitespace = loaded.Output?.TrimTrailingWhitespace ?? current.Output.TrimTrailingWhitespace,
                 QuoteStyle = loaded.Output?.QuoteStyle ?? current.Output.QuoteStyle,
                 DateType = loaded.Output?.DateType ?? current.Output.DateType,
+                DateInitializer = loaded.Output?.DateInitializer ?? current.Output.DateInitializer,
+                DateOnlyType = loaded.Output?.DateOnlyType ?? current.Output.DateOnlyType,
+                DateOnlyInitializer = loaded.Output?.DateOnlyInitializer ?? current.Output.DateOnlyInitializer,
+                TimeOnlyType = loaded.Output?.TimeOnlyType ?? current.Output.TimeOnlyType,
+                TimeOnlyInitializer = loaded.Output?.TimeOnlyInitializer ?? current.Output.TimeOnlyInitializer,
+                GuidType = loaded.Output?.GuidType ?? current.Output.GuidType,
                 DecimalType = loaded.Output?.DecimalType ?? current.Output.DecimalType,
             },
             Diagnostics = current.Diagnostics with
@@ -137,6 +143,18 @@ public static class TypewriterConfigurationLoader
                     ?? configuration.Output.Newline,
                 DateType = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DATE_TYPE")
                     ?? configuration.Output.DateType,
+                DateInitializer = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DATE_INITIALIZER")
+                    ?? configuration.Output.DateInitializer,
+                DateOnlyType = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DATE_ONLY_TYPE")
+                    ?? configuration.Output.DateOnlyType,
+                DateOnlyInitializer = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DATE_ONLY_INITIALIZER")
+                    ?? configuration.Output.DateOnlyInitializer,
+                TimeOnlyType = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_TIME_ONLY_TYPE")
+                    ?? configuration.Output.TimeOnlyType,
+                TimeOnlyInitializer = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_TIME_ONLY_INITIALIZER")
+                    ?? configuration.Output.TimeOnlyInitializer,
+                GuidType = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_GUID_TYPE")
+                    ?? configuration.Output.GuidType,
                 DecimalType = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DECIMAL_TYPE")
                     ?? configuration.Output.DecimalType,
             },
@@ -231,6 +249,18 @@ public static class TypewriterConfigurationLoader
         public QuoteStyle? QuoteStyle { get; init; }
 
         public string? DateType { get; init; }
+
+        public string? DateInitializer { get; init; }
+
+        public string? DateOnlyType { get; init; }
+
+        public string? DateOnlyInitializer { get; init; }
+
+        public string? TimeOnlyType { get; init; }
+
+        public string? TimeOnlyInitializer { get; init; }
+
+        public string? GuidType { get; init; }
 
         public string? DecimalType { get; init; }
     }

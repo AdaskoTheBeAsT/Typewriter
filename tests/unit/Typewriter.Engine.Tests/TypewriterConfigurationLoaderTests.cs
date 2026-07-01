@@ -75,6 +75,12 @@ public sealed class TypewriterConfigurationLoaderTests
                               "trimTrailingWhitespace": true,
                               "quoteStyle": "backtick",
                               "dateType": "Dayjs",
+                              "dateInitializer": "dayjs()",
+                              "dateOnlyType": "LocalDate",
+                              "dateOnlyInitializer": "LocalDate.now()",
+                              "timeOnlyType": "LocalTime",
+                              "timeOnlyInitializer": "LocalTime.now()",
+                              "guidType": "uuid",
                               "decimalType": "Decimal"
                             }
                           }
@@ -91,6 +97,12 @@ public sealed class TypewriterConfigurationLoaderTests
             configuration.Output.TrimTrailingWhitespace.Should().BeTrue();
             configuration.Output.QuoteStyle.Should().Be(QuoteStyle.Backtick);
             configuration.Output.DateType.Should().Be("Dayjs");
+            configuration.Output.DateInitializer.Should().Be("dayjs()");
+            configuration.Output.DateOnlyType.Should().Be("LocalDate");
+            configuration.Output.DateOnlyInitializer.Should().Be("LocalDate.now()");
+            configuration.Output.TimeOnlyType.Should().Be("LocalTime");
+            configuration.Output.TimeOnlyInitializer.Should().Be("LocalTime.now()");
+            configuration.Output.GuidType.Should().Be("uuid");
             configuration.Output.DecimalType.Should().Be("Decimal");
         }
         finally

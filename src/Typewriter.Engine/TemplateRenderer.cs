@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using Typewriter.Abstractions;
@@ -688,6 +689,9 @@ public sealed class TemplateRenderer
             : type;
         return effectiveType.IsPrimitive
             || effectiveType.IsDateLike
+            || TypeScriptTemporalTypes.IsDateTime(fullName: effectiveType.FullName)
+            || TypeScriptTemporalTypes.IsDateOnly(fullName: effectiveType.FullName)
+            || TypeScriptTemporalTypes.IsTimeOnly(fullName: effectiveType.FullName)
             || effectiveType.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal);
     }
 
@@ -821,6 +825,36 @@ public sealed class TemplateRenderer
         Typewriter.Configuration.Settings? settings,
         RenderState? state) =>
         settings?.DateTypeGeneration ?? state?.DateTypeGeneration ?? TypeScriptTypeMapper.DefaultDateType;
+
+    private static string ResolveDateInitializer(
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state) =>
+        settings?.DateInitializerGeneration ?? state?.DateInitializerGeneration ?? TypeScriptTypeMapper.DefaultDateInitializer;
+
+    private static string ResolveDateOnlyType(
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state) =>
+        settings?.DateOnlyTypeGeneration ?? state?.DateOnlyTypeGeneration ?? TypeScriptTypeMapper.DefaultDateOnlyType;
+
+    private static string ResolveDateOnlyInitializer(
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state) =>
+        settings?.DateOnlyInitializerGeneration ?? state?.DateOnlyInitializerGeneration ?? TypeScriptTypeMapper.DefaultDateOnlyInitializer;
+
+    private static string ResolveTimeOnlyType(
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state) =>
+        settings?.TimeOnlyTypeGeneration ?? state?.TimeOnlyTypeGeneration ?? TypeScriptTypeMapper.DefaultTimeOnlyType;
+
+    private static string ResolveTimeOnlyInitializer(
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state) =>
+        settings?.TimeOnlyInitializerGeneration ?? state?.TimeOnlyInitializerGeneration ?? TypeScriptTypeMapper.DefaultTimeOnlyInitializer;
+
+    private static string ResolveGuidType(
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state) =>
+        settings?.GuidTypeGeneration ?? state?.GuidTypeGeneration ?? TypeScriptTypeMapper.DefaultGuidType;
 
     private static string ResolveDecimalType(
         Typewriter.Configuration.Settings? settings,
@@ -2233,26 +2267,35 @@ public sealed class TemplateRenderer
             type: type,
             strictNull: state?.StrictNullGeneration ?? true,
             dateType: state?.DateTypeGeneration,
-            decimalType: state?.DecimalTypeGeneration);
+            decimalType: state?.DecimalTypeGeneration,
+            guidType: state?.GuidTypeGeneration,
+            dateOnlyType: state?.DateOnlyTypeGeneration,
+            timeOnlyType: state?.TimeOnlyTypeGeneration);
 
     private string GetLegacyTypeName(
         TypeMetadataReference type,
         bool strictNull = true,
         string? dateType = null,
+        string? guidType = null,
+        string? dateOnlyType = null,
+        string? timeOnlyType = null,
         string? decimalType = null)
     {
-        return _typeMapper.Map(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType);
+        return _typeMapper.Map(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType);
     }
 
     private string GetClassName(
         TypeMetadataReference type,
         bool strictNull = true,
         string? dateType = null,
+        string? guidType = null,
+        string? dateOnlyType = null,
+        string? timeOnlyType = null,
         string? decimalType = null)
     {
         var className = type.IsCollection && type.ElementType is not null
-            ? _typeMapper.Map(type: type.ElementType, strictNull: strictNull, dateType: dateType, decimalType: decimalType)
-            : _typeMapper.Map(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType);
+            ? _typeMapper.Map(type: type.ElementType, strictNull: strictNull, dateType: dateType, decimalType: decimalType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType)
+            : _typeMapper.Map(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType);
         return className
             .Replace(oldValue: " | null", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
             .Replace(oldValue: "(", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
@@ -2286,20 +2329,9 @@ public sealed class TemplateRenderer
             return $"{stringLiteralCharacter}{Guid.Empty.ToString(format: "D", provider: CultureInfo.InvariantCulture)}{stringLiteralCharacter}";
         }
 
-        if (type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal))
+        if (TryGetSpecialDefault(type: type, state: state, settings: settings, stringLiteralCharacter: stringLiteralCharacter, value: out var specialDefault))
         {
-            return $"{stringLiteralCharacter}00:00:00{stringLiteralCharacter}";
-        }
-
-        var decimalDefault = GetConfiguredDecimalDefault(type: type, state: state, settings: settings);
-        if (decimalDefault is not null)
-        {
-            return decimalDefault;
-        }
-
-        if (type.IsDateLike)
-        {
-            return "new Date()";
+            return specialDefault;
         }
 
         if (type.IsEnum)
@@ -2346,6 +2378,53 @@ public sealed class TemplateRenderer
         return type.IsCollection ? "[]" : null;
     }
 
+    private bool TryGetSpecialDefault(
+        TypeMetadataReference type,
+        RenderState? state,
+        Typewriter.Configuration.Settings? settings,
+        char stringLiteralCharacter,
+        [NotNullWhen(returnValue: true)] out string? value)
+    {
+        if (type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal))
+        {
+            value = $"{stringLiteralCharacter}00:00:00{stringLiteralCharacter}";
+            return true;
+        }
+
+        if (TypeScriptTemporalTypes.IsDateOnly(fullName: type.FullName))
+        {
+            value = ResolveDateOnlyInitializer(settings: settings, state: state);
+            return true;
+        }
+
+        if (TypeScriptTemporalTypes.IsTimeOnly(fullName: type.FullName))
+        {
+            value = TypeScriptTemporalTypes.FormatTimeOnlyInitializer(
+                initializer: ResolveTimeOnlyInitializer(settings: settings, state: state),
+                stringLiteralCharacter: stringLiteralCharacter);
+            return true;
+        }
+
+        value = GetConfiguredTemporalOrDecimalDefault(type: type, state: state, settings: settings);
+        return value is not null;
+    }
+
+    private string? GetConfiguredTemporalOrDecimalDefault(
+        TypeMetadataReference type,
+        RenderState? state,
+        Typewriter.Configuration.Settings? settings)
+    {
+        var decimalDefault = GetConfiguredDecimalDefault(type: type, state: state, settings: settings);
+        if (decimalDefault is not null)
+        {
+            return decimalDefault;
+        }
+
+        return type.IsDateLike || TypeScriptTemporalTypes.IsDateTime(fullName: type.FullName)
+            ? ResolveDateInitializer(settings: settings, state: state)
+            : null;
+    }
+
     private string? GetConfiguredDecimalDefault(
         TypeMetadataReference type,
         RenderState? state,
@@ -2361,6 +2440,7 @@ public sealed class TemplateRenderer
             ? null
             : $"new {decimalType}(0)";
     }
+
 #pragma warning restore CC0091,S2325
 
     private bool TryResolve(
@@ -2711,19 +2791,22 @@ public sealed class TemplateRenderer
     {
         var strictNull = ResolveStrictNull(settings: settings, state: state);
         var dateType = ResolveDateType(settings: settings, state: state);
+        var dateOnlyType = ResolveDateOnlyType(settings: settings, state: state);
+        var timeOnlyType = ResolveTimeOnlyType(settings: settings, state: state);
+        var guidType = ResolveGuidType(settings: settings, state: state);
         var decimalType = ResolveDecimalType(settings: settings, state: state);
         return identifier switch
         {
-            "Name" => GetLegacyTypeName(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType),
-            "name" => GetLegacyTypeName(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType),
+            "Name" => GetLegacyTypeName(type: type, strictNull: strictNull, dateType: dateType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType, decimalType: decimalType),
+            "name" => GetLegacyTypeName(type: type, strictNull: strictNull, dateType: dateType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType, decimalType: decimalType),
             "FullName" => type.FullName,
             "AssemblyName" => type.AssemblyName,
             "Namespace" => type.Namespace,
             "OriginalName" => type.Name,
-            "Type" => new TypeTemplateValue(Reference: type, Text: _typeMapper.Map(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType), Settings: settings),
-            "TypeScriptType" => _typeMapper.Map(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType),
-            "Class" => GetClassName(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType),
-            "ClassName" => GetClassName(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType),
+            "Type" => new TypeTemplateValue(Reference: type, Text: _typeMapper.Map(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType), Settings: settings),
+            "TypeScriptType" => _typeMapper.Map(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType),
+            "Class" => GetClassName(type: type, strictNull: strictNull, dateType: dateType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType, decimalType: decimalType),
+            "ClassName" => GetClassName(type: type, strictNull: strictNull, dateType: dateType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType, decimalType: decimalType),
             "Default" => GetDefaultValue(type: type, state: state, settings: settings),
             "DefaultValue" => GetDefaultValue(type: type, state: state, settings: settings),
             "ElementType" => type.ElementType,
@@ -2855,6 +2938,18 @@ public sealed class TemplateRenderer
         public bool StrictNullGeneration => TemplateSettings?.StrictNullGeneration ?? _defaults.StrictNullGeneration;
 
         public string DateTypeGeneration => TemplateSettings?.DateTypeGeneration ?? _defaults.DateTypeGeneration;
+
+        public string DateInitializerGeneration => TemplateSettings?.DateInitializerGeneration ?? _defaults.DateInitializerGeneration;
+
+        public string DateOnlyTypeGeneration => TemplateSettings?.DateOnlyTypeGeneration ?? _defaults.DateOnlyTypeGeneration;
+
+        public string DateOnlyInitializerGeneration => TemplateSettings?.DateOnlyInitializerGeneration ?? _defaults.DateOnlyInitializerGeneration;
+
+        public string TimeOnlyTypeGeneration => TemplateSettings?.TimeOnlyTypeGeneration ?? _defaults.TimeOnlyTypeGeneration;
+
+        public string TimeOnlyInitializerGeneration => TemplateSettings?.TimeOnlyInitializerGeneration ?? _defaults.TimeOnlyInitializerGeneration;
+
+        public string GuidTypeGeneration => TemplateSettings?.GuidTypeGeneration ?? _defaults.GuidTypeGeneration;
 
         public string DecimalTypeGeneration => TemplateSettings?.DecimalTypeGeneration ?? _defaults.DecimalTypeGeneration;
 

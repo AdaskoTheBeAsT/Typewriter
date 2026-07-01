@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using Typewriter.Abstractions;
 using CodeAttribute = Typewriter.CodeModel.Attribute;
 using CodeClass = Typewriter.CodeModel.Class;
@@ -201,6 +203,9 @@ internal sealed class TemplateCodeModelAdapterFactory
             : type;
         return effectiveType.IsPrimitive
             || effectiveType.IsDateLike
+            || TypeScriptTemporalTypes.IsDateTime(fullName: effectiveType.FullName)
+            || TypeScriptTemporalTypes.IsDateOnly(fullName: effectiveType.FullName)
+            || TypeScriptTemporalTypes.IsTimeOnly(fullName: effectiveType.FullName)
             || effectiveType.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal);
     }
 
@@ -521,7 +526,10 @@ internal sealed class TemplateCodeModelAdapterFactory
             type: type,
             strictNull: _settings.StrictNullGeneration,
             dateType: _settings.DateTypeGeneration,
-            decimalType: _settings.DecimalTypeGeneration);
+            decimalType: _settings.DecimalTypeGeneration,
+            guidType: _settings.GuidTypeGeneration,
+            dateOnlyType: _settings.DateOnlyTypeGeneration,
+            timeOnlyType: _settings.TimeOnlyTypeGeneration);
         var isStruct = _typesByFullName.TryGetValue(key: type.FullName, value: out var metadata)
                        && metadata.Kind == TypeMetadataKind.Struct;
         return new CodeType
@@ -1087,20 +1095,9 @@ internal sealed class TemplateCodeModelAdapterFactory
         }
 
         var stringLiteralCharacter = _settings.StringLiteralCharacter;
-        if (type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal))
+        if (TryGetSpecialDefault(type: type, stringLiteralCharacter: stringLiteralCharacter, value: out var specialDefault))
         {
-            return $"{stringLiteralCharacter}00:00:00{stringLiteralCharacter}";
-        }
-
-        if (type.FullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal)
-            && !_settings.DecimalTypeGeneration.Equals(value: TypeScriptTypeMapper.DefaultDecimalType, comparisonType: StringComparison.Ordinal))
-        {
-            return $"new {_settings.DecimalTypeGeneration}(0)";
-        }
-
-        if (type.IsDateLike)
-        {
-            return "new Date()";
+            return specialDefault;
         }
 
         if (type.IsEnum)
@@ -1126,6 +1123,54 @@ internal sealed class TemplateCodeModelAdapterFactory
             || type.FullName.Equals(value: "System.String", comparisonType: StringComparison.OrdinalIgnoreCase)
                 ? $"{stringLiteralCharacter}{stringLiteralCharacter}"
                 : "null";
+    }
+
+    private bool TryGetSpecialDefault(
+        TypeMetadataReference type,
+        char stringLiteralCharacter,
+        [NotNullWhen(returnValue: true)] out string? value)
+    {
+        if (type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal))
+        {
+            value = $"{stringLiteralCharacter}{Guid.Empty.ToString(format: "D", provider: CultureInfo.InvariantCulture)}{stringLiteralCharacter}";
+            return true;
+        }
+
+        if (type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal))
+        {
+            value = $"{stringLiteralCharacter}00:00:00{stringLiteralCharacter}";
+            return true;
+        }
+
+        if (TypeScriptTemporalTypes.IsDateOnly(fullName: type.FullName))
+        {
+            value = _settings.DateOnlyInitializerGeneration;
+            return true;
+        }
+
+        if (TypeScriptTemporalTypes.IsTimeOnly(fullName: type.FullName))
+        {
+            value = TypeScriptTemporalTypes.FormatTimeOnlyInitializer(
+                initializer: _settings.TimeOnlyInitializerGeneration,
+                stringLiteralCharacter: stringLiteralCharacter);
+            return true;
+        }
+
+        value = GetConfiguredNonStringDefault(type: type);
+        return value is not null;
+    }
+
+    private string? GetConfiguredNonStringDefault(TypeMetadataReference type)
+    {
+        if (type.FullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal)
+            && !_settings.DecimalTypeGeneration.Equals(value: TypeScriptTypeMapper.DefaultDecimalType, comparisonType: StringComparison.Ordinal))
+        {
+            return $"new {_settings.DecimalTypeGeneration}(0)";
+        }
+
+        return type.IsDateLike || TypeScriptTemporalTypes.IsDateTime(fullName: type.FullName)
+            ? _settings.DateInitializerGeneration
+            : null;
     }
 
     private string? ResolveEnumDefault(TypeMetadataReference type)
