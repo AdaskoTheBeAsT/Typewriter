@@ -7,4 +7,5 @@ public sealed record GenerationRequest(
     GenerationMode Mode,
     TypewriterConfiguration Configuration,
     bool AllProjects = false,
-    string? TemplateSearchPath = null);
+    string? TemplateSearchPath = null,
+    bool IncludeDiff = false);

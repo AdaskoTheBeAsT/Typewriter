@@ -29,6 +29,7 @@ public sealed class CliCommandLineTests
                 "json",
                 "--dry-run",
                 "--all-projects",
+                "--diff",
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
         exitCode.Should().Be(42);
@@ -40,6 +41,7 @@ public sealed class CliCommandLineTests
         capturedOptions.Output.Should().Be("json");
         capturedOptions.DryRun.Should().BeTrue();
         capturedOptions.AllProjects.Should().BeTrue();
+        capturedOptions.Diff.Should().BeTrue();
     }
 
     [Fact]

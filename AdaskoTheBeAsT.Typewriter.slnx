@@ -39,5 +39,6 @@
     <Project Path="tests/unit/Typewriter.LanguageServer.Tests/Typewriter.LanguageServer.Tests.csproj" />
     <Project Path="tests/unit/Typewriter.Roslyn.Tests/Typewriter.Roslyn.Tests.csproj" />
     <Project Path="tests/unit/Typewriter.SnapshotTests/Typewriter.SnapshotTests.csproj" />
+    <Project Path="tests/unit/Typewriter.VisualStudio.Tests/Typewriter.VisualStudio.Tests.csproj" />
   </Folder>
 </Solution>

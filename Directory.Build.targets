@@ -1,4 +1,12 @@
 <Project>
+  <PropertyGroup Condition="$([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)Buildalyzer'))">
+    <!-- Buildalyzer is a pinned upstream submodule. Keep Typewriter warnings-as-errors strict
+         while preventing known upstream nullable/obsolete warnings and analyzers from obscuring
+         this repository's build output. -->
+    <RunAnalyzers>false</RunAnalyzers>
+    <NoWarn>$(NoWarn);CS0618;CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8619;CS8625;CS8633;CS8767</NoWarn>
+  </PropertyGroup>
+
   <!-- Deterministic build workaround -->
   <Import Project="$(MSBuildThisFileDirectory)DeterministicBuild.targets" />
 </Project>

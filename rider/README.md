@@ -6,7 +6,7 @@ This is the Rider frontend layer: a Kotlin/IntelliJ Platform plugin for UI, acti
 
 ## Compatibility
 
-- Plugin version: `3.0.0`.
+- Plugin version: synchronized from `rider/gradle.properties` by the root `setver.ps1` release script.
 - Rider/IntelliJ Platform: `2026.1+` (`sinceBuild` `261`).
 - Java: `21+`.
 
@@ -38,4 +38,4 @@ winget install EclipseAdoptium.Temurin.21.JDK
 .\rider\gradlew.bat -p rider buildPlugin
 ```
 
-The plugin ZIP is written under `rider/build/distributions/`. CI expects `rider/build/distributions/typewriter-rider-3.0.0.zip` and collects it as `Typewriter-Rider-3.0.0.zip`.
+The plugin ZIP is written under `rider/build/distributions/typewriter-rider-<version>.zip`. CI collects it as `Typewriter-Rider-<version>.zip`.

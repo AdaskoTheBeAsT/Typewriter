@@ -1,0 +1,163 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/AdaskoTheBeAsT/Typewriter/master/typewriter.schema.json",
+  "title": "AdaskoTheBeAsT.Typewriter configuration",
+  "description": "Schema for typewriter.json, typewriter.config.json, and .typewriterrc.json configuration files used by AdaskoTheBeAsT.Typewriter. See https://github.com/AdaskoTheBeAsT/Typewriter#-configuration-typewriterjson for full documentation.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URL of this JSON Schema, used by editors for validation and autocompletion."
+    },
+    "templates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Glob patterns used to discover templates.",
+      "default": ["**/*.tst"]
+    },
+    "exclude": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Glob patterns excluded from discovery.",
+      "default": ["**/bin/**", "**/obj/**", "**/node_modules/**"]
+    },
+    "inputExtensions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "File extensions that trigger 'typewriter watch' and editor generate-on-save. The leading dot is optional.",
+      "default": [".cs", ".csproj", ".json", ".props", ".sln", ".slnx", ".targets", ".tst"]
+    },
+    "defaultTargetFramework": {
+      "type": ["string", "null"],
+      "description": "Target framework moniker used when a project multi-targets (e.g. 'net10.0').",
+      "default": null
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Formatting and code-generation options for generated files.",
+      "properties": {
+        "newline": {
+          "type": "string",
+          "enum": ["lf", "crlf"],
+          "description": "Line endings used in generated files.",
+          "default": "lf"
+        },
+        "encoding": {
+          "type": "string",
+          "enum": ["utf-8", "utf-8-bom"],
+          "description": "File encoding for generated files. The original Typewriter emitted a BOM by default; set 'utf-8-bom' for byte-identical output.",
+          "default": "utf-8"
+        },
+        "writeOnlyWhenChanged": {
+          "type": "boolean",
+          "description": "Skip disk writes when content is unchanged (keeps file watchers and HMR calm).",
+          "default": true
+        },
+        "dryRun": {
+          "type": "boolean",
+          "description": "Render without writing files.",
+          "default": false
+        },
+        "fileNameConvention": {
+          "type": "string",
+          "enum": ["preserve", "kebab", "pascal", "camel", "snake"],
+          "description": "Naming convention applied to generated output file names.",
+          "default": "preserve"
+        },
+        "strictNull": {
+          "type": "boolean",
+          "description": "Render nullable types as 'T | null'. Templates can override via settings.DisableStrictNullGeneration().",
+          "default": true
+        },
+        "indentStyle": {
+          "type": "string",
+          "enum": ["preserve", "space", "tab"],
+          "description": "Re-indent generated output. The rendered indent unit is detected automatically.",
+          "default": "preserve"
+        },
+        "indentSize": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Target indent width used when indentStyle is 'space'.",
+          "default": 4
+        },
+        "insertFinalNewline": {
+          "type": "boolean",
+          "description": "Ensure generated files end with a single trailing newline.",
+          "default": false
+        },
+        "trimTrailingWhitespace": {
+          "type": "boolean",
+          "description": "Strip trailing spaces and tabs from every generated line.",
+          "default": false
+        },
+        "quoteStyle": {
+          "type": "string",
+          "enum": ["double", "single", "backtick"],
+          "description": "Default string literal character for generated defaults. settings.UseStringLiteralCharacter(...) in a template wins.",
+          "default": "double"
+        },
+        "dateType": {
+          "type": "string",
+          "description": "TypeScript type used for DateTime, DateTimeOffset, and date-time-like NodaTime values. settings.UseDateType(...) wins.",
+          "default": "Date"
+        },
+        "dateInitializer": {
+          "type": "string",
+          "description": "TypeScript initializer used for non-null date-time defaults. settings.UseDateInitializer(...) wins.",
+          "default": "new Date()"
+        },
+        "dateOnlyType": {
+          "type": "string",
+          "description": "TypeScript type used for DateOnly, NodaTime.LocalDate, and NodaTime.OffsetDate. settings.UseDateOnlyType(...) wins.",
+          "default": "Date"
+        },
+        "dateOnlyInitializer": {
+          "type": "string",
+          "description": "TypeScript initializer used for non-null date-only defaults. settings.UseDateOnlyInitializer(...) wins.",
+          "default": "new Date()"
+        },
+        "timeOnlyType": {
+          "type": "string",
+          "description": "TypeScript type used for TimeOnly, NodaTime.LocalTime, and NodaTime.OffsetTime. settings.UseTimeOnlyType(...) wins.",
+          "default": "string"
+        },
+        "timeOnlyInitializer": {
+          "type": "string",
+          "description": "TypeScript initializer used for non-null time-only defaults. settings.UseTimeOnlyInitializer(...) wins.",
+          "default": "\"00:00:00\""
+        },
+        "guidType": {
+          "type": "string",
+          "description": "TypeScript type used for C# Guid. Set to 'uuid', 'UUID', or a branded alias with settings.UseGuidType(...) or config.",
+          "default": "string"
+        },
+        "decimalType": {
+          "type": "string",
+          "description": "TypeScript type used for C# decimal. settings.UseDecimalType(...) in a template wins.",
+          "default": "number"
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Diagnostic reporting behavior.",
+      "properties": {
+        "failOnWarning": {
+          "type": "boolean",
+          "description": "Treat warnings as failures (great for CI).",
+          "default": false
+        }
+      }
+    }
+  }
+}

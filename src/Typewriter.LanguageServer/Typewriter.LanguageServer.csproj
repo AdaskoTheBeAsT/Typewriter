@@ -11,8 +11,8 @@
     <Description>Language server for Typewriter .tst template diagnostics, completion, hover, and definition support.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageProjectUrl>https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/AdaskoTheBeAsT/Typewriter</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/AdaskoTheBeAsT/Typewriter</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>typewriter;tst;language-server;lsp;dotnet-tool</PackageTags>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>

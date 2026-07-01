@@ -14,4 +14,4 @@ dotnet build MyProject/MyProject.csproj
 dotnet run --project ..\..\src\Typewriter.Cli\Typewriter.Cli.csproj -- generate --workspace Issue69v2.sln --project MyProject\MyProject.csproj --template MyProject\_Resources\_Services.tst
 ```
 
-Expected behavior: `MyProject/generated/services.ts` is generated for `MyProject.CustomerDto`.
+Expected behavior: `MyProject/_Resources/generated/services.ts` is generated for `MyProject.CustomerDto`.

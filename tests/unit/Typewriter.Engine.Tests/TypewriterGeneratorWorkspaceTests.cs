@@ -320,6 +320,70 @@ public sealed class TypewriterGeneratorWorkspaceTests
     }
 
     [Fact]
+    public async Task GenerateAsyncResolvesRecordBaseFromFullProjectWhenRenderingPerSourceFile()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            var templatePath = Path.Combine(path1: directory, path2: "Models.tst");
+            await File.WriteAllTextAsync(path: projectPath, contents: "<Project />");
+
+            var baseRecord = CreateRecordMetadata(name: "BaseRecordVm");
+            var derivedRecord = CreateRecordMetadata(name: "DerivedRecordVm", baseTypes: [CreateTypeReference(type: baseRecord)]);
+            var metadataProvider = new CapturingMetadataProvider(
+                types: [baseRecord, derivedRecord],
+                sourceFiles:
+                [
+                    new SourceFileMetadata(Path: Path.Combine(path1: directory, path2: "BaseRecordVm.cs"), Types: [baseRecord]),
+                    new SourceFileMetadata(Path: Path.Combine(path1: directory, path2: "DerivedRecordVm.cs"), Types: [derivedRecord]),
+                ]);
+            var generator = new TypewriterGenerator(
+                templateDiscovery: new StaticTemplateDiscovery(
+                    templates: new TemplateFile(
+                        Path: templatePath,
+                        Content: """
+                                 ${
+                                     string RecordExtends(Record record)
+                                     {
+                                         if (record.BaseRecord != null)
+                                         {
+                                             return " extends " + record.BaseRecord.Name;
+                                         }
+
+                                         return "";
+                                     }
+                                 }
+                                 $Records(*DerivedRecordVm)[
+                                 export class $Name$RecordExtends {
+                                 }
+                                 ]
+                                 """)),
+                metadataProvider: metadataProvider,
+                fileWriter: new PassthroughFileWriter());
+
+            var result = await generator.GenerateAsync(
+                request: new GenerationRequest(
+                    WorkspacePath: directory,
+                    ProjectPath: projectPath,
+                    TemplatePath: templatePath,
+                    Mode: GenerationMode.Generate,
+                    Configuration: TypewriterConfiguration.Default),
+                cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            generatedFile.Path.Should().Be(Path.Combine(path1: directory, path2: "DerivedRecordVm.ts"));
+            generatedFile.Content.Should().Contain("export class DerivedRecordVm extends BaseRecordVm");
+            generatedFile.Content.Should().NotContain("export class BaseRecordVm");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GenerateAsyncUsesOutputDirectoryAndExtensionForSourceFilenameFallback()
     {
         var directory = CreateProjectDirectory();
@@ -847,6 +911,35 @@ public sealed class TypewriterGeneratorWorkspaceTests
             BaseTypes: [],
             EnumValues: [],
             IsNullableAware: true);
+
+    private static TypeMetadata CreateRecordMetadata(
+        string name,
+        IReadOnlyList<TypeMetadataReference>? baseTypes = null) =>
+        new(
+            Name: name,
+            FullName: "Sample." + name,
+            Namespace: "Sample",
+            Kind: TypeMetadataKind.Record,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes: [],
+            BaseTypes: baseTypes ?? [],
+            EnumValues: [],
+            IsNullableAware: true);
+
+    private static TypeMetadataReference CreateTypeReference(TypeMetadata type) =>
+        new(
+            Name: type.Name,
+            FullName: type.FullName,
+            Namespace: type.Namespace,
+            IsNullable: false,
+            IsCollection: false,
+            IsDictionary: false,
+            IsEnum: type.Kind == TypeMetadataKind.Enum,
+            IsPrimitive: false,
+            IsDateLike: false,
+            ElementType: null,
+            TypeArguments: []);
 
     private static string CreateProjectDirectory()
     {

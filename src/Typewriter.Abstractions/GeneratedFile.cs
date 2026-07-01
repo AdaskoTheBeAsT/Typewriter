@@ -4,4 +4,5 @@ public sealed record GeneratedFile(
     string Path,
     string Content,
     bool Changed,
-    bool? Utf8Bom = null);
+    bool? Utf8Bom = null,
+    string? Diff = null);

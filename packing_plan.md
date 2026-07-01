@@ -1,39 +1,36 @@
 # Typewriter Packaging Plan
 
-Implemented and verified locally against the repository on June 12, 2026.
+Implemented and verified locally against the repository on July 2, 2026.
 
-No package is published by the commands in this document or by the CI workflow.
+Local commands and the CI workflow only create artifacts. The tag-triggered release workflow publishes the CLI and language-server packages to NuGet and attaches editor packages to a GitHub release. Marketplace publishing remains separate.
 
 ## Package Matrix
 
 | Product | Installable artifact | Marketplace | Current state |
 |---|---|---|---|
-| Typewriter CLI | `.nupkg` | NuGet | Packaging already configured |
-| Typewriter language server | `.nupkg` | NuGet | Packaging already configured |
-| Visual Studio | `.vsix` | Visual Studio Marketplace | Visual Studio 2026 package with architecture-neutral CLI/LSP payload |
-| Visual Studio Code | `.vsix` | Visual Studio Marketplace | Bundled package configured |
-| JetBrains Rider | `.zip` | JetBrains Marketplace | Gradle wrapper and verification configured |
+| Typewriter CLI | `.nupkg` | NuGet | Published by the tag release workflow |
+| Typewriter language server | `.nupkg` | NuGet | Published by the tag release workflow |
+| Visual Studio | `.vsix` | GitHub release; Visual Studio Marketplace planned | Visual Studio 2026 package with architecture-neutral CLI/LSP payload |
+| Visual Studio Code | `.vsix` | GitHub release; VS Code Marketplace planned | Bundled package configured |
+| JetBrains Rider | `.zip` | GitHub release; JetBrains Marketplace planned | Gradle wrapper and verification configured |
 
-All locally built artifacts are copied to `artifacts/packages/`. Publishing or
-uploading them is intentionally outside this plan.
+All locally built artifacts are copied to `artifacts/packages/`.
 
 ## Versioning
 
-Use one release version for every package. Version `3.0.0` is synchronized in:
+Use one release version for every package. `setver.ps1` synchronizes it in:
 
-| File | Current version |
-|---|---:|
-| `src/Typewriter.Cli/Typewriter.Cli.csproj` | `3.0.0` |
-| `src/Typewriter.LanguageServer/Typewriter.LanguageServer.csproj` | `3.0.0` |
-| `src/Typewriter.VisualStudio/source.extension.vsixmanifest` | `3.0.0` |
-| `vscode/package.json` | `3.0.0` |
-| `rider/gradle.properties` | `3.0.0` |
+| File | Version source |
+|---|---|
+| `Directory.Build.props` | `Version`, `AssemblyVersion`, and `FileVersion` |
+| `src/Typewriter.VisualStudio/source.extension.vsixmanifest` | VSIX identity |
+| `vscode/package.json` | Extension package |
+| `rider/gradle.properties` | Plugin package |
 
 Before a future release, build all artifacts from the same commit and tag. Never
 publish different content under an already published version.
 
-Longer term, add a release script that receives the version once and updates or
-overrides every package version.
+`setver.ps1` receives the version once and updates all package version sources.
 
 ## Visual Studio
 
@@ -360,7 +357,7 @@ Typewriter.VisualStudio-<version>-win-arm64.vsix
 
 Current status:
 
-- Package versions match at `3.0.0`.
+- Package versions match the release tag.
 - The Visual Studio manifest and README target Visual Studio 2026.
 - The VSIX contains architecture-neutral managed CLI and language-server payloads.
 - The VS Code VSIX contains bundled `vscode-languageclient` code.
@@ -368,6 +365,7 @@ Current status:
 - The Rider Gradle wrapper is committed.
 - Rider verification passes against Rider 2026.1.2.
 - CI builds and retains all package files from the same commit without publishing.
+- The tag release workflow publishes NuGet packages and GitHub release assets.
 
 Still required before claiming tested ARM64 support:
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Typewriter.Abstractions;
 using Xunit;
 
@@ -370,6 +371,126 @@ public sealed class MsBuildProjectLoaderTests
             await DeleteDirectoryWithRetryAsync(directory: directory);
         }
     }
+
+    [Fact]
+    public async Task LoadAsyncParsesOldStyleNonSdkProject()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "LegacyApp.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <?xml version="1.0" encoding="utf-8"?>
+                          <Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+                            <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+                            <PropertyGroup>
+                              <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+                              <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+                              <ProjectGuid>{9C1C4E52-9E63-4F1B-8B7B-6E7B2C6E7B2C}</ProjectGuid>
+                              <OutputType>Library</OutputType>
+                              <RootNamespace>LegacyApp</RootNamespace>
+                              <AssemblyName>LegacyApp</AssemblyName>
+                              <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+                            </PropertyGroup>
+                            <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+                              <DebugSymbols>true</DebugSymbols>
+                              <DebugType>full</DebugType>
+                              <Optimize>false</Optimize>
+                              <OutputPath>bin\Debug\</OutputPath>
+                              <DefineConstants>DEBUG;TRACE;LEGACY_SYMBOL</DefineConstants>
+                              <ErrorReport>prompt</ErrorReport>
+                              <WarningLevel>4</WarningLevel>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <Reference Include="System" />
+                              <Reference Include="System.Core" />
+                            </ItemGroup>
+                            <ItemGroup>
+                              <Compile Include="Model.cs" />
+                            </ItemGroup>
+                            <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(path: Path.Combine(path1: directory, path2: "Model.cs"), contents: "namespace LegacyApp { public sealed class Model { public int Id { get; set; } } }");
+
+            var loader = new MsBuildProjectLoader();
+
+            var result = await loader.LoadAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory, TargetFramework: null),
+                cancellationToken: CancellationToken.None);
+
+            result.Diagnostics.Should().BeEmpty(because: FormatDiagnostics(diagnostics: result.Diagnostics));
+            result.PreprocessorSymbols.Should().Contain("LEGACY_SYMBOL");
+            result.SourceFiles.Should().Contain(path => path.EndsWith(value: "Model.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task LoadAsyncReportsUnresolvedImportErrorForOldStyleProjectWithMissingUnconditionalImport()
+    {
+        // Regression test for https://github.com/AdaskoTheBeAsT/Typewriter/issues/69
+        // Old-style, non-SDK projects (typically legacy ASP.NET/web application projects) sometimes
+        // unconditionally import a sibling project file (for example a shared "Classic.Web.csproj").
+        // When that import cannot be resolved, Buildalyzer can still report the overall result as
+        // "succeeded" while returning zero source files, which previously caused Typewriter to silently
+        // treat the project as empty instead of surfacing the real MSBuild error.
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "MyProject.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <?xml version="1.0" encoding="utf-8"?>
+                          <Project ToolsVersion="Current" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+                            <Import Project="..\Shared\Classic.Web.csproj" />
+                            <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+                            <PropertyGroup>
+                              <OutputType>Library</OutputType>
+                              <RootNamespace>MyProject</RootNamespace>
+                              <AssemblyName>MyProject</AssemblyName>
+                              <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <Compile Include="Model.cs" />
+                            </ItemGroup>
+                            <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(path: Path.Combine(path1: directory, path2: "Model.cs"), contents: "namespace MyProject { public class Model { } }");
+
+            var loader = new MsBuildProjectLoader();
+
+            var result = await loader.LoadAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory, TargetFramework: null),
+                cancellationToken: CancellationToken.None);
+
+            var diagnostic = result.Diagnostics.Should().ContainSingle().Which;
+            diagnostic.Code.Should().Be("TW0003");
+            diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
+            diagnostic.Message.Should().Contain("Classic.Web.csproj");
+            result.SourceFiles.Should().BeEmpty();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    private static string FormatDiagnostics(IEnumerable<GenerationDiagnostic> diagnostics) =>
+        string.Join(
+            separator: Environment.NewLine,
+            values: diagnostics.Select(
+                selector: diagnostic =>
+                    string.Create(
+                        provider: CultureInfo.InvariantCulture,
+                        handler: $"{diagnostic.Severity} {diagnostic.Code}: {diagnostic.Message} ({diagnostic.File}:{diagnostic.Line})")));
 
     private static string CreateProjectDirectory()
     {

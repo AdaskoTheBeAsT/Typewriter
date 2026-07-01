@@ -1,6 +1,6 @@
 The main remaining gap is full old Typewriter runtime compatibility, not the new engine/editor milestones.
 
-## Status snapshot as of 2026-06-11
+## Status snapshot as of 2026-07-02
 
 Recently completed:
 
@@ -17,7 +17,7 @@ Still left:
 - [ ] Additional `NetCoreTypewriterRecipes` service variants and request/response edge cases.
 - [ ] More exact comparison against original Typewriter output where original output can be captured.
 - [ ] Template reference hardening around restore diagnostics, incompatible assets, floating/range versions, and long-running cache/unload stress.
-- [ ] Packaging/release work for NuGet tools, VS Code, and Visual Studio.
+- [ ] Direct VS Code, Visual Studio, and JetBrains Marketplace publishing/signing.
 
 Latest focused validation:
 
@@ -173,9 +173,9 @@ New VS/VS Code/LSP support exists, but original Visual Studio extension behavior
 
 These are not pure template-runtime gaps, but they affect migration confidence:
 
-- NuGet publishing for CLI and language-server dotnet tool packages
 - VS Code package publishing
 - Visual Studio VSIX signing/publishing
-- release versioning and changelog automation
+- JetBrains Marketplace publishing
+- automated synchronization of repository and package changelogs
 - migration tooling or diagnostics for old templates
 - a documented compatibility matrix for old Typewriter features, recipe coverage, and known deviations

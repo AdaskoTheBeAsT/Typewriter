@@ -62,6 +62,42 @@ public sealed class CliIntegrationTests
     }
 
     [Fact]
+    public async Task RunAsyncInitWritesSchemaReferenceAsFirstProperty()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var configurationPath = Path.Combine(path1: directory, path2: ConfigurationFileName);
+
+            var result = await RunCliRawAsync(
+                cancellationToken: CancellationToken.None,
+                "init",
+                "--workspace",
+                directory);
+
+            result.ExitCode.Should().Be(0);
+
+            using var configuration = JsonDocument.Parse(json: await File.ReadAllTextAsync(path: configurationPath));
+            var root = configuration.RootElement;
+            using var propertyEnumerator = root.EnumerateObject();
+            propertyEnumerator.MoveNext().Should().BeTrue();
+            var firstProperty = propertyEnumerator.Current;
+            firstProperty.Name.Should().Be("$schema");
+            firstProperty.Value.GetString().Should().Be("https://raw.githubusercontent.com/AdaskoTheBeAsT/Typewriter/master/typewriter.schema.json");
+
+            var loadedConfiguration = await global::Typewriter.Engine.TypewriterConfigurationLoader.LoadAsync(
+                workspacePath: directory,
+                projectPath: null,
+                cancellationToken: CancellationToken.None);
+            loadedConfiguration.Should().BeEquivalentTo(global::Typewriter.Abstractions.TypewriterConfiguration.Default);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task RunAsyncInitDoesNotOverwriteExistingConfiguration()
     {
         var directory = CreateProjectDirectory();
@@ -147,6 +183,194 @@ public sealed class CliIntegrationTests
             var generatedContent = await File.ReadAllTextAsync(path: generatedPath);
             generatedContent.Should().Contain("export interface Customer");
             generatedContent.Should().Contain("name: string;");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncGenerateWithDiffIncludesUnifiedDiffInJsonOutput()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
+
+            var firstResult = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+
+            firstResult.ExitCode.Should().Be(0);
+
+            await File.WriteAllTextAsync(
+                path: project.SourcePath,
+                contents: """
+                          namespace Sample.Models;
+
+                          public sealed class Customer
+                          {
+                              public required string Name { get; init; }
+                              public required string Email { get; init; }
+                          }
+                          """);
+
+            var result = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json",
+                "--diff");
+
+            result.ExitCode.Should().Be(0);
+            result.Success.Should().BeTrue(because: result.StandardError);
+
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            generatedFile.Path.Should().Be(generatedPath);
+            generatedFile.Changed.Should().BeTrue();
+            generatedFile.Diff.Should().NotBeNull();
+            generatedFile.Diff.Should().Contain("--- ", because: "the diff should include the old file header");
+            generatedFile.Diff.Should().Contain("+++ ", because: "the diff should include the new file header");
+            generatedFile.Diff.Should().Contain("@@ ", because: "the diff should include hunk headers");
+            generatedFile.Diff.Should().Contain("+  email: string;", because: "the diff should include the newly added property");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncGenerateWithDiffIncludesUnifiedDiffInTextOutput()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+
+            var firstResult = await RunCliRawAsync(
+                cancellationToken: CancellationToken.None,
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "text");
+
+            firstResult.ExitCode.Should().Be(0);
+
+            await File.WriteAllTextAsync(
+                path: project.SourcePath,
+                contents: """
+                          namespace Sample.Models;
+
+                          public sealed class Customer
+                          {
+                              public required string Name { get; init; }
+                              public required string Email { get; init; }
+                          }
+                          """);
+
+            var result = await RunCliRawAsync(
+                cancellationToken: CancellationToken.None,
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "text",
+                "--diff");
+
+            result.ExitCode.Should().Be(0);
+            result.StandardOutput.Should().Contain("updated:", because: "the file should be marked as changed");
+            result.StandardOutput.Should().Contain("@@ ", because: "the diff hunk headers should appear in text output");
+            result.StandardOutput.Should().Contain("+  email: string;", because: "the new property should appear in the diff");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncGenerateWithDiffIncludesLineEndingOnlyChanges()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
+
+            var firstResult = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+
+            firstResult.ExitCode.Should().Be(0);
+            var generatedContent = await File.ReadAllTextAsync(path: generatedPath);
+#pragma warning disable SEC0116
+            await File.WriteAllTextAsync(
+                path: generatedPath,
+                contents: generatedContent.Replace(oldValue: "\n", newValue: "\r\n", comparisonType: StringComparison.Ordinal));
+#pragma warning restore SEC0116
+
+            var result = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json",
+                "--dry-run",
+                "--diff");
+
+            result.ExitCode.Should().Be(0);
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            generatedFile.Changed.Should().BeTrue();
+            generatedFile.Diff.Should().NotBeNullOrWhiteSpace();
+            generatedFile.Diff.Should().Contain("-// <auto-generated />");
+            generatedFile.Diff.Should().Contain("+// <auto-generated />");
         }
         finally
         {
@@ -890,7 +1114,10 @@ public sealed class CliIntegrationTests
             files.Add(
                 item: new CliGeneratedFile(
                     Path: file.GetProperty(propertyName: "path").GetString() ?? string.Empty,
-                    Changed: file.GetProperty(propertyName: "changed").GetBoolean()));
+                    Changed: file.GetProperty(propertyName: "changed").GetBoolean(),
+                    Diff: file.TryGetProperty(propertyName: "diff", out var diffElement) && diffElement.ValueKind == JsonValueKind.String
+                        ? diffElement.GetString()
+                        : null));
         }
 
         return files;
@@ -1113,7 +1340,7 @@ public sealed class CliIntegrationTests
         IReadOnlyList<CliGeneratedFile> GeneratedFiles,
         IReadOnlyList<CliDiagnostic> Diagnostics);
 
-    private sealed record CliGeneratedFile(string Path, bool Changed);
+    private sealed record CliGeneratedFile(string Path, bool Changed, string? Diff = null);
 
     private sealed record CliDiagnostic(
         string? File,

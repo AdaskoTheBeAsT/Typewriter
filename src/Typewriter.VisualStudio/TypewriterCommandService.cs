@@ -271,6 +271,9 @@ internal sealed class TypewriterCommandService
             ? ResolveTemplatePath(dte: dte, templatePathOverride: templatePathOverride)
             : null;
         var inputPath = ResolveInputPath(inputPath: inputPathOverride);
+        var configuredProjectPath = ResolveConfiguredPath(value: options.ProjectPath);
+        var configuredWorkspacePath = ResolveConfiguredPath(value: options.WorkspacePath);
+        var inputProjectPath = FindProjectPathForInputPath(inputPath: inputPath);
         if (includeTemplate && string.IsNullOrWhiteSpace(value: templatePath))
         {
             _outputPane.WriteLine(message: "No active .tst template was found.");
@@ -278,15 +281,15 @@ internal sealed class TypewriterCommandService
         }
 
         var selectedProjectPath = IsSolutionExplorerActive(dte: dte) ? GetSelectedProjectPath(dte: dte) : null;
-        var inputProjectPath = FindProjectPathForInput(dte: dte, inputPath: inputPath);
+        inputProjectPath ??= FindProjectPathForInput(dte: dte, inputPath: inputPath);
         var projectPath = solutionWide
             ? null
-            : ResolveConfiguredPath(value: options.ProjectPath)
+            : configuredProjectPath
               ?? inputProjectPath
               ?? (templatePath is not null ? FindProjectPathForTemplate(dte: dte, templatePath: templatePath) : selectedProjectPath)
               ?? selectedProjectPath
               ?? GetActiveProjectPath(dte: dte);
-        var workspacePath = ResolveConfiguredPath(value: options.WorkspacePath)
+        var workspacePath = configuredWorkspacePath
             ?? GetSolutionPath(dte: dte)
             ?? projectPath
             ?? GetWorkspaceFallback(templatePath: templatePath, inputPath: inputPath);
@@ -300,6 +303,15 @@ internal sealed class TypewriterCommandService
         var templateSearchPath = inputPath is not null && !string.IsNullOrWhiteSpace(value: projectPath)
             ? ResolveProjectTemplateSearchPath(projectPath: projectPath)
             : null;
+        if (!includeTemplate
+            && !solutionWide
+            && inputPath is not null
+            && templateSearchPath is null
+            && TrySkipSavedInputWithoutTemplates(projectPath: projectPath, workspacePath: workspacePath))
+        {
+            return null;
+        }
+
         return new GenerationContext(
             workspacePath: resolvedWorkspacePath,
             projectPath: projectPath,
@@ -531,7 +543,7 @@ internal sealed class TypewriterCommandService
         if (string.IsNullOrWhiteSpace(value: candidate))
         {
             var selectedTemplatePath = ResolveSelectedTemplatePath(dte: dte);
-            var activeTemplatePath = dte?.ActiveDocument?.FullName;
+            var activeTemplatePath = GetActiveDocumentFullName(dte: dte);
             candidate = IsSolutionExplorerActive(dte: dte)
                 ? selectedTemplatePath ?? activeTemplatePath
                 : activeTemplatePath ?? selectedTemplatePath;
@@ -545,16 +557,165 @@ internal sealed class TypewriterCommandService
             ? null
             : Path.GetFullPath(path: inputPath);
 
+    private bool TrySkipSavedInputWithoutTemplates(
+        string? projectPath,
+        string? workspacePath = null)
+    {
+        if (!ShouldSkipSavedInputWithoutTemplates(projectPath: projectPath, workspacePath: workspacePath))
+        {
+            return false;
+        }
+
+        _outputPane.WriteLine(message: "No .tst templates were found for the saved file's project. Skipping Typewriter generate-on-save.");
+        return true;
+    }
+
+    internal static bool ShouldSkipSavedInputWithoutTemplates(
+        string? projectPath,
+        string? workspacePath)
+    {
+        var searchDirectories = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+        foreach (var path in new[] { projectPath, workspacePath })
+        {
+            if (!TryGetTemplateSearchDirectory(path: path, directory: out var searchDirectory)
+                || !searchDirectories.Add(item: searchDirectory))
+            {
+                continue;
+            }
+
+            if (ContainsTemplateFile(directory: searchDirectory))
+            {
+                return false;
+            }
+        }
+
+        return searchDirectories.Count > 0;
+    }
+
+    private static string? FindProjectPathForInputPath(string? inputPath)
+    {
+        if (string.IsNullOrWhiteSpace(value: inputPath))
+        {
+            return null;
+        }
+
+        string fullInputPath;
+        try
+        {
+            fullInputPath = Path.GetFullPath(path: inputPath);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        if (fullInputPath.EndsWith(value: ".csproj", comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            return fullInputPath;
+        }
+
+        var directory = File.Exists(path: fullInputPath)
+            ? Path.GetDirectoryName(path: fullInputPath)
+            : fullInputPath;
+        while (!string.IsNullOrWhiteSpace(value: directory))
+        {
+            try
+            {
+                var projectPath = Directory.EnumerateFiles(path: directory, searchPattern: "*.csproj", searchOption: SearchOption.TopDirectoryOnly)
+                    .OrderBy(keySelector: path => path, comparer: StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(value: projectPath))
+                {
+                    return projectPath;
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+
+            directory = Directory.GetParent(path: directory)?.FullName;
+        }
+
+        return null;
+    }
+
     private static string? GetSolutionPath(DTE2? dte)
     {
-        var solutionPath = dte?.Solution?.FullName;
-        return string.IsNullOrWhiteSpace(value: solutionPath) ? null : solutionPath;
+        try
+        {
+            var solutionPath = dte?.Solution?.FullName;
+            return string.IsNullOrWhiteSpace(value: solutionPath) ? null : solutionPath;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (InvalidCastException)
+        {
+            return null;
+        }
+        catch (NotImplementedException)
+        {
+            return null;
+        }
     }
 
     private static string? GetActiveProjectPath(DTE2? dte)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
-        return dte?.ActiveDocument?.ProjectItem?.ContainingProject?.FullName;
+        try
+        {
+            return GetProjectPath(project: dte?.ActiveDocument?.ProjectItem?.ContainingProject);
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (InvalidCastException)
+        {
+            return null;
+        }
+        catch (NotImplementedException)
+        {
+            return null;
+        }
+    }
+
+    private static string? GetActiveDocumentFullName(DTE2? dte)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        try
+        {
+            var path = dte?.ActiveDocument?.FullName;
+            return string.IsNullOrWhiteSpace(value: path) ? null : path;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (InvalidCastException)
+        {
+            return null;
+        }
+        catch (NotImplementedException)
+        {
+            return null;
+        }
     }
 
     private static string? ResolveSelectedTemplatePath(DTE2? dte)
@@ -572,7 +733,7 @@ internal sealed class TypewriterCommandService
         {
             var projectItem = GetSelectedProjectItem(selectedItem: selectedItem);
             var projectPath = GetProjectPath(project: GetSelectedProject(selectedItem: selectedItem))
-                ?? GetProjectPath(project: projectItem?.ContainingProject);
+                ?? GetContainingProjectPath(projectItem: projectItem);
             if (!string.IsNullOrWhiteSpace(value: projectPath))
             {
                 return projectPath;
@@ -593,7 +754,24 @@ internal sealed class TypewriterCommandService
     private static IReadOnlyList<SelectedItem> GetSelectedItems(DTE2? dte)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
-        var selectedItems = dte?.SelectedItems;
+        SelectedItems? selectedItems;
+        try
+        {
+            selectedItems = dte?.SelectedItems;
+        }
+        catch (COMException)
+        {
+            return [];
+        }
+        catch (InvalidCastException)
+        {
+            return [];
+        }
+        catch (NotImplementedException)
+        {
+            return [];
+        }
+
         if (selectedItems is null)
         {
             return [];
@@ -605,6 +783,14 @@ internal sealed class TypewriterCommandService
             count = selectedItems.Count;
         }
         catch (COMException)
+        {
+            return [];
+        }
+        catch (InvalidCastException)
+        {
+            return [];
+        }
+        catch (NotImplementedException)
         {
             return [];
         }
@@ -622,7 +808,13 @@ internal sealed class TypewriterCommandService
             catch (COMException)
             {
             }
+            catch (InvalidCastException)
+            {
+            }
             catch (ArgumentException)
+            {
+            }
+            catch (NotImplementedException)
             {
             }
         }
@@ -641,6 +833,10 @@ internal sealed class TypewriterCommandService
         {
             return null;
         }
+        catch (InvalidCastException)
+        {
+            return null;
+        }
         catch (NotImplementedException)
         {
             return null;
@@ -655,6 +851,36 @@ internal sealed class TypewriterCommandService
             return selectedItem.Project;
         }
         catch (COMException)
+        {
+            return null;
+        }
+        catch (InvalidCastException)
+        {
+            return null;
+        }
+        catch (NotImplementedException)
+        {
+            return null;
+        }
+    }
+
+    private static string? GetContainingProjectPath(ProjectItem? projectItem)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
+        if (projectItem is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return GetProjectPath(project: projectItem.ContainingProject);
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (InvalidCastException)
         {
             return null;
         }
@@ -686,6 +912,9 @@ internal sealed class TypewriterCommandService
         catch (COMException)
         {
         }
+        catch (InvalidCastException)
+        {
+        }
         catch (ArgumentException)
         {
         }
@@ -712,6 +941,10 @@ internal sealed class TypewriterCommandService
         {
             return null;
         }
+        catch (InvalidCastException)
+        {
+            return null;
+        }
         catch (NotImplementedException)
         {
             return null;
@@ -728,7 +961,7 @@ internal sealed class TypewriterCommandService
         var dte = GetGlobalDte();
         return IsSolutionExplorerActive(dte: dte)
             ? IsTemplatePath(path: ResolveSelectedTemplatePath(dte: dte))
-            : IsTemplatePath(path: dte?.ActiveDocument?.FullName);
+            : IsTemplatePath(path: GetActiveDocumentFullName(dte: dte));
     }
 
     private static bool HasRenderAllContext()
@@ -738,7 +971,7 @@ internal sealed class TypewriterCommandService
         return IsSolutionExplorerActive(dte: dte)
             ? GetSelectedProjectNodePath(dte: dte) is not null
               || IsTemplatePath(path: ResolveSelectedTemplatePath(dte: dte))
-            : IsTemplatePath(path: dte?.ActiveDocument?.FullName);
+            : IsTemplatePath(path: GetActiveDocumentFullName(dte: dte));
     }
 
     private static bool HasSolutionContext()
@@ -769,6 +1002,10 @@ internal sealed class TypewriterCommandService
         {
             return false;
         }
+        catch (InvalidCastException)
+        {
+            return false;
+        }
         catch (NotImplementedException)
         {
             return false;
@@ -780,14 +1017,16 @@ internal sealed class TypewriterCommandService
         string? templatePath)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
-        if (dte?.Solution?.Projects is null || string.IsNullOrWhiteSpace(value: templatePath))
+        var projects = GetSolutionProjects(dte: dte);
+        if (projects is null || string.IsNullOrWhiteSpace(value: templatePath))
         {
             return null;
         }
 
-        return EnumerateProjects(projects: dte.Solution.Projects)
-            .Select(selector: project => project.FullName)
+        return EnumerateProjects(projects: projects)
+            .Select(selector: GetProjectPath)
             .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
+            .Select(selector: path => path!)
             .FirstOrDefault(predicate: projectPath =>
                 IsPathBelowDirectory(path: templatePath ?? string.Empty, directory: Path.GetDirectoryName(path: projectPath) ?? string.Empty));
     }
@@ -808,12 +1047,13 @@ internal sealed class TypewriterCommandService
             return fullInputPath;
         }
 
-        if (dte?.Solution?.Projects is null)
+        var projects = GetSolutionProjects(dte: dte);
+        if (projects is null)
         {
             return null;
         }
 
-        return EnumerateProjects(projects: dte.Solution.Projects)
+        return EnumerateProjects(projects: projects)
             .Select(selector: GetProjectPath)
             .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
             .Select(selector: path => path!)
@@ -821,43 +1061,77 @@ internal sealed class TypewriterCommandService
                 IsPathBelowDirectory(path: fullInputPath, directory: Path.GetDirectoryName(path: projectPath) ?? string.Empty));
     }
 
-    private static string? ResolveProjectTemplateSearchPath(string? projectPath)
+    private static Projects? GetSolutionProjects(DTE2? dte)
     {
-        if (string.IsNullOrWhiteSpace(value: projectPath))
+        ThreadHelper.ThrowIfNotOnUIThread();
+        try
+        {
+            return dte?.Solution?.Projects;
+        }
+        catch (COMException)
         {
             return null;
         }
+        catch (InvalidCastException)
+        {
+            return null;
+        }
+        catch (NotImplementedException)
+        {
+            return null;
+        }
+    }
 
-        string? projectDirectory;
+    private static string? ResolveProjectTemplateSearchPath(string? projectPath)
+    {
+        return TryGetTemplateSearchDirectory(path: projectPath, directory: out var projectDirectory)
+               && ContainsTemplateFile(directory: projectDirectory)
+            ? projectDirectory
+            : null;
+    }
+
+    private static bool TryGetTemplateSearchDirectory(
+        string? path,
+        out string directory)
+    {
+        directory = string.Empty;
+        if (string.IsNullOrWhiteSpace(value: path))
+        {
+            return false;
+        }
+
+        string fullPath;
         try
         {
-            projectDirectory = Path.GetDirectoryName(path: Path.GetFullPath(path: projectPath));
+            fullPath = Path.GetFullPath(path: path);
         }
         catch (ArgumentException)
         {
-            return null;
+            return false;
         }
         catch (IOException)
         {
-            return null;
+            return false;
         }
         catch (NotSupportedException)
         {
-            return null;
+            return false;
         }
         catch (UnauthorizedAccessException)
         {
-            return null;
+            return false;
         }
 
-        if (string.IsNullOrWhiteSpace(value: projectDirectory) || !Directory.Exists(path: projectDirectory))
+        var candidateDirectory = Directory.Exists(path: fullPath)
+            ? fullPath
+            : Path.GetDirectoryName(path: fullPath);
+        if (string.IsNullOrWhiteSpace(value: candidateDirectory) || !Directory.Exists(path: candidateDirectory))
         {
-            return null;
+            return false;
         }
 
-        return ContainsTemplateFile(directory: projectDirectory)
-            ? projectDirectory
-            : null;
+        directory = candidateDirectory;
+        return true;
     }
 
     private static bool ContainsTemplateFile(string directory)

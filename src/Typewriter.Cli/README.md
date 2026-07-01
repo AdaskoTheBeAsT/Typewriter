@@ -49,10 +49,12 @@ typewriter watch --workspace .
 | `--workspace <path>` | all | Solution, project, or folder to operate on. |
 | `--project <path>` | generate, validate, watch, list-templates | C# project to read metadata from. |
 | `--template <path>` | generate, validate, watch, list-templates | Single `.tst` template file or template directory to use. |
+| `--template-search-path <path>` | generate, validate, watch, list-templates | Restrict template discovery without changing workspace or project context. |
 | `--framework <tfm>` | generate, validate, watch, list-templates | Target framework to use when loading project metadata, for example `net10.0`. |
 | `--all-projects` | generate, validate, watch, list-templates | Process every project in a multi-project workspace. |
 | `--output text\|json` | generate, validate, watch, list-templates | Choose human-readable text or machine-readable JSON output. |
 | `--dry-run` | generate, validate, watch, list-templates | Render and validate without writing generated files. |
+| `--diff` | generate, validate, watch | Include unified diffs for changed files, including line-ending changes. |
 | `--fail-on-warning` | generate, validate, watch, list-templates | Return a non-zero exit code when warnings are emitted. |
 | `--force` | init | Overwrite an existing `typewriter.json`. |
 
