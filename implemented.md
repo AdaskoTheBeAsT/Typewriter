@@ -386,6 +386,8 @@ Implemented tests:
 - Language server completion, hover, C# source definition, generated-output definition, semantic-token, and embedded-language context services
 - Language server JSON-RPC protocol loop for initialize, document sync, completion, semantic tokens, shutdown, and exit
 - UnifiedDiffBuilder unit tests for identical content, new files, deleted files, single-line changes, insertions, deletions, multi-line replacements, CRLF handling, line-ending-only changes, final-newline-only changes, hunk merging, and distant hunk separation
+- Generated-file writer regression coverage verifies that `--diff` skips the LCS calculation for unchanged outputs
+- Public API compatibility tests preserve the pre-4.6.1 `GeneratedFile` and `GenerationRequest` constructor signatures
 - CLI integration tests for --diff output in JSON and text modes, including line-ending-only changes
 - CLI integration test for $schema reference as first property in typewriter init output
 - JSON Schema drift-detection test cross-checking typewriter.schema.json against serialized TypewriterConfiguration.Default
@@ -409,7 +411,7 @@ npm --prefix vscode run bundle
 .\rider\gradlew.bat -p rider verifyPlugin
 ```
 
-The full verification on 2026-07-02 passes with 262 tests and a warning-free clean Release build. Nullable and obsolete-API warnings from the pinned Buildalyzer submodule are suppressed only for that vendored project at the repository integration boundary; Typewriter projects retain their normal warnings-as-errors policy.
+The full verification on 2026-07-02 passes with 265 tests and a warning-free clean Release build. Nullable and obsolete-API warnings from the pinned Buildalyzer submodule are suppressed only for that vendored project at the repository integration boundary; Typewriter projects retain their normal warnings-as-errors policy.
 
 The Visual Studio focused build produces:
 

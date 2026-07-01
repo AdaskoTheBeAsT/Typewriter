@@ -195,8 +195,10 @@ internal static class TypewriterCli
             Mode: options.Command == CliCommand.Validate ? GenerationMode.Validate : GenerationMode.Generate,
             Configuration: configuration,
             AllProjects: options.AllProjects,
-            TemplateSearchPath: options.TemplateSearchPath,
-            IncludeDiff: options.Diff);
+            TemplateSearchPath: options.TemplateSearchPath)
+        {
+            IncludeDiff = options.Diff,
+        };
 
         return await generator.GenerateAsync(request: request, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
     }

@@ -15,7 +15,9 @@ public sealed class FileSystemGeneratedFileWriter : IGeneratedFileWriter
 
         var content = OutputContentFormatter.Format(content: file.Content, output: request.Configuration.Output);
         var (changed, existingContent) = await GetChangeStateAsync(file: file, content: content, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
-        var diff = request.IncludeDiff ? UnifiedDiffBuilder.Build(path: file.Path, oldContent: existingContent ?? string.Empty, newContent: content) : null;
+        var diff = changed && request.IncludeDiff
+            ? UnifiedDiffBuilder.Build(path: file.Path, oldContent: existingContent ?? string.Empty, newContent: content)
+            : null;
         if (request.Configuration.Output.DryRun || request.Mode == GenerationMode.Validate)
         {
             return file with
