@@ -349,6 +349,7 @@ internal sealed class TypewriterCommandService
         {
             await _package.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken: CancellationToken.None);
             _outputPane.WriteLine(message: "> Typewriter language server: typewriter/generate");
+            WriteJsonResult(payload: persistentResult);
             _diagnosticReporter.Publish(diagnostics: persistentResult.Diagnostics, workingDirectory: context.WorkingDirectory);
             WriteResultSummary(payload: persistentResult);
             if (!persistentResult.Success)
@@ -488,6 +489,19 @@ internal sealed class TypewriterCommandService
             _outputPane.WriteLine(message: processResult.StandardError.TrimEnd());
         }
     }
+
+    private void WriteJsonResult(CliResult payload) =>
+        _outputPane.WriteLine(
+            message: JsonSerializer.Serialize(
+                value: payload,
+                options: CreateJsonOptions()));
+
+    private static JsonSerializerOptions CreateJsonOptions() =>
+        new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            WriteIndented = true,
+        };
 
     private void WriteResultSummary(CliResult payload)
     {

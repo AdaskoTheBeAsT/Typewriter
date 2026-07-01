@@ -84,6 +84,8 @@ internal sealed class CliDiagnostic
     public string Message { get; set; } = string.Empty;
 
     public string? Code { get; set; }
+
+    public string? HelpLink { get; set; }
 }
 
 internal sealed class GenerationContext

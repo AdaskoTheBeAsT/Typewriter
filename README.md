@@ -66,6 +66,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.5.4](#454)
     - [4.5.3](#453)
     - [4.5.2](#452)
     - [4.5.0](#450)
@@ -1088,7 +1089,7 @@ dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build -m
 npm ci --prefix vscode
 npm --prefix vscode run lint
 npm --prefix vscode run bundle
-npm --prefix vscode run package -- --out ../artifacts/packages/typewriter-vscode-4.5.2.vsix
+npm --prefix vscode run package -- --out ../artifacts/packages/typewriter-vscode-4.5.4.vsix
 
 # JetBrains Rider plugin
 ./rider/gradlew -p rider verifyPluginProjectConfiguration
@@ -1129,6 +1130,12 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.5.4
+
+- Restored detailed project-load diagnostics for Buildalyzer/MSBuild failures, including file, line, column, and underlying MSBuild error text in `TW0003` JSON diagnostics.
+- Restored full JSON result output for the Visual Studio persistent language-server generation path, so VS Output includes detailed diagnostics instead of only a diagnostic count.
+- Added regression coverage for Buildalyzer project-load diagnostics through the loader, CLI JSON output, and language-server generation service.
 
 ### 4.5.3
 
