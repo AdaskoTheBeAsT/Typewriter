@@ -206,6 +206,171 @@ public sealed class LanguageServerHostTests
     }
 
     [Fact]
+    public async Task RunAsyncHandlesEmbeddedDocumentRequestsOverJsonRpc()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var templatePath = Path.Combine(path1: directory, path2: "Models.tst");
+            var templateUri = UriFromPath(path: templatePath);
+            const string Template = "${\n"
+                + "    string Suffix(Typewriter.CodeModel.Class c) => c.Name;\n"
+                + "}\n"
+                + "export const url = `${environment.apiBaseUrl}/api`;\n";
+
+            await using var input = CreateInput(
+                messages:
+                [
+                    CreateRequest(
+                        id: 1,
+                        method: "initialize",
+                        parameters: new
+                        {
+                            rootUri = UriFromPath(path: directory),
+                            initializationOptions = new
+                            {
+                                workspacePath = directory,
+                            },
+                        }),
+                    CreateNotification(
+                        method: "textDocument/didOpen",
+                        parameters: new
+                        {
+                            textDocument = new
+                            {
+                                uri = templateUri,
+                                languageId = "typewriter",
+                                version = 1,
+                                text = Template,
+                            },
+                        }),
+                    CreateRequest(
+                        id: 2,
+                        method: "typewriter/embeddedDocument",
+                        parameters: new
+                        {
+                            textDocument = new
+                            {
+                                uri = templateUri,
+                            },
+                            kind = "typescript",
+                        }),
+                    CreateRequest(
+                        id: 3,
+                        method: "typewriter/embeddedDocument",
+                        parameters: new
+                        {
+                            textDocument = new
+                            {
+                                uri = templateUri,
+                            },
+                            kind = "csharp",
+                        }),
+                    CreateRequest(
+                        id: 4,
+                        method: "typewriter/embeddedPosition",
+                        parameters: new
+                        {
+                            textDocument = new
+                            {
+                                uri = templateUri,
+                            },
+                            position = new
+                            {
+                                line = 1,
+                                character = 11,
+                            },
+                        }),
+                    CreateRequest(
+                        id: 5,
+                        method: "typewriter/templateRange",
+                        parameters: new
+                        {
+                            textDocument = new
+                            {
+                                uri = templateUri,
+                            },
+                            kind = "typescript",
+                            range = new
+                            {
+                                start = new
+                                {
+                                    line = 3,
+                                    character = 0,
+                                },
+                                end = new
+                                {
+                                    line = 3,
+                                    character = 6,
+                                },
+                            },
+                        }),
+                    CreateRequest(id: 6, method: "shutdown", parameters: new { }), CreateNotification(method: "exit", parameters: new { })
+                ]);
+            await using var output = new MemoryStream();
+            using var connection = new JsonRpcConnection(input: input, output: output);
+            using var templateFeatureService = new TemplateFeatureService();
+            var host = new LanguageServerHost(
+                connection: connection,
+                diagnosticService: new NoopDiagnosticService(),
+                generationService: new StubGenerationService(),
+                featureService: templateFeatureService);
+
+            await host.RunAsync(cancellationToken: CancellationToken.None);
+
+            var messages = ReadOutputMessages(output: output);
+            var typeScriptResponse = FindResponse(messages: messages, id: 2);
+            var typeScriptContent = typeScriptResponse
+                .GetProperty(propertyName: "result")
+                .GetProperty(propertyName: "content")
+                .GetString();
+            typeScriptContent.Should().NotContain("Suffix");
+            typeScriptContent.Should().Contain("`${environment.apiBaseUrl}/api`");
+            typeScriptContent.Should().HaveLength(Template.Length);
+
+            var csharpResponse = FindResponse(messages: messages, id: 3);
+            var csharpContent = csharpResponse
+                .GetProperty(propertyName: "result")
+                .GetProperty(propertyName: "content")
+                .GetString();
+            csharpContent.Should().Contain("string Suffix(Typewriter.CodeModel.Class c) => c.Name;");
+            csharpContent.Should().Contain("class TypewriterTemplateHost");
+
+            var positionResponse = FindResponse(messages: messages, id: 4);
+            positionResponse
+                .GetProperty(propertyName: "result")
+                .GetProperty(propertyName: "kind")
+                .GetString()
+                .Should()
+                .Be("csharp");
+            var virtualPosition = positionResponse
+                .GetProperty(propertyName: "result")
+                .GetProperty(propertyName: "virtualPosition");
+            virtualPosition.ValueKind.Should().Be(JsonValueKind.Object);
+
+            var rangeResponse = FindResponse(messages: messages, id: 5);
+            rangeResponse
+                .GetProperty(propertyName: "result")
+                .GetProperty(propertyName: "start")
+                .GetProperty(propertyName: "line")
+                .GetInt32()
+                .Should()
+                .Be(3);
+
+            messages
+                .Count(predicate: message => message.TryGetProperty(propertyName: "method", value: out var method)
+                                             && method.ValueKind == JsonValueKind.String
+                                             && string.Equals(a: method.GetString(), b: "typewriter/embeddedDocumentChanged", comparisonType: StringComparison.Ordinal))
+                .Should()
+                .BePositive();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public void FileUriPathStripsWindowsDrivePrefixSlash()
     {
         if (!OperatingSystem.IsWindows())

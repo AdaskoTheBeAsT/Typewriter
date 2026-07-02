@@ -19,18 +19,32 @@ const saveQueue = {
     running: false,
     lastSaveAt: 0,
 };
+const embeddedScheme = "typewriter-embedded";
+const embeddedSuffixes = {
+    csharp: ".g.cs",
+    typescript: ".g.ts",
+};
+const embeddedDocuments = new Map();
+let embeddedContentEmitter;
 
 async function activate(context) {
     outputChannel = vscode.window.createOutputChannel("Typewriter");
     diagnostics = vscode.languages.createDiagnosticCollection("typewriter");
 
     context.subscriptions.push(outputChannel, diagnostics);
+    embeddedContentEmitter = new vscode.EventEmitter();
     context.subscriptions.push(
         vscode.commands.registerCommand("typewriter.generate", uri => executeCurrentTemplate(context, "generate", undefined, toFileUri(uri))),
         vscode.commands.registerCommand("typewriter.generateAll", uri => executeGenerateAll(context, toFileUri(uri))),
         vscode.commands.registerCommand("typewriter.validate", uri => executeCurrentTemplate(context, "validate", undefined, toFileUri(uri))),
         vscode.commands.registerCommand("typewriter.restartServer", () => restartLanguageServer(context)),
         createFallbackCompletionProvider(),
+        embeddedContentEmitter,
+        vscode.workspace.registerTextDocumentContentProvider(embeddedScheme, {
+            onDidChange: embeddedContentEmitter.event,
+            provideTextDocumentContent: uri => provideEmbeddedContent(uri),
+        }),
+        ...createEmbeddedForwardingProviders(),
         vscode.workspace.onDidSaveTextDocument(document => handleDocumentSaved(context, document)));
     context.subscriptions.push({
         dispose: () => {
@@ -227,6 +241,7 @@ async function startLanguageServer(context, options = {}) {
             });
         outputChannel.appendLine(formatCommand(invocation.command, invocation.args));
         await languageClient.start();
+        languageClient.onNotification("typewriter/embeddedDocumentChanged", () => refreshEmbeddedDocuments());
         if (options.notify) {
             vscode.window.setStatusBarMessage("Typewriter language server restarted.", 3000);
         }
@@ -698,6 +713,325 @@ function normalizeExtension(extension) {
 
 function toFileUri(value) {
     return value?.scheme === "file" ? value : undefined;
+}
+
+function createEmbeddedForwardingProviders() {
+    const selector = { language: "typewriter" };
+    return [
+        vscode.languages.registerCompletionItemProvider(
+            selector,
+            {
+                async provideCompletionItems(document, position, _token, completionContext) {
+                    const target = await resolveEmbeddedTarget(document, position);
+                    if (!target) {
+                        return undefined;
+                    }
+
+                    try {
+                        const list = await vscode.commands.executeCommand(
+                            "vscode.executeCompletionItemProvider",
+                            target.virtualUri,
+                            target.virtualPosition,
+                            completionContext?.triggerCharacter);
+                        const items = (list?.items ?? []).map(sanitizeForwardedCompletionItem);
+                        return new vscode.CompletionList(items, Boolean(list?.isIncomplete));
+                    } catch {
+                        return undefined;
+                    }
+                },
+            },
+            ".",
+            "\"",
+            "'",
+            "/",
+            "@",
+            "<"),
+        vscode.languages.registerHoverProvider(
+            selector,
+            {
+                async provideHover(document, position) {
+                    const target = await resolveEmbeddedTarget(document, position);
+                    if (!target) {
+                        return undefined;
+                    }
+
+                    try {
+                        const hovers = await vscode.commands.executeCommand(
+                            "vscode.executeHoverProvider",
+                            target.virtualUri,
+                            target.virtualPosition);
+                        const hover = (hovers ?? []).find(candidate => candidate?.contents?.length);
+                        return hover ? new vscode.Hover(hover.contents) : undefined;
+                    } catch {
+                        return undefined;
+                    }
+                },
+            }),
+        vscode.languages.registerSignatureHelpProvider(
+            selector,
+            {
+                async provideSignatureHelp(document, position, _token, signatureContext) {
+                    const target = await resolveEmbeddedTarget(document, position);
+                    if (!target) {
+                        return undefined;
+                    }
+
+                    try {
+                        return await vscode.commands.executeCommand(
+                            "vscode.executeSignatureHelpProvider",
+                            target.virtualUri,
+                            target.virtualPosition,
+                            signatureContext?.triggerCharacter);
+                    } catch {
+                        return undefined;
+                    }
+                },
+            },
+            "(",
+            ","),
+        vscode.languages.registerDefinitionProvider(
+            selector,
+            {
+                async provideDefinition(document, position) {
+                    const target = await resolveEmbeddedTarget(document, position);
+                    if (!target) {
+                        return undefined;
+                    }
+
+                    try {
+                        const locations = await vscode.commands.executeCommand(
+                            "vscode.executeDefinitionProvider",
+                            target.virtualUri,
+                            target.virtualPosition);
+                        if (!Array.isArray(locations)) {
+                            return undefined;
+                        }
+
+                        const mapped = [];
+                        for (const location of locations) {
+                            const resolved = await mapForwardedLocation(location);
+                            if (resolved) {
+                                mapped.push(resolved);
+                            }
+                        }
+
+                        return mapped;
+                    } catch {
+                        return undefined;
+                    }
+                },
+            }),
+    ];
+}
+
+async function resolveEmbeddedTarget(document, position) {
+    const client = languageClient;
+    if (!client || !isEmbeddedForwardingEnabled(document)) {
+        return undefined;
+    }
+
+    let info;
+    try {
+        info = await client.sendRequest("typewriter/embeddedPosition", {
+            textDocument: {
+                uri: document.uri.toString(),
+            },
+            position: {
+                line: position.line,
+                character: position.character,
+            },
+        });
+    } catch {
+        return undefined;
+    }
+
+    if (!info
+        || !embeddedSuffixes[info.kind]
+        || !info.virtualPosition
+        || typeof info.virtualPosition.line !== "number"
+        || typeof info.virtualPosition.character !== "number") {
+        return undefined;
+    }
+
+    const virtualUri = await ensureEmbeddedDocument(client, document, info.kind);
+    if (!virtualUri) {
+        return undefined;
+    }
+
+    return {
+        kind: info.kind,
+        virtualUri,
+        virtualPosition: new vscode.Position(info.virtualPosition.line, info.virtualPosition.character),
+    };
+}
+
+async function ensureEmbeddedDocument(client, document, kind) {
+    let snapshot;
+    try {
+        snapshot = await client.sendRequest("typewriter/embeddedDocument", {
+            textDocument: {
+                uri: document.uri.toString(),
+            },
+            kind,
+        });
+    } catch {
+        return undefined;
+    }
+
+    if (!snapshot || typeof snapshot.content !== "string") {
+        return undefined;
+    }
+
+    const virtualUri = createEmbeddedUri(document.uri, kind);
+    const key = virtualUri.toString();
+    const previous = embeddedDocuments.get(key);
+    embeddedDocuments.set(key, snapshot.content);
+    if (previous !== undefined && previous !== snapshot.content) {
+        embeddedContentEmitter.fire(virtualUri);
+    }
+
+    try {
+        await vscode.workspace.openTextDocument(virtualUri);
+    } catch {
+        return undefined;
+    }
+
+    await waitForEmbeddedContent(key, snapshot.content);
+    return virtualUri;
+}
+
+async function waitForEmbeddedContent(virtualUriKey, content) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+        const document = vscode.workspace.textDocuments.find(candidate => candidate.uri.toString() === virtualUriKey);
+        if (document && document.getText() === content) {
+            return;
+        }
+
+        await delay(25);
+    }
+}
+
+async function provideEmbeddedContent(uri) {
+    const cached = embeddedDocuments.get(uri.toString());
+    if (cached !== undefined) {
+        return cached;
+    }
+
+    const parsed = parseEmbeddedUri(uri);
+    const client = languageClient;
+    if (!parsed || !client) {
+        return "";
+    }
+
+    try {
+        const snapshot = await client.sendRequest("typewriter/embeddedDocument", {
+            textDocument: {
+                uri: parsed.originalUri.toString(),
+            },
+            kind: parsed.kind,
+        });
+        const content = typeof snapshot?.content === "string" ? snapshot.content : "";
+        embeddedDocuments.set(uri.toString(), content);
+        return content;
+    } catch {
+        return "";
+    }
+}
+
+async function mapForwardedLocation(location) {
+    const uri = location.targetUri ?? location.uri;
+    const range = location.targetSelectionRange ?? location.targetRange ?? location.range;
+    if (!uri || !range) {
+        return undefined;
+    }
+
+    if (uri.scheme !== embeddedScheme) {
+        return new vscode.Location(uri, range);
+    }
+
+    const parsed = parseEmbeddedUri(uri);
+    const client = languageClient;
+    if (!parsed || !client) {
+        return undefined;
+    }
+
+    try {
+        const mappedRange = await client.sendRequest("typewriter/templateRange", {
+            textDocument: {
+                uri: parsed.originalUri.toString(),
+            },
+            kind: parsed.kind,
+            range: {
+                start: {
+                    line: range.start.line,
+                    character: range.start.character,
+                },
+                end: {
+                    line: range.end.line,
+                    character: range.end.character,
+                },
+            },
+        });
+        if (!mappedRange?.start || !mappedRange?.end) {
+            return undefined;
+        }
+
+        return new vscode.Location(
+            parsed.originalUri,
+            new vscode.Range(
+                mappedRange.start.line,
+                mappedRange.start.character,
+                mappedRange.end.line,
+                mappedRange.end.character));
+    } catch {
+        return undefined;
+    }
+}
+
+function sanitizeForwardedCompletionItem(item) {
+    item.range = undefined;
+    item.textEdit = undefined;
+    item.additionalTextEdits = undefined;
+    item.command = undefined;
+    return item;
+}
+
+function createEmbeddedUri(documentUri, kind) {
+    return documentUri.with({
+        scheme: embeddedScheme,
+        path: documentUri.path + embeddedSuffixes[kind],
+    });
+}
+
+function parseEmbeddedUri(uri) {
+    for (const [kind, suffix] of Object.entries(embeddedSuffixes)) {
+        if (uri.path.endsWith(suffix)) {
+            return {
+                kind,
+                originalUri: uri.with({
+                    scheme: "file",
+                    path: uri.path.slice(0, -suffix.length),
+                }),
+            };
+        }
+    }
+
+    return undefined;
+}
+
+function refreshEmbeddedDocuments() {
+    for (const key of [...embeddedDocuments.keys()]) {
+        embeddedDocuments.delete(key);
+        try {
+            embeddedContentEmitter.fire(vscode.Uri.parse(key));
+        } catch {
+            // Ignore malformed cached URIs.
+        }
+    }
+}
+
+function isEmbeddedForwardingEnabled(document) {
+    return getConfiguration(document.uri).get("embeddedLanguages.forwarding", "auto") !== "off";
 }
 
 function createFallbackCompletionProvider() {

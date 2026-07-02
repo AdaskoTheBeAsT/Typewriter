@@ -94,6 +94,7 @@ internal sealed class LanguageServerHost
                 experimental = new
                 {
                     typewriterGenerationProvider = true,
+                    typewriterEmbeddedLanguageProvider = true,
                 },
             },
             serverInfo = new
@@ -168,6 +169,45 @@ internal sealed class LanguageServerHost
                && property.TryGetInt32(value: out value);
     }
 
+    private static bool TryReadRange(
+        JsonElement parameters,
+        out LspRange range)
+    {
+        range = default!;
+#pragma warning disable CC0021 // Use nameof
+        if (parameters.ValueKind != JsonValueKind.Object
+            || !parameters.TryGetProperty(propertyName: "range", value: out var rangeElement)
+            || !TryReadPosition(element: rangeElement, propertyName: "start", position: out var start)
+            || !TryReadPosition(element: rangeElement, propertyName: "end", position: out var end))
+        {
+            return false;
+        }
+#pragma warning restore CC0021 // Use nameof
+
+        range = new LspRange(Start: start, End: end);
+        return true;
+    }
+
+    private static bool TryReadPosition(
+        JsonElement element,
+        string propertyName,
+        out LspPosition position)
+    {
+        position = new LspPosition(Line: 0, Character: 0);
+#pragma warning disable CC0021 // Use nameof
+        if (element.ValueKind != JsonValueKind.Object
+            || !element.TryGetProperty(propertyName: propertyName, value: out var positionElement)
+            || !TryReadInt(element: positionElement, propertyName: "line", value: out var line)
+            || !TryReadInt(element: positionElement, propertyName: "character", value: out var character))
+        {
+            return false;
+        }
+#pragma warning restore CC0021 // Use nameof
+
+        position = new LspPosition(Line: line, Character: character);
+        return true;
+    }
+
     private static string PathFromUri(string uri)
     {
         return FileUriPath.TryGetPath(uri: uri) ?? uri;
@@ -237,6 +277,15 @@ internal sealed class LanguageServerHost
             case "textDocument/semanticTokens/full":
                 await WriteSemanticTokensResponseAsync(id: id, parameters: parameters, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
                 break;
+            case "typewriter/embeddedDocument":
+                await WriteEmbeddedDocumentResponseAsync(id: id, parameters: parameters, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+                break;
+            case "typewriter/embeddedPosition":
+                await WriteEmbeddedPositionResponseAsync(id: id, parameters: parameters, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+                break;
+            case "typewriter/templateRange":
+                await WriteTemplateRangeResponseAsync(id: id, parameters: parameters, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+                break;
             default:
                 await _connection.WriteErrorResponseAsync(
                     id: id,
@@ -263,6 +312,7 @@ internal sealed class LanguageServerHost
                 {
                     _documents[key: openedDocument.Uri] = openedDocument;
                     ScheduleValidation(uri: openedDocument.Uri, immediate: true, cancellationToken: cancellationToken);
+                    await NotifyEmbeddedDocumentChangedAsync(uri: openedDocument.Uri, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
                 }
 
                 break;
@@ -270,6 +320,7 @@ internal sealed class LanguageServerHost
                 if (TryApplyDocumentChange(parameters: parameters, uri: out var changedUri))
                 {
                     ScheduleValidation(uri: changedUri, immediate: false, cancellationToken: cancellationToken);
+                    await NotifyEmbeddedDocumentChangedAsync(uri: changedUri, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
                 }
 
                 break;
@@ -277,6 +328,7 @@ internal sealed class LanguageServerHost
                 if (TryApplyDocumentSave(parameters: parameters, uri: out var savedUri))
                 {
                     ScheduleValidation(uri: savedUri, immediate: true, cancellationToken: cancellationToken);
+                    await NotifyEmbeddedDocumentChangedAsync(uri: savedUri, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
                 }
 
                 break;
@@ -367,6 +419,79 @@ internal sealed class LanguageServerHost
             id: id,
             result: _semanticTokenService.GetSemanticTokens(document: document),
             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    private async Task WriteEmbeddedDocumentResponseAsync(
+        JsonElement id,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadTextDocumentUri(parameters: parameters, uri: out var uri)
+            || !_documents.TryGetValue(key: uri, value: out var document)
+            || !TryReadString(element: parameters, propertyName: "kind", value: out var kind))
+        {
+            await _connection.WriteResponseAsync(id: id, result: null, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            return;
+        }
+
+        await _connection.WriteResponseAsync(
+            id: id,
+            result: EmbeddedDocumentService.GetSnapshot(document: document, kind: kind),
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    private async Task WriteEmbeddedPositionResponseAsync(
+        JsonElement id,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadDocumentAndPosition(parameters: parameters, document: out var document, position: out var position))
+        {
+            await _connection.WriteResponseAsync(id: id, result: null, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            return;
+        }
+
+        await _connection.WriteResponseAsync(
+            id: id,
+            result: EmbeddedDocumentService.GetPositionInfo(document: document, position: position),
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    private async Task WriteTemplateRangeResponseAsync(
+        JsonElement id,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadTextDocumentUri(parameters: parameters, uri: out var uri)
+            || !_documents.TryGetValue(key: uri, value: out var document)
+            || !TryReadString(element: parameters, propertyName: "kind", value: out var kind)
+            || !TryReadRange(parameters: parameters, range: out var range))
+        {
+            await _connection.WriteResponseAsync(id: id, result: null, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            return;
+        }
+
+        await _connection.WriteResponseAsync(
+            id: id,
+            result: EmbeddedDocumentService.MapRangeToTemplate(document: document, kind: kind, range: range),
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    private Task NotifyEmbeddedDocumentChangedAsync(
+        string uri,
+        CancellationToken cancellationToken)
+    {
+        var version = _documents.TryGetValue(key: uri, value: out var document)
+            ? document.Version
+            : null;
+        return _connection.WriteNotificationAsync(
+            method: "typewriter/embeddedDocumentChanged",
+            parameters: new
+            {
+                uri,
+                version,
+            },
+            cancellationToken: cancellationToken);
     }
 
     private async Task WriteGenerationResponseAsync(
