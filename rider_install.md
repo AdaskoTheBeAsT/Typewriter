@@ -19,7 +19,7 @@
    powershell
      .\rider\gradlew.bat -p rider buildPlugin
 
-   Then install rider\build\distributions\typewriter-rider-3.0.0.zip in Rider via Settings > Plugins > Gear > Install Plugin from
+   Then install rider\build\distributions\typewriter-rider-<version>.zip in Rider via Settings > Plugins > Gear > Install Plugin from
     Disk.
 
-    .\rider\Build-RiderPluginWithTools.ps1 -Configuration Release
+    .\Build-RiderPluginWithTools.ps1 -Configuration Release

@@ -11,8 +11,8 @@
     <Description>Command-line Typewriter generator for TypeScript output from C# projects and .tst templates.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageProjectUrl>https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/AdaskoTheBeAsT/Typewriter</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/AdaskoTheBeAsT/Typewriter</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>typewriter;typescript;code-generation;tst;dotnet-tool</PackageTags>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>

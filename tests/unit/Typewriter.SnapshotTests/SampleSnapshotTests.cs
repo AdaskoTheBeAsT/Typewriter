@@ -16,7 +16,16 @@ public sealed class SampleSnapshotTests
     [InlineData(data: ["WebApiServices", "WebApiServices.csproj", "Services.tst", "generated/users.service.ts"])]
     [InlineData(data: ["WebApiServices", "WebApiServices.csproj", "Constants.tst", "generated/constants.ts"])]
     [InlineData(data: ["SignalRHubs", "SignalRHubs.csproj", "SignalRHubs.tst", "generated/signalr-chat.service.ts"])]
+    [InlineData(data: ["issue66", "App/App.csproj", "App/Models.tst", "App/generated/models.ts"])]
+    [InlineData(data: ["issue67", "App/App.csproj", "App/Models.tst", "App/generated/models.ts"])]
+    [InlineData(data: ["issue68", "Core/Core.csproj", "Core/Models.tst", "Core/generated/models.ts"])]
+    [InlineData(data: ["issue69", "LegacyApp/LegacyApp.csproj", "LegacyApp/Models.tst", "LegacyApp/generated/models.ts"])]
+    [InlineData(data: ["issue69v2", "MyProject/MyProject.csproj", "MyProject/_Resources/_Services.tst", "MyProject/_Resources/generated/services.ts"])]
+    [InlineData(data: ["issue74", "App/App.csproj", "App/Models.tst", "App/MyModel.ts"])]
+    [InlineData(data: ["issue75", "App/App.csproj", "App/Models.tst", "App/MyModel.ts"])]
+    [InlineData(data: ["issue81", "App/App.csproj", "App/Models.tst", "App/MyModel.ts"])]
     [InlineData(data: ["issue90", "App/App.csproj", "App/Models.tst", "App/Models.ts"])]
+    [InlineData(data: ["issue96", "App/App.csproj", "App/Models.tst", "App/DerivedRecordVm.ts"])]
     public async Task GenerateAsyncMatchesModelsSnapshot(
         string sampleName,
         string projectPath,
@@ -60,7 +69,7 @@ public sealed class SampleSnapshotTests
         generatedFile.Content.Should().NotContain("\r\n");
 
         var expected = await File.ReadAllTextAsync(path: expectedOutputPath);
-        NormalizeLineEndings(value: generatedFile.Content).Should().Be(NormalizeLineEndings(value: expected));
+        generatedFile.Content.Should().Be(expected);
     }
 
     private static string FindRepositoryRoot()
@@ -78,10 +87,6 @@ public sealed class SampleSnapshotTests
 
         return AppContext.BaseDirectory;
     }
-
-    private static string NormalizeLineEndings(string value) =>
-        value.Replace(oldValue: "\r\n", newValue: "\n", comparisonType: StringComparison.Ordinal)
-            .Replace(oldChar: '\r', newChar: '\n');
 
     private static string ResolveSamplePath(
         string sampleDirectory,

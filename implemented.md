@@ -2,7 +2,7 @@
 
 Completed and current-state implementation record. Remaining roadmap and backlog items are tracked in [to_implement.md](to_implement.md).
 
-## Implementation Status as of 2026-06-12
+## Implementation Status as of 2026-07-02
 
 This section records what has already been implemented in this repository after the initial reimplementation work. It is intentionally separate from the roadmap above so the plan remains useful as a target architecture document.
 
@@ -19,6 +19,7 @@ This section records what has already been implemented in this repository after 
 | Milestone 7: Visual Studio MVP | Done | SDK-style VSIX adapter, VSIX/pkgdef packaging, generate/validate commands, CLI bridge, generate-on-save, Output window logging, Error List diagnostics, `.tst` classification, and native Ctrl+Space fallback completions are implemented. Focused VSIX build and full solution build/test pass; manual VS installation smoke testing is still recommended before release. |
 | Milestone 8: Language Server MVP | Done | LSP server process, JSON-RPC protocol loop, document open/change/save/close sync, live template diagnostics, completion, hover, go-to-definition, semantic tokens, VS Code language client startup, and restart command are implemented. |
 | Milestone 9: Rich Template Experience | Done; compatibility hardening ongoing | LSP completions, hover, and definition support are implemented. The renderer now also has compatibility filters, metadata substitutions, inline lambda filters, compiled C# template helpers, two-parameter predicate helper invocation, local `#r`/NuGet reference resolution, TypeScript template-literal interpolation preservation, original public Typewriter.CodeModel surface parity, richer CodeModel type/attribute/default handling, and per-source `OutputFilenameFactory` fan-out with no-match suppression. Checked snapshots cover external Angular/React System.Text.Json service recipes, Angular/React System.Text.Json model recipes, Angular/React Newtonsoft.Json model recipes, and an external Angular constants recipe when the sibling `NetCoreTypewriterRecipes` checkout is available. Recent hardening covers nullable dictionary/list mapping, enum defaults, and the `AllowedValuesAttribute` scenario from issue 55. Remaining work is old parser/runtime edge-case hardening as real recipes expose gaps. |
+| Milestone 10: Packaging and Release | Done for NuGet and GitHub release assets; marketplaces ongoing | Tag releases publish the CLI and language-server dotnet tools to NuGet and attach VS Code, Visual Studio, and Rider packages to GitHub releases. Direct marketplace publishing remains backlog work. |
 
 ## PR Sequence Status
 
@@ -117,12 +118,14 @@ Implemented CLI features:
 - typewriter list-templates
 - --workspace
 - --project
-- --template
+- --template (single file or directory)
+- --template-search-path
 - --framework
 - --output text|json
 - --dry-run
 - --fail-on-warning
 - --all-projects
+- --diff (unified diff output for content, line-ending, and final-newline changes in text and JSON modes)
 - Exit codes for success, generation failure, invalid arguments, project-load failure, and template parse failure
 ```
 
@@ -218,6 +221,8 @@ Implemented project loading in Typewriter.Buildalyzer:
 - Buildalyzer.Logger kept on netstandard2.0 for MSBuild logger loading
 - Runtime dependencies for Buildalyzer.Logger, MsBuildPipeLogger, and Roslyn are copied for CLI/test execution
 - Buildalyzer evaluation disables MSBuild node reuse and shared compilation for more predictable CLI/test execution
+- Legacy non-SDK .csproj loading with ToolsVersion and TargetFrameworkVersion
+- TW0003 diagnostic surfacing for unresolved unconditional <Import> elements even when Buildalyzer reports success with zero source files
 ```
 
 Implemented Roslyn metadata extraction:
@@ -227,8 +232,10 @@ Implemented Roslyn metadata extraction:
 - Records
 - Interfaces
 - Enums
+- Structs
 - Delegates
 - Properties
+- Indexer properties with parameters
 - Methods and parameters
 - Constants, fields, static readonly fields, and events
 - Property types
@@ -259,7 +266,9 @@ Implemented template support:
 - $Records[...] 
 - $Interfaces[...] 
 - $Enums[...] 
+- $Structs[...]
 - $Properties[...] 
+- $Properties($IsIndexer)[...] with $Parameters for indexer parameter rendering
 - $Values[...] / $EnumValues[...]
 - $Methods[...]
 - $Parameters[...]
@@ -274,7 +283,7 @@ Implemented template support:
 - Name case formatting through `GetName(NameCase)`, `ToNameCase(NameCase)`, and direct template aliases such as `$LowerKebabName`, `$UpperSnakeName`, and `$Name[$CamelCase]`
 - Boolean blocks such as $IsNullable[...][...]
 - Collection separators
-- Basic filters: Class, Record, Interface, Enum, HasProperties, Public, Internal
+- Basic filters: Class, Record, Interface, Enum, Struct, HasProperties, Public, Internal
 - Name= and Namespace= filters
 - Old-style [Attribute] filters
 - Old-style :BaseType inheritance filters
@@ -313,6 +322,8 @@ Implemented configuration loading:
 - Project-level config
 - Environment overrides
 - CLI overrides for framework, dry-run, and fail-on-warning
+- JSON Schema (typewriter.schema.json) for typewriter.json validation and editor autocomplete
+- typewriter init emits $schema reference as the first property
 ```
 
 Configuration precedence currently implemented:
@@ -374,33 +385,38 @@ Implemented tests:
 - Language server template diagnostics over open document text
 - Language server completion, hover, C# source definition, generated-output definition, semantic-token, and embedded-language context services
 - Language server JSON-RPC protocol loop for initialize, document sync, completion, semantic tokens, shutdown, and exit
+- UnifiedDiffBuilder unit tests for identical content, new files, deleted files, single-line changes, insertions, deletions, multi-line replacements, CRLF handling, line-ending-only changes, final-newline-only changes, hunk merging, and distant hunk separation
+- Generated-file writer regression coverage verifies that `--diff` skips the LCS calculation for unchanged outputs
+- Public API compatibility tests preserve the pre-4.6.1 `GeneratedFile` and `GenerationRequest` constructor signatures
+- CLI integration tests for --diff output in JSON and text modes, including line-ending-only changes
+- CLI integration test for $schema reference as first property in typewriter init output
+- JSON Schema drift-detection test cross-checking typewriter.schema.json against serialized TypewriterConfiguration.Default
+- Buildalyzer regression tests for old-style non-SDK csproj loading and TW0003 diagnostic surfacing for unresolved unconditional imports
+- Exact snapshot coverage for every issue sample: issue66, issue67, issue68, issue69, issue69v2, issue74, issue75, issue81, issue90, and issue96
+- Visual Studio generate-on-save scope tests for project-local, workspace-level, and missing templates
+- Template discovery test for directory-valued --template
+- Roslyn metadata tests for indexer properties and struct types
+- Engine render tests for $Structs, $Types(Struct), struct properties, and nested structs
+- CodeModel parity tests for Property.IsIndexer, Property.Parameters, and Struct public surface
 ```
 
 Verified commands:
 
 ```bash
-dotnet build AdaskoTheBeAsT.Typewriter.slnx -m:1
-dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj -m:1
-dotnet test AdaskoTheBeAsT.Typewriter.slnx --no-build -m:1
+dotnet build AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-restore -m:1
+dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build -m:1
 dotnet run --project src/Typewriter.Cli/Typewriter.Cli.csproj --no-build -- generate --workspace AdaskoTheBeAsT.Typewriter.slnx --project samples/SimpleApi/SimpleApi.csproj --template samples/SimpleApi/Models.tst --framework net10.0 --output json --dry-run
 npm --prefix vscode run lint
+npm --prefix vscode run bundle
+.\rider\gradlew.bat -p rider verifyPlugin
 ```
 
-The last recorded full verification from 2026-06-03 passed with no build warnings and 81 passing tests.
-
-Recent focused verification from 2026-06-11:
-
-```bash
-dotnet test tests\unit\Typewriter.Engine.Tests\Typewriter.Engine.Tests.csproj -m:1
-dotnet test tests\unit\Typewriter.Roslyn.Tests\Typewriter.Roslyn.Tests.csproj -m:1
-```
-
-The focused Engine and Roslyn compatibility suites pass.
+The full verification on 2026-07-02 passes with 265 tests and a warning-free clean Release build. Nullable and obsolete-API warnings from the pinned Buildalyzer submodule are suppressed only for that vendored project at the repository integration boundary; Typewriter projects retain their normal warnings-as-errors policy.
 
 The Visual Studio focused build produces:
 
 ```text
-src/Typewriter.VisualStudio/bin/Debug/net472/Typewriter.VisualStudio.vsix
+src/Typewriter.VisualStudio/bin/Release/net472/Typewriter.VisualStudio.vsix
 ```
 
 The CLI sample currently generates:

@@ -110,14 +110,31 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             return;
         }
 
-        if (!result.Succeeded && result.SourceFiles.Length == 0)
+        if (result.SourceFiles.Length == 0)
         {
-            state.Diagnostics.AddRange(
-                collection: CreateBuildErrorDiagnostics(
-                    results: results,
-                    projectPath: projectPath,
-                    fallbackMessage: $"Buildalyzer could not evaluate project: {projectPath}."));
-            return;
+            var capturedDiagnostics = GetCapturedBuildErrorDiagnostics(results: results, projectPath: projectPath);
+
+            // Buildalyzer can report an overall "succeeded" result (for example when an unconditional
+            // <Import> in an old-style, non-SDK project cannot be resolved) while still logging a real
+            // MSBuild error and returning zero source files. Surface the captured error in that case
+            // instead of silently treating the project as empty. See: https://github.com/AdaskoTheBeAsT/Typewriter/issues/69
+            if (!result.Succeeded || capturedDiagnostics.Count > 0)
+            {
+                state.Diagnostics.AddRange(
+                    collection: capturedDiagnostics.Count > 0
+                        ? capturedDiagnostics
+                        :
+                        [
+                            new GenerationDiagnostic(
+                                File: projectPath,
+                                Line: null,
+                                Column: null,
+                                Severity: DiagnosticSeverity.Error,
+                                Message: $"Buildalyzer could not evaluate project: {projectPath}.",
+                                Code: "TW0003"),
+                        ]);
+                return;
+            }
         }
 
         if (isRootProject)
@@ -195,7 +212,24 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         string projectPath,
         string fallbackMessage)
     {
-        var diagnostics = results.BuildEventArguments
+        var diagnostics = GetCapturedBuildErrorDiagnostics(results: results, projectPath: projectPath);
+        return diagnostics.Count > 0
+            ? diagnostics
+            : [
+                new GenerationDiagnostic(
+                    File: projectPath,
+                    Line: null,
+                    Column: null,
+                    Severity: DiagnosticSeverity.Error,
+                    Message: fallbackMessage,
+                    Code: "TW0003"),
+            ];
+    }
+
+    private static IReadOnlyList<GenerationDiagnostic> GetCapturedBuildErrorDiagnostics(
+        global::Buildalyzer.IAnalyzerResults results,
+        string projectPath) =>
+        results.BuildEventArguments
             .OfType<BuildErrorEventArgs>()
             .Select(selector: error => CreateBuildErrorDiagnostic(error: error, projectPath: projectPath))
             .DistinctBy(
@@ -208,18 +242,6 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
                     Code = diagnostic.Code ?? string.Empty,
                 })
             .ToArray();
-        return diagnostics.Length > 0
-            ? diagnostics
-            : [
-                new GenerationDiagnostic(
-                    File: projectPath,
-                    Line: null,
-                    Column: null,
-                    Severity: DiagnosticSeverity.Error,
-                    Message: fallbackMessage,
-                    Code: "TW0003"),
-            ];
-    }
 
     private static GenerationDiagnostic CreateBuildErrorDiagnostic(
         BuildErrorEventArgs error,

@@ -1,6 +1,7 @@
 using System.CommandLine.Invocation;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Typewriter.Abstractions;
 using Typewriter.Engine;
@@ -11,6 +12,11 @@ namespace Typewriter.Cli;
 internal static class TypewriterCli
 {
     private const string DefaultConfigurationFileName = "typewriter.json";
+
+    // S1075: the schema is published at a fixed, well-known location alongside the source repository.
+#pragma warning disable S1075
+    private const string ConfigurationSchemaUrl = "https://raw.githubusercontent.com/AdaskoTheBeAsT/Typewriter/master/typewriter.schema.json";
+#pragma warning restore S1075
     private static readonly TimeSpan WatchDebounceDelay = TimeSpan.FromMilliseconds(milliseconds: 300);
 
     public static async Task<int> RunAsync(
@@ -61,7 +67,7 @@ internal static class TypewriterCli
             return 1;
         }
 
-        var contents = JsonSerializer.Serialize(value: TypewriterConfiguration.Default, options: CreateJsonOptions());
+        var contents = SerializeWithSchema(configuration: TypewriterConfiguration.Default);
 
         // The init command intentionally writes into the caller-selected workspace.
 #pragma warning disable SCS0018
@@ -189,7 +195,10 @@ internal static class TypewriterCli
             Mode: options.Command == CliCommand.Validate ? GenerationMode.Validate : GenerationMode.Generate,
             Configuration: configuration,
             AllProjects: options.AllProjects,
-            TemplateSearchPath: options.TemplateSearchPath);
+            TemplateSearchPath: options.TemplateSearchPath)
+        {
+            IncludeDiff = options.Diff,
+        };
 
         return await generator.GenerateAsync(request: request, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
     }
@@ -320,6 +329,7 @@ internal static class TypewriterCli
                             {
                                 file.Path,
                                 file.Changed,
+                                Diff = string.IsNullOrEmpty(value: file.Diff) ? null : file.Diff,
                             }),
                         Diagnostics = result.Diagnostics,
                     },
@@ -336,7 +346,27 @@ internal static class TypewriterCli
         {
             var status = file.Changed ? "updated" : "unchanged";
             Console.WriteLine(value: $"{status}: {file.Path}");
+            if (!string.IsNullOrEmpty(value: file.Diff))
+            {
+                Console.WriteLine(value: file.Diff);
+            }
         }
+    }
+
+    private static string SerializeWithSchema(TypewriterConfiguration configuration)
+    {
+        var options = CreateJsonOptions();
+        var serialized = JsonSerializer.SerializeToNode(value: configuration, options: options)!.AsObject();
+        var withSchema = new JsonObject
+        {
+            ["$schema"] = ConfigurationSchemaUrl,
+        };
+        foreach (var property in serialized)
+        {
+            withSchema.Add(propertyName: property.Key, value: property.Value?.DeepClone());
+        }
+
+        return withSchema.ToJsonString(options: options);
     }
 
     private static JsonSerializerOptions CreateJsonOptions()

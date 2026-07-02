@@ -2,19 +2,19 @@
   "name": "typewriter-vscode",
   "displayName": "Typewriter",
   "description": "VS Code adapter for Typewriter .tst templates.",
-  "version": "4.6.0",
+  "version": "4.6.1",
   "publisher": "adaskothebeast",
   "license": "MIT",
   "icon": "images/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter.git",
+    "url": "https://github.com/AdaskoTheBeAsT/Typewriter.git",
     "directory": "vscode"
   },
   "bugs": {
-    "url": "https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter/issues"
+    "url": "https://github.com/AdaskoTheBeAsT/Typewriter/issues"
   },
-  "homepage": "https://github.com/AdaskoTheBeAsT/AdaskoTheBeAsT.Typewriter#readme",
+  "homepage": "https://github.com/AdaskoTheBeAsT/Typewriter#readme",
   "engines": {
     "vscode": "^1.92.0"
   },

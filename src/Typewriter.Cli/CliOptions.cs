@@ -11,6 +11,7 @@ internal sealed record CliOptions(
     bool DryRun,
     bool FailOnWarning,
     bool AllProjects,
+    bool Diff,
     bool Force,
     bool Help)
 {
@@ -25,6 +26,7 @@ internal sealed record CliOptions(
         DryRun: false,
         FailOnWarning: false,
         AllProjects: false,
+        Diff: false,
         Force: false,
         Help: false);
 }

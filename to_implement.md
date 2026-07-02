@@ -1455,10 +1455,10 @@ Recommended implementation order:
 - original Typewriter.CodeModel.Helpers public facade and optional ContextAttribute compatibility shim
 - template NuGet restore hardening for private-source authentication failures, floating/range version diagnostics, and incompatible asset edge cases
 - full embedded C# and TypeScript IntelliSense inside `.tst` files through virtual documents and language-service forwarding
-- NuGet publishing for CLI and language-server dotnet tool packages
 - VS Code package publishing
 - Visual Studio VSIX signing/publishing
-- release versioning and changelog automation
+- JetBrains Marketplace publishing
+- automated synchronization of repository and package changelogs
 - migration tooling for old templates
 ```
 
@@ -1466,10 +1466,10 @@ Recommended implementation order:
 
 ```text
 1. Finish Milestone 10 publishing work.
-   - publish CLI and language-server dotnet tool packages from CI artifacts to NuGet.
    - add VS Code marketplace packaging/publishing.
    - add Visual Studio VSIX signing/publishing.
-   - add release versioning and changelog automation.
+   - add JetBrains Marketplace publishing.
+   - automate synchronization of repository and package changelogs.
 
 2. Continue compatibility hardening in parallel as new real recipes expose gaps.
    - Add direct snapshots for additional service template variants under `D:\GitHub\NetCoreTypewriterRecipes`.

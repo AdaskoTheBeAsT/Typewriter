@@ -172,7 +172,9 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
             Diagnostics: []);
     }
 
-    private static IReadOnlyList<SourceFileRenderContext> CreateSourceFileRenderContexts(ProjectMetadata project)
+    private static IReadOnlyList<SourceFileRenderContext> CreateSourceFileRenderContexts(
+        ProjectMetadata project,
+        ProjectMetadataIndex metadataIndex)
     {
         var contexts = new List<SourceFileRenderContext>();
         foreach (var sourceFile in project.SourceFiles.Where(predicate: sourceFile => sourceFile.Types.Count > 0))
@@ -182,7 +184,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                 item: new SourceFileRenderContext(
                     SourceFile: sourceFile,
                     Project: sourceProject,
-                    MetadataIndex: ProjectMetadataIndex.Create(metadata: sourceProject)));
+                    MetadataIndex: metadataIndex));
         }
 
         return contexts;
@@ -451,7 +453,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                         diagnostics.Add(item: templateDiagnostic);
                     }
 
-                    sourceFileRenderContexts ??= CreateSourceFileRenderContexts(project: project);
+                    sourceFileRenderContexts ??= CreateSourceFileRenderContexts(project: project, metadataIndex: projectIndex);
                     foreach (var sourceContext in sourceFileRenderContexts)
                     {
                         cancellationToken.ThrowIfCancellationRequested();

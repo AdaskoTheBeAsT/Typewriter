@@ -18,7 +18,7 @@ VS Code adapter for Typewriter `.tst` templates, backed by the Typewriter CLI an
 
 ## Package
 
-- Version: `3.0.0`.
+- Version: synchronized from `vscode/package.json` by the root `setver.ps1` release script.
 - Packaged entrypoint: `dist/extension.js`, created by `npm --prefix vscode run bundle`.
 - `src/` is excluded from the VSIX.
 - Icon, license, changelog, repository, homepage, and issue metadata are included.
@@ -46,7 +46,7 @@ For a custom `dotnet` invocation:
   "typewriter.cliArguments": [
     "run",
     "--project",
-    "D:/GitHub/AdaskoTheBeAsT.Typewriter/src/Typewriter.Cli/Typewriter.Cli.csproj",
+    "D:/GitHub/Typewriter/src/Typewriter.Cli/Typewriter.Cli.csproj",
     "--"
   ]
 }
@@ -91,5 +91,5 @@ Override this with:
 npm ci --prefix vscode
 npm --prefix vscode run check
 npm --prefix vscode run bundle
-npm --prefix vscode run package -- --out ../artifacts/packages/typewriter-vscode-3.0.0.vsix
+pwsh ./Build-VSCodeExtension.ps1 -OutputDirectory artifacts/packages
 ```

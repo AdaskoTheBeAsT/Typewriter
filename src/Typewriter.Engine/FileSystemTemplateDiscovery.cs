@@ -15,6 +15,14 @@ public sealed class FileSystemTemplateDiscovery : ITemplateDiscovery
         if (!string.IsNullOrWhiteSpace(value: request.TemplatePath))
         {
             var templatePath = Path.GetFullPath(path: request.TemplatePath);
+            if (Directory.Exists(path: templatePath))
+            {
+                return await FindTemplatesUnderRootAsync(
+                    root: templatePath,
+                    request: request,
+                    cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            }
+
 #pragma warning disable SCS0018 // Potential Path Traversal vulnerability was found where '{0}' in '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.
             var content = await File.ReadAllTextAsync(path: templatePath, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
 #pragma warning restore SCS0018 // Potential Path Traversal vulnerability was found where '{0}' in '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.
@@ -28,6 +36,17 @@ public sealed class FileSystemTemplateDiscovery : ITemplateDiscovery
             root = Path.GetDirectoryName(path: root) ?? root;
         }
 
+        return await FindTemplatesUnderRootAsync(
+            root: root,
+            request: request,
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    private static async Task<IReadOnlyList<TemplateFile>> FindTemplatesUnderRootAsync(
+        string root,
+        GenerationRequest request,
+        CancellationToken cancellationToken)
+    {
         var includePatterns = request.Configuration.Templates.Count == 0
             ? TypewriterConfiguration.Default.Templates
             : request.Configuration.Templates;

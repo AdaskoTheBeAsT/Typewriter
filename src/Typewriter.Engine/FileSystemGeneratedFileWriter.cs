@@ -14,13 +14,17 @@ public sealed class FileSystemGeneratedFileWriter : IGeneratedFileWriter
         ArgumentNullException.ThrowIfNull(argument: request);
 
         var content = OutputContentFormatter.Format(content: file.Content, output: request.Configuration.Output);
-        var changed = await HasChangedAsync(file: file, content: content, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        var (changed, existingContent) = await GetChangeStateAsync(file: file, content: content, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        var diff = changed && request.IncludeDiff
+            ? UnifiedDiffBuilder.Build(path: file.Path, oldContent: existingContent ?? string.Empty, newContent: content)
+            : null;
         if (request.Configuration.Output.DryRun || request.Mode == GenerationMode.Validate)
         {
             return file with
             {
                 Content = content,
                 Changed = changed,
+                Diff = diff,
             };
         }
 
@@ -30,6 +34,7 @@ public sealed class FileSystemGeneratedFileWriter : IGeneratedFileWriter
             {
                 Content = content,
                 Changed = false,
+                Diff = diff,
             };
         }
 
@@ -51,10 +56,11 @@ public sealed class FileSystemGeneratedFileWriter : IGeneratedFileWriter
         {
             Content = content,
             Changed = changed,
+            Diff = diff,
         };
     }
 
-    private static async Task<bool> HasChangedAsync(
+    private static async Task<(bool Changed, string? ExistingContent)> GetChangeStateAsync(
         GeneratedFile file,
         string content,
         CancellationToken cancellationToken)
@@ -62,18 +68,23 @@ public sealed class FileSystemGeneratedFileWriter : IGeneratedFileWriter
         var path = file.Path;
         if (!File.Exists(path: path))
         {
-            return true;
+            return (Changed: true, ExistingContent: null);
         }
 
-        if (GeneratedFileExistingContentCache.TryGet(file: file, content: out var cached))
-        {
-            return !string.Equals(a: cached, b: content, comparisonType: StringComparison.Ordinal);
-        }
+        var existing = GeneratedFileExistingContentCache.TryGet(file: file, content: out var cached)
+            ? cached
+            : await ReadExistingContentAsync(path: path, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
 
+        return (Changed: !string.Equals(a: existing, b: content, comparisonType: StringComparison.Ordinal), ExistingContent: existing);
+    }
+
+    private static Task<string> ReadExistingContentAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
 #pragma warning disable SCS0018 // Potential Path Traversal vulnerability was found where '{0}' in '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.
-        var existing = await File.ReadAllTextAsync(path: path, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        return File.ReadAllTextAsync(path: path, cancellationToken: cancellationToken);
 #pragma warning restore SCS0018 // Potential Path Traversal vulnerability was found where '{0}' in '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.
-        return !string.Equals(a: existing, b: content, comparisonType: StringComparison.Ordinal);
     }
 
     private static Encoding CreateEncoding(

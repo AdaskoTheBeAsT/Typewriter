@@ -104,7 +104,8 @@ internal static class CliCommandLine
             Option<string> output,
             Option<bool> dryRun,
             Option<bool> failOnWarning,
-            Option<bool> allProjects)
+            Option<bool> allProjects,
+            Option<bool> diff)
         {
             Workspace = workspace;
             Project = project;
@@ -115,6 +116,7 @@ internal static class CliCommandLine
             DryRun = dryRun;
             FailOnWarning = failOnWarning;
             AllProjects = allProjects;
+            Diff = diff;
         }
 
         private Option<string?> Workspace { get; }
@@ -134,6 +136,8 @@ internal static class CliCommandLine
         private Option<bool> FailOnWarning { get; }
 
         private Option<bool> AllProjects { get; }
+
+        private Option<bool> Diff { get; }
 
         public static CliOptionSet Create()
         {
@@ -177,6 +181,10 @@ internal static class CliCommandLine
                 allProjects: new Option<bool>(name: "--all-projects")
                 {
                     Description = "Generate for every project in a multi-project workspace.",
+                },
+                diff: new Option<bool>(name: "--diff")
+                {
+                    Description = "Include unified diffs for changed files in the output.",
                 });
         }
 
@@ -191,6 +199,7 @@ internal static class CliCommandLine
             command.Options.Add(item: DryRun);
             command.Options.Add(item: FailOnWarning);
             command.Options.Add(item: AllProjects);
+            command.Options.Add(item: Diff);
         }
 
         public CliOptions CreateOptions(
@@ -207,6 +216,7 @@ internal static class CliCommandLine
                 DryRun: parseResult.GetValue(option: DryRun),
                 FailOnWarning: parseResult.GetValue(option: FailOnWarning),
                 AllProjects: parseResult.GetValue(option: AllProjects),
+                Diff: parseResult.GetValue(option: Diff),
                 Force: false,
                 Help: false);
     }
