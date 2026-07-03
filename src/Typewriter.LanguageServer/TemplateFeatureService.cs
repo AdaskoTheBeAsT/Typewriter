@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using Microsoft.CodeAnalysis;
 using Typewriter.Abstractions;
 using Typewriter.Engine;
 using Typewriter.Roslyn;
@@ -160,6 +161,7 @@ internal sealed class TemplateFeatureService : IDisposable
             var embedded = await _embeddedCSharpService.GetCompletionsAsync(
                 document: document,
                 templateOffset: document.GetOffset(position: position),
+                projectCompilations: await LoadProjectCompilationsAsync(document: document, settings: settings, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false),
                 cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             if (embedded is not null && embedded.Items.Count > 0)
             {
@@ -207,6 +209,7 @@ internal sealed class TemplateFeatureService : IDisposable
             var embeddedHover = await _embeddedCSharpService.GetHoverAsync(
                 document: document,
                 templateOffset: document.GetOffset(position: position),
+                projectCompilations: await LoadProjectCompilationsAsync(document: document, settings: settings, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false),
                 cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             if (embeddedHover is not null)
             {
@@ -243,6 +246,7 @@ internal sealed class TemplateFeatureService : IDisposable
             var embeddedDefinitions = await _embeddedCSharpService.GetDefinitionsAsync(
                 document: document,
                 templateOffset: document.GetOffset(position: position),
+                projectCompilations: await LoadProjectCompilationsAsync(document: document, settings: settings, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false),
                 cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             if (embeddedDefinitions.Count > 0)
             {
@@ -306,6 +310,16 @@ internal sealed class TemplateFeatureService : IDisposable
         AddTemplateMember(items: items, label: "Values", detail: "Collection", documentation: "Values on the current enum.", insertText: "Values[$0]");
         AddTemplateMember(items: items, label: "EnumValues", detail: "Collection", documentation: "Values on the current enum.", insertText: "EnumValues[$0]");
         AddTemplateMember(items: items, label: "TypeArguments", detail: "Collection", documentation: "Generic type arguments for the current type reference.", insertText: "TypeArguments[$0]");
+        AddTemplateMember(items: items, label: "Fields", detail: "Collection", documentation: "Instance fields on the current type.", insertText: "Fields[$0]");
+        AddTemplateMember(items: items, label: "StaticReadOnlyFields", detail: "Collection", documentation: "Static readonly fields on the current type.", insertText: "StaticReadOnlyFields[$0]");
+        AddTemplateMember(items: items, label: "Events", detail: "Collection", documentation: "Events on the current type.", insertText: "Events[$0]");
+        AddTemplateMember(items: items, label: "Delegates", detail: "Collection", documentation: "Delegates declared in the file or on the current type.", insertText: "Delegates[$0]");
+        AddTemplateMember(items: items, label: "NestedClasses", detail: "Collection", documentation: "Classes nested inside the current type.", insertText: "NestedClasses[$0]");
+        AddTemplateMember(items: items, label: "NestedEnums", detail: "Collection", documentation: "Enums nested inside the current type.", insertText: "NestedEnums[$0]");
+        AddTemplateMember(items: items, label: "NestedInterfaces", detail: "Collection", documentation: "Interfaces nested inside the current type.", insertText: "NestedInterfaces[$0]");
+        AddTemplateMember(items: items, label: "NestedRecords", detail: "Collection", documentation: "Records nested inside the current type.", insertText: "NestedRecords[$0]");
+        AddTemplateMember(items: items, label: "NestedStructs", detail: "Collection", documentation: "Structs nested inside the current type.", insertText: "NestedStructs[$0]");
+        AddTemplateMember(items: items, label: "TupleElements", detail: "Collection", documentation: "Elements of the current value tuple type.", insertText: "TupleElements[$0]");
 
         foreach (var scalar in CreateScalarItems())
         {
@@ -348,6 +362,13 @@ internal sealed class TemplateFeatureService : IDisposable
         yield return Scalar(label: "OriginalName", documentation: "Original C# type name.");
         yield return Scalar(label: "ClassName", documentation: "TypeScript-friendly class name.");
         yield return Scalar(label: "TypeParameters", documentation: "Legacy type parameter placeholder.");
+        yield return Scalar(label: "BaseClass", documentation: "Direct base class of the current class or type; empty when the class inherits only from object. Exposes the same members as a class, for example $BaseClass[ extends $Name].");
+        yield return Scalar(label: "BaseRecord", documentation: "Direct base record of the current record; empty when there is none.");
+        yield return Scalar(label: "ContainingClass", documentation: "Class the current item is nested inside; empty for top-level items.");
+        yield return Scalar(label: "AssemblyName", documentation: "Name of the assembly that declares the current item.");
+        yield return Scalar(label: "DocComment", documentation: "XML documentation comment of the current item. Use $DocComment.Summary, $DocComment.Returns, or $DocComment.Parameters.");
+        yield return Scalar(label: "ElementType", documentation: "Element type of the current array or enumerable type reference, for example string for string[].");
+        yield return Scalar(label: "IsFlags", documentation: "Whether the current enum is decorated with [Flags].");
     }
 
     private static IEnumerable<TemplateAnalysisItem> CreateFilterItems()
@@ -1029,6 +1050,50 @@ internal sealed class TemplateFeatureService : IDisposable
         }
 
         return items;
+    }
+
+#pragma warning disable CC0091,S2325
+    private async Task<IReadOnlyList<Compilation>> LoadProjectCompilationsAsync(
+        TextDocumentState document,
+        LanguageServerSettings settings,
+        CancellationToken cancellationToken)
+#pragma warning restore CC0091,S2325
+    {
+        try
+        {
+            var workspacePath = settings.ResolveWorkspacePath(documentPath: document.Path);
+            var projectPaths = ResolveProjectPaths(settings: settings, workspacePath: workspacePath, templatePath: document.Path);
+            if (projectPaths.Count == 0)
+            {
+                return [];
+            }
+
+            var metadataProvider = new CSharpProjectMetadataProvider();
+            var compilations = new List<Compilation>();
+            foreach (var projectPath in projectPaths)
+            {
+                var compilation = await metadataProvider.GetCompilationAsync(
+                    project: new ProjectContext(
+                        ProjectPath: projectPath,
+                        WorkspacePath: workspacePath,
+                        TargetFramework: settings.Framework),
+                    cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+                if (compilation is not null)
+                {
+                    compilations.Add(item: compilation);
+                }
+            }
+
+            return compilations;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return [];
+        }
     }
 
 #pragma warning disable CC0091,S2325

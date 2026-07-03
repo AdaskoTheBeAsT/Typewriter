@@ -3,6 +3,7 @@ package com.adaskothebeast.typewriter.rider
 import com.intellij.openapi.components.service
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
+import com.intellij.platform.lsp.api.LspServerManager
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Insets
@@ -23,6 +24,7 @@ class TypewriterConfigurable(private val project: Project) : SearchableConfigura
     private lateinit var allProjectsCheckBox: JCheckBox
     private lateinit var generateOnSaveCheckBox: JCheckBox
     private lateinit var validateOnSaveCheckBox: JCheckBox
+    private lateinit var languageServerEnabledCheckBox: JCheckBox
 
     override fun getId(): String = "typewriter"
 
@@ -38,6 +40,7 @@ class TypewriterConfigurable(private val project: Project) : SearchableConfigura
         allProjectsCheckBox = JCheckBox("Generate all projects")
         generateOnSaveCheckBox = JCheckBox("Generate on save for files matched by typewriter.json inputExtensions")
         validateOnSaveCheckBox = JCheckBox("Validate on save for files matched by typewriter.json inputExtensions")
+        languageServerEnabledCheckBox = JCheckBox("Enable language server IntelliSense for .tst files (completion, hover, diagnostics)")
 
         val createdPanel = JPanel(GridBagLayout())
         var row = 0
@@ -50,6 +53,7 @@ class TypewriterConfigurable(private val project: Project) : SearchableConfigura
         addCheckBox(createdPanel, row++, allProjectsCheckBox)
         addCheckBox(createdPanel, row++, generateOnSaveCheckBox)
         addCheckBox(createdPanel, row++, validateOnSaveCheckBox)
+        addCheckBox(createdPanel, row++, languageServerEnabledCheckBox)
         addFiller(createdPanel, row)
 
         panel = createdPanel
@@ -67,11 +71,17 @@ class TypewriterConfigurable(private val project: Project) : SearchableConfigura
             frameworkField.text != state.framework ||
             allProjectsCheckBox.isSelected != state.allProjects ||
             generateOnSaveCheckBox.isSelected != state.generateOnSave ||
-            validateOnSaveCheckBox.isSelected != state.validateOnSave
+            validateOnSaveCheckBox.isSelected != state.validateOnSave ||
+            languageServerEnabledCheckBox.isSelected != state.languageServerEnabled
     }
 
     override fun apply() {
         val state = project.service<TypewriterSettingsState>().settings
+        val languageServerSettingsChanged = state.languageServerEnabled != languageServerEnabledCheckBox.isSelected ||
+            state.workspacePath != workspacePathField.text.trim() ||
+            state.projectPath != projectPathField.text.trim() ||
+            state.framework != frameworkField.text.trim() ||
+            state.allProjects != allProjectsCheckBox.isSelected
         state.cliPath = cliPathField.text.trim()
         state.cliArguments = cliArgumentsField.text.trim()
         state.workspacePath = workspacePathField.text.trim()
@@ -81,6 +91,11 @@ class TypewriterConfigurable(private val project: Project) : SearchableConfigura
         state.allProjects = allProjectsCheckBox.isSelected
         state.generateOnSave = generateOnSaveCheckBox.isSelected
         state.validateOnSave = validateOnSaveCheckBox.isSelected
+        state.languageServerEnabled = languageServerEnabledCheckBox.isSelected
+        if (languageServerSettingsChanged) {
+            LspServerManager.getInstance(project)
+                .stopAndRestartIfNeeded(TypewriterLspServerSupportProvider::class.java)
+        }
     }
 
     override fun reset() {
@@ -94,6 +109,7 @@ class TypewriterConfigurable(private val project: Project) : SearchableConfigura
         allProjectsCheckBox.isSelected = state.allProjects
         generateOnSaveCheckBox.isSelected = state.generateOnSave
         validateOnSaveCheckBox.isSelected = state.validateOnSave
+        languageServerEnabledCheckBox.isSelected = state.languageServerEnabled
     }
 
     override fun disposeUIResources() {

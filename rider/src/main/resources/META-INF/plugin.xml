@@ -23,6 +23,8 @@
         <projectService serviceImplementation="com.adaskothebeast.typewriter.rider.TypewriterSettingsState" />
         <projectService serviceImplementation="com.adaskothebeast.typewriter.rider.TypewriterCliService" />
         <projectService serviceImplementation="com.adaskothebeast.typewriter.rider.TypewriterLanguageServerClient" />
+        <platform.lsp.serverSupportProvider
+            implementation="com.adaskothebeast.typewriter.rider.TypewriterLspServerSupportProvider" />
         <projectConfigurable
             id="typewriter"
             displayName="Typewriter"
