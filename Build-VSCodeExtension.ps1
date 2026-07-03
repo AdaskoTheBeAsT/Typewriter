@@ -108,12 +108,17 @@ function Add-DirectoryToZip {
         [string] $SourceDirectory,
 
         [Parameter(Mandatory = $true)]
-        [string] $EntryPrefix
+        [string] $EntryPrefix,
+
+        [switch] $KeepTypewriterXmlDocFiles
     )
 
     $resolvedSourceDirectory = (Resolve-Path -LiteralPath $SourceDirectory).Path
     $files = Get-ChildItem -LiteralPath $resolvedSourceDirectory -Recurse -File |
-        Where-Object { $_.Extension -notin @(".pdb", ".xml") }
+        Where-Object {
+            $_.Extension -notin @(".pdb", ".xml") -or
+            ($KeepTypewriterXmlDocFiles -and $_.Name -like "Typewriter.*.xml")
+        }
 
     foreach ($file in $files) {
         $relativePath = [System.IO.Path]::GetRelativePath($resolvedSourceDirectory, $file.FullName).Replace("\", "/")
@@ -192,7 +197,8 @@ try {
     }
 
     Add-DirectoryToZip $packageArchive $cliPublishDir "extension/tools/typewriter-cli"
-    Add-DirectoryToZip $packageArchive $languageServerPublishDir "extension/tools/typewriter-lsp"
+    # XML doc files are required so Roslyn hover in .tst C# blocks can show doc comments.
+    Add-DirectoryToZip $packageArchive $languageServerPublishDir "extension/tools/typewriter-lsp" -KeepTypewriterXmlDocFiles
 }
 finally {
     $packageArchive.Dispose()
@@ -213,6 +219,8 @@ try {
         "extension/tools/typewriter-lsp/Typewriter.LanguageServer.dll",
         "extension/tools/typewriter-lsp/Typewriter.LanguageServer.deps.json",
         "extension/tools/typewriter-lsp/Typewriter.LanguageServer.runtimeconfig.json",
+        "extension/tools/typewriter-lsp/Typewriter.Engine.xml",
+        "extension/tools/typewriter-lsp/Typewriter.Abstractions.xml",
         "extension/tools/typewriter-lsp/Buildalyzer.Logger.dll",
         "extension/tools/typewriter-lsp/Buildalyzer.Logger/net472/Buildalyzer.Logger.dll"
     )) {

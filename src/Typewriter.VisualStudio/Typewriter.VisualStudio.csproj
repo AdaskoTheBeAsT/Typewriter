@@ -100,6 +100,8 @@
     <MSBuild Projects="..\Typewriter.LanguageServer\Typewriter.LanguageServer.csproj" Targets="Restore;Publish" Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(TypewriterPackagedLanguageServerPublishDir);BaseOutputPath=$(TypewriterPackagedLanguageServerBuildOutputDir);SelfContained=false;UseAppHost=false;SatelliteResourceLanguages=en;RunAnalyzers=false;BuildingInsideVisualStudio=false;BuildProjectReferences=true" BuildInParallel="false" />
     <ItemGroup>
       <TypewriterPackagedLanguageServerFile Include="$(TypewriterPackagedLanguageServerPublishDir)**\*.*" Exclude="$(TypewriterPackagedLanguageServerPublishDir)**\*.pdb;$(TypewriterPackagedLanguageServerPublishDir)**\*.xml" />
+      <!-- Typewriter XML doc files must ship next to the DLLs so Roslyn hover in .tst C# blocks can show doc comments. -->
+      <TypewriterPackagedLanguageServerFile Include="$(TypewriterPackagedLanguageServerPublishDir)Typewriter.*.xml" />
       <Content Include="@(TypewriterPackagedLanguageServerFile)">
         <IncludeInVSIX>true</IncludeInVSIX>
         <VSIXSubPath>tools\typewriter-lsp\%(RecursiveDir)</VSIXSubPath>
