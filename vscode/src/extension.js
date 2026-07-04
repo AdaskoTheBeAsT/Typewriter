@@ -24,6 +24,21 @@ const embeddedSuffixes = {
     csharp: ".g.cs",
     typescript: ".g.ts",
 };
+const typewriterCodeModelAliases = new Set([
+    "Attribute",
+    "Class",
+    "Constant",
+    "Delegate",
+    "Enum",
+    "EnumValue",
+    "File",
+    "Interface",
+    "Method",
+    "Parameter",
+    "Property",
+    "Record",
+    "Type",
+]);
 const embeddedDocuments = new Map();
 let embeddedContentEmitter;
 
@@ -761,7 +776,7 @@ function createEmbeddedForwardingProviders() {
                             target.virtualUri,
                             target.virtualPosition);
                         const hover = (hovers ?? []).find(candidate => candidate?.contents?.length);
-                        return hover ? new vscode.Hover(hover.contents) : undefined;
+                        return sanitizeForwardedHover(hover, target);
                     } catch {
                         return undefined;
                     }
@@ -994,6 +1009,57 @@ function sanitizeForwardedCompletionItem(item) {
     item.additionalTextEdits = undefined;
     item.command = undefined;
     return item;
+}
+
+function sanitizeForwardedHover(hover, target) {
+    if (!hover?.contents?.length) {
+        return undefined;
+    }
+
+    if (target.kind === "csharp" && isBareTypewriterCodeModelAliasHover(hover.contents)) {
+        return undefined;
+    }
+
+    return new vscode.Hover(hover.contents);
+}
+
+function isBareTypewriterCodeModelAliasHover(contents) {
+    const normalized = stripMarkdownCode(contents
+        .map(getHoverContentValue)
+        .filter(value => value.length > 0)
+        .join("\n"))
+        .replace(/\s+/g, " ")
+        .replace(/\s*=\s*/g, "=")
+        .trim();
+    if (!normalized) {
+        return false;
+    }
+
+    for (const alias of typewriterCodeModelAliases) {
+        if (normalized === alias
+            || normalized === `${alias}=${alias}`
+            || normalized === `${alias}=Typewriter.CodeModel.${alias}`
+            || normalized === `using ${alias}=Typewriter.CodeModel.${alias};`) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function getHoverContentValue(content) {
+    if (typeof content === "string") {
+        return content;
+    }
+
+    return typeof content?.value === "string" ? content.value : "";
+}
+
+function stripMarkdownCode(value) {
+    return value
+        .replace(/```[a-zA-Z0-9_-]*\s*([\s\S]*?)```/g, "$1")
+        .replace(/`([^`]+)`/g, "$1")
+        .trim();
 }
 
 function createEmbeddedUri(documentUri, kind) {

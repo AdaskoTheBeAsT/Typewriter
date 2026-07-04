@@ -239,7 +239,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         if (symbol is not null)
         {
-            return symbol;
+            return UnwrapAlias(symbol: symbol);
         }
 
         var semanticModel = await document.GetSemanticModelAsync(cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
@@ -255,19 +255,22 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
             var declared = semanticModel.GetDeclaredSymbol(declaration: node, cancellationToken: cancellationToken);
             if (declared is not null)
             {
-                return declared;
+                return UnwrapAlias(symbol: declared);
             }
 
             var symbolInfo = semanticModel.GetSymbolInfo(node: node, cancellationToken: cancellationToken);
             var resolved = symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
             if (resolved is not null)
             {
-                return resolved;
+                return UnwrapAlias(symbol: resolved);
             }
         }
 
         return null;
     }
+
+    private static ISymbol UnwrapAlias(ISymbol symbol) =>
+        symbol is IAliasSymbol alias ? alias.Target : symbol;
 
     private static DocumentCacheEntry CreateDocumentCacheEntry(
         TextDocumentState document,

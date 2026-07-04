@@ -198,6 +198,44 @@ public sealed class TemplateFeatureServiceTests
     }
 
     [Fact]
+    public async Task GetHoverAsyncReturnsEmbeddedCSharpRecordDocumentation()
+    {
+        const string Template = """
+            ${
+                string RecordName(Record record) => record.Name;
+            }
+            """;
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var templatePath = Path.Combine(path1: directory, path2: "Test.tst");
+            var document = CreateDocument(path: templatePath, text: Template);
+            var settings = new LanguageServerSettings(
+                RootPath: directory,
+                WorkspacePath: directory,
+                ProjectPath: null,
+                Framework: null,
+                AllProjects: false);
+
+            using var service = new TemplateFeatureService();
+            var hover = await service.GetHoverAsync(
+                document: document,
+                settings: settings,
+                position: PositionOf(text: Template, marker: "Record record"),
+                cancellationToken: CancellationToken.None);
+
+            hover.Should().NotBeNull();
+            hover!.Contents.Value.Should().NotContain("Record=Record");
+            hover.Contents.Value.Should().Contain("A C# record made available to templates");
+            hover.Contents.Value.Should().Contain("$Records[...]");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GetDefinitionsAsyncReturnsCSharpSourceLocation()
     {
         var directory = CreateProjectDirectory();
@@ -353,6 +391,37 @@ public sealed class TemplateFeatureServiceTests
             hover.Should().NotBeNull();
             hover!.Contents.Value.Should().Contain("BaseClass");
             hover.Contents.Value.Should().Contain("direct base class");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task EmbeddedCSharpHoverOnAliasedTypeReturnsTargetTypeDocumentation()
+    {
+        const string Template = """
+            ${
+                string RecordName(Record r) => r.Name;
+            }
+            """;
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var templatePath = Path.Combine(path1: directory, path2: "Test.tst");
+            var document = CreateDocument(path: templatePath, text: Template);
+            var typeIndex = Template.IndexOf(value: "Record r", comparisonType: StringComparison.Ordinal);
+
+            using var service = new EmbeddedCSharpLanguageService();
+            var hover = await service.GetHoverAsync(
+                document: document,
+                templateOffset: typeIndex,
+                cancellationToken: CancellationToken.None);
+
+            hover.Should().NotBeNull();
+            hover!.Contents.Value.Should().NotContain("Record=Record");
+            hover.Contents.Value.Should().Contain("$Records[...]");
         }
         finally
         {
