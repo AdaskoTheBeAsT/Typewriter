@@ -149,6 +149,8 @@ internal sealed class TemplateFeatureService : IDisposable
 
     private readonly EmbeddedCSharpLanguageService _embeddedCSharpService = new();
 
+    private ProjectCompilationsCacheEntry? _projectCompilationsCache;
+
     public async Task<LspCompletionList> GetCompletionsAsync(
         TextDocumentState document,
         LanguageServerSettings settings,
@@ -1034,6 +1036,57 @@ internal sealed class TemplateFeatureService : IDisposable
 
     private static string UriFromPath(string path) => new Uri(uriString: Path.GetFullPath(path: path)).AbsoluteUri;
 
+    private static async Task<IReadOnlyList<Compilation>> LoadProjectCompilationsCoreAsync(
+        TextDocumentState document,
+        LanguageServerSettings settings,
+        string workspacePath,
+        CancellationToken cancellationToken)
+    {
+        var projectPaths = ResolveProjectPaths(settings: settings, workspacePath: workspacePath, templatePath: document.Path);
+        if (projectPaths.Count == 0)
+        {
+            return [];
+        }
+
+        var metadataProvider = new CSharpProjectMetadataProvider();
+        var compilations = new List<Compilation>();
+        foreach (var projectPath in projectPaths)
+        {
+            var compilation = await metadataProvider.GetCompilationAsync(
+                project: new ProjectContext(
+                    ProjectPath: projectPath,
+                    WorkspacePath: workspacePath,
+                    TargetFramework: settings.Framework),
+                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            if (compilation is not null)
+            {
+                compilations.Add(item: compilation);
+            }
+        }
+
+        return compilations;
+    }
+
+    private static string? CreateProjectCompilationsCacheKey(
+        TextDocumentState document,
+        LanguageServerSettings settings,
+        string workspacePath)
+    {
+        if (document.Version is null)
+        {
+            return null;
+        }
+
+        return string.Join(
+            separator: '\u001F',
+            document.Uri,
+            document.Version.Value.ToString(provider: CultureInfo.InvariantCulture),
+            workspacePath,
+            settings.Framework ?? string.Empty,
+            settings.ProjectPath ?? string.Empty,
+            settings.AllProjects ? "all" : string.Empty);
+    }
+
     private async Task<IReadOnlyList<TemplateAnalysisItem>> GetAnalysisItemsAsync(
         TextDocumentState document,
         LanguageServerSettings settings,
@@ -1052,36 +1105,29 @@ internal sealed class TemplateFeatureService : IDisposable
         return items;
     }
 
-#pragma warning disable CC0091,S2325
     private async Task<IReadOnlyList<Compilation>> LoadProjectCompilationsAsync(
         TextDocumentState document,
         LanguageServerSettings settings,
         CancellationToken cancellationToken)
-#pragma warning restore CC0091,S2325
     {
         try
         {
             var workspacePath = settings.ResolveWorkspacePath(documentPath: document.Path);
-            var projectPaths = ResolveProjectPaths(settings: settings, workspacePath: workspacePath, templatePath: document.Path);
-            if (projectPaths.Count == 0)
+            var cacheKey = CreateProjectCompilationsCacheKey(document: document, settings: settings, workspacePath: workspacePath);
+            var cached = _projectCompilationsCache;
+            if (cacheKey is not null && cached is not null && string.Equals(a: cached.CacheKey, b: cacheKey, comparisonType: StringComparison.Ordinal))
             {
-                return [];
+                return cached.Compilations;
             }
 
-            var metadataProvider = new CSharpProjectMetadataProvider();
-            var compilations = new List<Compilation>();
-            foreach (var projectPath in projectPaths)
+            var compilations = await LoadProjectCompilationsCoreAsync(
+                document: document,
+                settings: settings,
+                workspacePath: workspacePath,
+                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            if (cacheKey is not null)
             {
-                var compilation = await metadataProvider.GetCompilationAsync(
-                    project: new ProjectContext(
-                        ProjectPath: projectPath,
-                        WorkspacePath: workspacePath,
-                        TargetFramework: settings.Framework),
-                    cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
-                if (compilation is not null)
-                {
-                    compilations.Add(item: compilation);
-                }
+                _projectCompilationsCache = new ProjectCompilationsCacheEntry(CacheKey: cacheKey, Compilations: compilations);
             }
 
             return compilations;
@@ -1197,4 +1243,8 @@ internal sealed class TemplateFeatureService : IDisposable
     {
         public const int Snippet = 2;
     }
+
+    private sealed record ProjectCompilationsCacheEntry(
+        string CacheKey,
+        IReadOnlyList<Compilation> Compilations);
 }

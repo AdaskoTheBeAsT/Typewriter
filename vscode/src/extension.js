@@ -1063,9 +1063,12 @@ function stripMarkdownCode(value) {
 }
 
 function createEmbeddedUri(documentUri, kind) {
+    // The original URI (including its scheme, e.g. git/vscode-remote/untitled) is
+    // carried in the query so parseEmbeddedUri can restore it exactly.
     return documentUri.with({
         scheme: embeddedScheme,
         path: documentUri.path + embeddedSuffixes[kind],
+        query: encodeURIComponent(documentUri.toString()),
     });
 }
 
@@ -1074,15 +1077,28 @@ function parseEmbeddedUri(uri) {
         if (uri.path.endsWith(suffix)) {
             return {
                 kind,
-                originalUri: uri.with({
-                    scheme: "file",
-                    path: uri.path.slice(0, -suffix.length),
-                }),
+                originalUri: restoreOriginalUri(uri, suffix),
             };
         }
     }
 
     return undefined;
+}
+
+function restoreOriginalUri(uri, suffix) {
+    if (uri.query) {
+        try {
+            return vscode.Uri.parse(decodeURIComponent(uri.query), true);
+        } catch {
+            // Fall back to path-based restoration below.
+        }
+    }
+
+    return uri.with({
+        scheme: "file",
+        path: uri.path.slice(0, -suffix.length),
+        query: "",
+    });
 }
 
 function refreshEmbeddedDocuments() {
