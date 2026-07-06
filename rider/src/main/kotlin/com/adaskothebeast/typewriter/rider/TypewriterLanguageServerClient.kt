@@ -3,18 +3,14 @@ package com.adaskothebeast.typewriter.rider
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.EOFException
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.atomic.AtomicLong
 
@@ -209,66 +205,8 @@ class TypewriterLanguageServerClient(private val project: Project) : Disposable 
         }
     }
 
-    private fun resolveLanguageServerInvocation(workingDirectory: String): ServerInvocation {
-        val localProject = findLocalLanguageServerProject(project.basePath)
-            ?: findLocalLanguageServerProject(workingDirectory)
-        if (localProject != null) {
-            val assembly = findBuiltLanguageServerAssembly(localProject)
-            return if (assembly != null) {
-                ServerInvocation("dotnet", listOf(assembly))
-            } else {
-                ServerInvocation("dotnet", listOf("run", "--project", localProject, "--no-launch-profile", "--"))
-            }
-        }
-
-        val plugin = PluginManagerCore.getPlugin(PluginId.getId(PluginIdValue))
-        val packagedAssembly = plugin?.pluginPath
-            ?.resolve("tools")
-            ?.resolve("typewriter-lsp")
-            ?.resolve("Typewriter.LanguageServer.dll")
-        return if (packagedAssembly != null && Files.isRegularFile(packagedAssembly)) {
-            ServerInvocation("dotnet", listOf(packagedAssembly.toString()))
-        } else {
-            ServerInvocation("typewriter-lsp", emptyList())
-        }
-    }
-
-    private fun findLocalLanguageServerProject(startPath: String?): String? {
-        if (startPath.isNullOrBlank()) {
-            return null
-        }
-
-        var directory: Path? = if (Files.isDirectory(Paths.get(startPath))) {
-            Paths.get(startPath)
-        } else {
-            Paths.get(startPath).parent
-        }
-        while (directory != null) {
-            val candidate = directory.resolve("src/Typewriter.LanguageServer/Typewriter.LanguageServer.csproj")
-            if (Files.isRegularFile(candidate)) {
-                return candidate.normalize().toString()
-            }
-
-            directory = directory.parent
-        }
-
-        return null
-    }
-
-    private fun findBuiltLanguageServerAssembly(projectPath: String): String? {
-        val outputRoot = Paths.get(projectPath).parent?.resolve("bin") ?: return null
-        if (!Files.isDirectory(outputRoot)) {
-            return null
-        }
-
-        return Files.walk(outputRoot).use { paths ->
-            paths
-                .filter { Files.isRegularFile(it) && it.fileName.toString() == "Typewriter.LanguageServer.dll" }
-                .max(compareBy { Files.getLastModifiedTime(it).toMillis() })
-                .orElse(null)
-                ?.toString()
-        }
-    }
+    private fun resolveLanguageServerInvocation(workingDirectory: String): TypewriterServerInvocation =
+        TypewriterLanguageServerLocator.resolveInvocation(project.basePath, workingDirectory)
 
     private fun reset() {
         input?.runCatching { close() }
@@ -296,10 +234,7 @@ class TypewriterLanguageServerClient(private val project: Project) : Disposable 
         val allProjects: Boolean,
     )
 
-    private data class ServerInvocation(val command: String, val arguments: List<String>)
-
     private companion object {
-        const val PluginIdValue = "com.adaskothebeast.typewriter"
         const val PollDelayMillis = 10L
         const val RequestTimeoutMillis = 300_000L
         val logger: Logger = Logger.getInstance(TypewriterLanguageServerClient::class.java)

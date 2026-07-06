@@ -20,10 +20,12 @@ public sealed class CliIntegrationTests
             var configurationPath = Path.Combine(path1: directory, path2: ConfigurationFileName);
 
             var result = await RunCliRawAsync(
-                cancellationToken: CancellationToken.None,
+                args: [
                 "init",
                 "--workspace",
-                directory);
+                directory
+                ],
+                cancellationToken: CancellationToken.None);
 
             result.ExitCode.Should().Be(0);
             result.StandardError.Should().BeEmpty();
@@ -70,10 +72,12 @@ public sealed class CliIntegrationTests
             var configurationPath = Path.Combine(path1: directory, path2: ConfigurationFileName);
 
             var result = await RunCliRawAsync(
-                cancellationToken: CancellationToken.None,
+                args: [
                 "init",
                 "--workspace",
-                directory);
+                directory
+                ],
+                cancellationToken: CancellationToken.None);
 
             result.ExitCode.Should().Be(0);
 
@@ -108,10 +112,12 @@ public sealed class CliIntegrationTests
             await File.WriteAllTextAsync(path: configurationPath, contents: ExistingConfiguration);
 
             var result = await RunCliRawAsync(
-                cancellationToken: CancellationToken.None,
+                args: [
                 "init",
                 "--workspace",
-                directory);
+                directory
+                ],
+                cancellationToken: CancellationToken.None);
 
             result.ExitCode.Should().Be(1);
             result.StandardError.Should().Contain("Configuration file already exists:");
@@ -133,11 +139,13 @@ public sealed class CliIntegrationTests
             await File.WriteAllTextAsync(path: configurationPath, contents: "{}");
 
             var result = await RunCliRawAsync(
-                cancellationToken: CancellationToken.None,
+                args: [
                 "init",
                 "--workspace",
                 directory,
-                "--force");
+                "--force"
+                ],
+                cancellationToken: CancellationToken.None);
 
             result.ExitCode.Should().Be(0);
             result.StandardError.Should().BeEmpty();
@@ -267,7 +275,7 @@ public sealed class CliIntegrationTests
             var project = await CreateSimpleProjectAsync(directory: directory);
 
             var firstResult = await RunCliRawAsync(
-                cancellationToken: CancellationToken.None,
+                args: [
                 "generate",
                 "--workspace",
                 directory,
@@ -278,7 +286,9 @@ public sealed class CliIntegrationTests
                 "--framework",
                 "net10.0",
                 "--output",
-                "text");
+                "text"
+                ],
+                cancellationToken: CancellationToken.None);
 
             firstResult.ExitCode.Should().Be(0);
 
@@ -295,7 +305,7 @@ public sealed class CliIntegrationTests
                           """);
 
             var result = await RunCliRawAsync(
-                cancellationToken: CancellationToken.None,
+                args: [
                 "generate",
                 "--workspace",
                 directory,
@@ -307,7 +317,9 @@ public sealed class CliIntegrationTests
                 "net10.0",
                 "--output",
                 "text",
-                "--diff");
+                "--diff"
+                ],
+                cancellationToken: CancellationToken.None);
 
             result.ExitCode.Should().Be(0);
             result.StandardOutput.Should().Contain("updated:", because: "the file should be marked as changed");
@@ -484,7 +496,7 @@ public sealed class CliIntegrationTests
             using var cancellation = new CancellationTokenSource();
 
             var runTask = RunCliAsync(
-                cancellationToken: cancellation.Token,
+                args: [
                 "watch",
                 "--workspace",
                 directory,
@@ -495,7 +507,9 @@ public sealed class CliIntegrationTests
                 "--framework",
                 "net10.0",
                 "--output",
-                "json");
+                "json"
+                ],
+                cancellationToken: cancellation.Token);
 
             await WaitForFileAsync(path: generatedPath, cancellationToken: cancellation.Token);
             await Task.Delay(millisecondsDelay: 250, cancellationToken: CancellationToken.None);
@@ -524,7 +538,7 @@ public sealed class CliIntegrationTests
             using var cancellation = new CancellationTokenSource();
 
             var runTask = RunCliRawAsync(
-                cancellationToken: cancellation.Token,
+                args: [
                 "watch",
                 "--workspace",
                 directory,
@@ -533,7 +547,9 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0");
+                "net10.0"
+                ],
+                cancellationToken: cancellation.Token);
 
             await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
             await File.WriteAllTextAsync(
@@ -586,7 +602,7 @@ public sealed class CliIntegrationTests
             using var cancellation = new CancellationTokenSource();
 
             var runTask = RunCliRawAsync(
-                cancellationToken: cancellation.Token,
+                args: [
                 "watch",
                 "--workspace",
                 directory,
@@ -595,7 +611,9 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0");
+                "net10.0"
+                ],
+                cancellationToken: cancellation.Token);
 
             await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
             (await File.ReadAllTextAsync(path: generatedPath, cancellationToken: cancellation.Token))
@@ -658,7 +676,7 @@ public sealed class CliIntegrationTests
             using var cancellation = new CancellationTokenSource();
 
             var runTask = RunCliRawAsync(
-                cancellationToken: cancellation.Token,
+                args: [
                 "watch",
                 "--workspace",
                 directory,
@@ -667,7 +685,9 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0");
+                "net10.0"
+                ],
+                cancellationToken: cancellation.Token);
 
             await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
             (await File.ReadAllTextAsync(path: generatedPath, cancellationToken: cancellation.Token))
@@ -714,7 +734,7 @@ public sealed class CliIntegrationTests
             using var cancellation = new CancellationTokenSource();
 
             var runTask = RunCliRawAsync(
-                cancellationToken: cancellation.Token,
+                args: [
                 "watch",
                 "--workspace",
                 directory,
@@ -723,7 +743,9 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0");
+                "net10.0"
+                ],
+                cancellationToken: cancellation.Token);
 
             await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
             await File.WriteAllTextAsync(
@@ -776,7 +798,7 @@ public sealed class CliIntegrationTests
             using var cancellation = new CancellationTokenSource();
 
             var runTask = RunCliRawAsync(
-                cancellationToken: cancellation.Token,
+                args: [
                 "watch",
                 "--workspace",
                 directory,
@@ -785,7 +807,9 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0");
+                "net10.0"
+                ],
+                cancellationToken: cancellation.Token);
 
             await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
             await Task.Delay(millisecondsDelay: 500, cancellationToken: CancellationToken.None);
@@ -962,7 +986,7 @@ public sealed class CliIntegrationTests
                                  """);
 
             var result = await RunCliRawAsync(
-                cancellationToken: CancellationToken.None,
+                args: [
                 "validate",
                 "--workspace",
                 directory,
@@ -971,7 +995,9 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0");
+                "net10.0"
+                ],
+                cancellationToken: CancellationToken.None);
 
             result.ExitCode.Should().Be(4);
             result.StandardError.Should().Contain("Models.tst(");
@@ -1003,7 +1029,7 @@ public sealed class CliIntegrationTests
             var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
 
             var result = await RunCliRawAsync(
-                cancellationToken: CancellationToken.None,
+                args: [
                 "generate",
                 "--workspace",
                 directory,
@@ -1012,7 +1038,9 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0");
+                "net10.0"
+                ],
+                cancellationToken: CancellationToken.None);
 
             result.ExitCode.Should().Be(4);
             result.StandardError.Should().Contain("error TW0002:");
@@ -1025,8 +1053,8 @@ public sealed class CliIntegrationTests
     }
 
     private static async Task<CliRawRunResult> RunCliRawAsync(
-        CancellationToken cancellationToken,
-        params string[] args)
+        string[] args,
+        CancellationToken cancellationToken)
     {
         await ConsoleLock.WaitAsync(cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         try
@@ -1060,11 +1088,11 @@ public sealed class CliIntegrationTests
     }
 
     private static Task<CliRunResult> RunCliAsync(params string[] args) =>
-        RunCliAsync(cancellationToken: CancellationToken.None, args: args);
+        RunCliAsync(args: args, cancellationToken: CancellationToken.None);
 
     private static async Task<CliRunResult> RunCliAsync(
-        CancellationToken cancellationToken,
-        params string[] args)
+        string[] args,
+        CancellationToken cancellationToken)
     {
         await ConsoleLock.WaitAsync().ConfigureAwait(continueOnCapturedContext: false);
         try

@@ -36,7 +36,7 @@ intellijPlatform {
         version = providers.gradleProperty("pluginVersion")
         description = """
             <p>JetBrains Rider adapter for Typewriter .tst templates.</p>
-            <p>Provides file recognition, syntax highlighting, CLI-backed generation and validation actions, and save-time generation.</p>
+            <p>Provides file recognition, syntax highlighting, language-server IntelliSense (completion, hover, diagnostics, go-to-definition), CLI-backed generation and validation actions, and save-time generation.</p>
         """.trimIndent()
 
         ideaVersion {

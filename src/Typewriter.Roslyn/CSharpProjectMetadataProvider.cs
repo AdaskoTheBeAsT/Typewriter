@@ -50,6 +50,31 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// Returns the Roslyn compilation built for the project, reusing the metadata cache.
+    /// Used by editor services that need real symbol information for the loaded workspace,
+    /// for example IntelliSense inside template C# helper blocks.
+    /// </summary>
+    /// <param name="project">The project to load the compilation for.</param>
+    /// <param name="cancellationToken">Token used to cancel the load.</param>
+    /// <returns>The compilation, or <c>null</c> when the project could not be compiled.</returns>
+    public async Task<Compilation?> GetCompilationAsync(
+        ProjectContext project,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(argument: project);
+
+        var loadedProjects = new Dictionary<string, ProjectMetadataBuildResult>(comparer: StringComparer.OrdinalIgnoreCase);
+        var loadingProjects = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+        var result = await GetMetadataCoreAsync(
+            projectLoader: _projectLoader,
+            project: project,
+            loadedProjects: loadedProjects,
+            loadingProjects: loadingProjects,
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        return result.Compilation;
+    }
+
     private static async Task<ProjectMetadata> GetMergedMetadataAsync(
         IProjectWorkspaceLoader projectLoader,
         ProjectContext project,

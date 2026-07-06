@@ -26,13 +26,15 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
     public async Task<EmbeddedCSharpCompletions?> GetCompletionsAsync(
         TextDocumentState document,
         int templateOffset,
-        CancellationToken cancellationToken)
+        IReadOnlyList<Compilation>? projectCompilations = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
             return await UseDocumentAsync<EmbeddedCSharpCompletions?>(
                 document: document,
                 templateOffset: templateOffset,
+                projectCompilations: projectCompilations ?? [],
                 fallback: null,
                 action: async (entry, virtualOffset, token) =>
                 {
@@ -65,7 +67,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
                                 Label: symbol.Name,
                                 Kind: GetCompletionKind(symbol: symbol),
                                 Detail: symbol.ToDisplayString(format: SymbolDisplayFormat.MinimallyQualifiedFormat),
-                                Documentation: null));
+                                Documentation: isMemberAccess ? GetDocumentationSummary(symbol: symbol) : null));
                     }
 
                     var ordered = items
@@ -89,13 +91,15 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
     public async Task<LspHover?> GetHoverAsync(
         TextDocumentState document,
         int templateOffset,
-        CancellationToken cancellationToken)
+        IReadOnlyList<Compilation>? projectCompilations = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
             return await UseDocumentAsync<LspHover?>(
                 document: document,
                 templateOffset: templateOffset,
+                projectCompilations: projectCompilations ?? [],
                 fallback: null,
                 action: async (entry, virtualOffset, token) =>
                 {
@@ -136,13 +140,15 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
     public async Task<IReadOnlyList<LspLocation>> GetDefinitionsAsync(
         TextDocumentState document,
         int templateOffset,
-        CancellationToken cancellationToken)
+        IReadOnlyList<Compilation>? projectCompilations = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
             return await UseDocumentAsync<IReadOnlyList<LspLocation>>(
                 document: document,
                 templateOffset: templateOffset,
+                projectCompilations: projectCompilations ?? [],
                 fallback: [],
                 action: async (entry, virtualOffset, token) =>
                 {
@@ -153,8 +159,24 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
                     }
 
                     var locations = new List<LspLocation>();
-                    foreach (var sourceSpan in symbol.Locations.Where(predicate: location => location.IsInSource).Select(selector: location => location.SourceSpan))
+                    foreach (var location in symbol.Locations.Where(predicate: location => location.IsInSource))
                     {
+                        var sourceFilePath = location.SourceTree?.FilePath;
+                        if (!string.IsNullOrWhiteSpace(value: sourceFilePath)
+                            && Path.IsPathRooted(path: sourceFilePath)
+                            && System.IO.File.Exists(path: sourceFilePath))
+                        {
+                            var lineSpan = location.GetLineSpan();
+                            locations.Add(
+                                item: new LspLocation(
+                                    Uri: new Uri(uriString: Path.GetFullPath(path: sourceFilePath)).AbsoluteUri,
+                                    Range: new LspRange(
+                                        Start: new LspPosition(Line: lineSpan.StartLinePosition.Line, Character: lineSpan.StartLinePosition.Character),
+                                        End: new LspPosition(Line: lineSpan.EndLinePosition.Line, Character: lineSpan.EndLinePosition.Character))));
+                            continue;
+                        }
+
+                        var sourceSpan = location.SourceSpan;
                         var range = TryCreateTemplateRange(
                             document: document,
                             virtualDocument: entry.VirtualDocument,
@@ -217,7 +239,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         if (symbol is not null)
         {
-            return symbol;
+            return UnwrapAlias(symbol: symbol);
         }
 
         var semanticModel = await document.GetSemanticModelAsync(cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
@@ -233,23 +255,27 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
             var declared = semanticModel.GetDeclaredSymbol(declaration: node, cancellationToken: cancellationToken);
             if (declared is not null)
             {
-                return declared;
+                return UnwrapAlias(symbol: declared);
             }
 
             var symbolInfo = semanticModel.GetSymbolInfo(node: node, cancellationToken: cancellationToken);
             var resolved = symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
             if (resolved is not null)
             {
-                return resolved;
+                return UnwrapAlias(symbol: resolved);
             }
         }
 
         return null;
     }
 
+    private static ISymbol UnwrapAlias(ISymbol symbol) =>
+        symbol is IAliasSymbol alias ? alias.Target : symbol;
+
     private static DocumentCacheEntry CreateDocumentCacheEntry(
         TextDocumentState document,
-        EmbeddedCSharpDocument virtualDocument)
+        EmbeddedCSharpDocument virtualDocument,
+        IReadOnlyList<Compilation> projectCompilations)
     {
 #pragma warning disable IDISP001 // Dispose ownership transfers to DocumentCacheEntry
         var workspace = new AdhocWorkspace();
@@ -267,7 +293,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
                         outputKind: OutputKind.DynamicallyLinkedLibrary,
                         nullableContextOptions: NullableContextOptions.Disable))
                 .WithParseOptions(parseOptions: CSharpParseOptions.Default.WithLanguageVersion(version: LanguageVersion.Preview))
-                .WithMetadataReferences(metadataReferences: SharedReferences.Value);
+                .WithMetadataReferences(metadataReferences: CreateWorkspaceReferences(projectCompilations: projectCompilations));
             var project = workspace.AddProject(projectInfo: projectInfo);
             var roslynDocument = workspace.AddDocument(
                 projectId: project.Id,
@@ -277,6 +303,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
                 uri: document.Uri,
                 text: document.Text,
                 virtualDocument: virtualDocument,
+                projectCompilations: projectCompilations,
                 workspace: workspace,
                 document: roslynDocument);
         }
@@ -285,6 +312,76 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
             workspace.Dispose();
             throw;
         }
+    }
+
+    private static IReadOnlyList<MetadataReference> CreateWorkspaceReferences(IReadOnlyList<Compilation> projectCompilations)
+    {
+        if (projectCompilations.Count == 0)
+        {
+            return SharedReferences.Value;
+        }
+
+        var references = new Dictionary<string, MetadataReference>(comparer: StringComparer.OrdinalIgnoreCase);
+        foreach (var reference in SharedReferences.Value)
+        {
+            var key = GetReferenceKey(reference: reference);
+            if (key is not null)
+            {
+                references[key: key] = reference;
+            }
+        }
+
+        foreach (var compilation in projectCompilations)
+        {
+            foreach (var reference in compilation.References)
+            {
+                var key = GetReferenceKey(reference: reference);
+                if (key is null
+                    || (key.StartsWith(value: "Typewriter.", comparisonType: StringComparison.OrdinalIgnoreCase) && references.ContainsKey(key: key)))
+                {
+                    continue;
+                }
+
+                references[key: key] = reference;
+            }
+
+            var assemblyName = compilation.AssemblyName;
+            if (!string.IsNullOrWhiteSpace(value: assemblyName))
+            {
+                references[key: assemblyName] = compilation.ToMetadataReference();
+            }
+        }
+
+        return references.Values.ToArray();
+    }
+
+    private static string? GetReferenceKey(MetadataReference reference) =>
+        reference switch
+        {
+            CompilationReference compilationReference => compilationReference.Compilation.AssemblyName,
+            PortableExecutableReference executableReference when !string.IsNullOrWhiteSpace(value: executableReference.FilePath) =>
+                Path.GetFileNameWithoutExtension(path: executableReference.FilePath),
+            _ => reference.Display,
+        };
+
+    private static bool CompilationsEqual(
+        IReadOnlyList<Compilation> first,
+        IReadOnlyList<Compilation> second)
+    {
+        if (first.Count != second.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < first.Count; index++)
+        {
+            if (!ReferenceEquals(objA: first[index: index], objB: second[index: index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static IReadOnlyList<MetadataReference> CreateMetadataReferences()
@@ -301,8 +398,16 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
             .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
             .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
             .Where(predicate: System.IO.File.Exists)
-            .Select(selector: path => (MetadataReference)MetadataReference.CreateFromFile(path: path))
+            .Select(selector: CreateMetadataReference)
             .ToArray();
+    }
+
+    private static MetadataReference CreateMetadataReference(string path)
+    {
+        var xmlDocumentationPath = Path.ChangeExtension(path: path, extension: ".xml");
+        return System.IO.File.Exists(path: xmlDocumentationPath)
+            ? MetadataReference.CreateFromFile(path: path, documentation: XmlDocumentationProvider.CreateFromFile(xmlDocCommentFilePath: xmlDocumentationPath))
+            : MetadataReference.CreateFromFile(path: path);
     }
 
     private static (string Prefix, bool IsMemberAccess) GetCompletionContext(
@@ -432,6 +537,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
     private async Task<TResult> UseDocumentAsync<TResult>(
         TextDocumentState document,
         int templateOffset,
+        IReadOnlyList<Compilation> projectCompilations,
         TResult fallback,
         Func<DocumentCacheEntry, int, CancellationToken, Task<TResult>> action,
         CancellationToken cancellationToken)
@@ -440,7 +546,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
         DocumentCacheEntry? entry = null;
         try
         {
-            entry = GetOrCreateDocument(document: document);
+            entry = GetOrCreateDocument(document: document, projectCompilations: projectCompilations);
             if (entry is null
                 || !entry.VirtualDocument.TryMapToVirtual(templateOffset: templateOffset, virtualOffset: out var virtualOffset))
             {
@@ -458,7 +564,9 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
         }
     }
 
-    private DocumentCacheEntry? GetOrCreateDocument(TextDocumentState document)
+    private DocumentCacheEntry? GetOrCreateDocument(
+        TextDocumentState document,
+        IReadOnlyList<Compilation> projectCompilations)
     {
         DocumentCacheEntry? entryToDispose = null;
         DocumentCacheEntry? entry;
@@ -471,7 +579,8 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
 
             if (_cache is not null
                 && string.Equals(a: _cache.Uri, b: document.Uri, comparisonType: StringComparison.OrdinalIgnoreCase)
-                && string.Equals(a: _cache.Text, b: document.Text, comparisonType: StringComparison.Ordinal))
+                && string.Equals(a: _cache.Text, b: document.Text, comparisonType: StringComparison.Ordinal)
+                && CompilationsEqual(first: _cache.ProjectCompilations, second: projectCompilations))
             {
                 _cache.UseCount++;
                 return _cache;
@@ -483,7 +592,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
                 return null;
             }
 
-            entry = CreateDocumentCacheEntry(document: document, virtualDocument: virtualDocument);
+            entry = CreateDocumentCacheEntry(document: document, virtualDocument: virtualDocument, projectCompilations: projectCompilations);
             entry.UseCount++;
             if (_cache is not null)
             {
@@ -540,12 +649,14 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
             string uri,
             string text,
             EmbeddedCSharpDocument virtualDocument,
+            IReadOnlyList<Compilation> projectCompilations,
             AdhocWorkspace workspace,
             Document document)
         {
             Uri = uri;
             Text = text;
             VirtualDocument = virtualDocument;
+            ProjectCompilations = projectCompilations;
             Workspace = workspace;
             Document = document;
         }
@@ -555,6 +666,8 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
         public string Text { get; }
 
         public EmbeddedCSharpDocument VirtualDocument { get; }
+
+        public IReadOnlyList<Compilation> ProjectCompilations { get; }
 
         public AdhocWorkspace Workspace { get; }
 

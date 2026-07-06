@@ -25,5 +25,6 @@ class TypewriterSettingsState : PersistentStateComponent<TypewriterSettingsState
         var allProjects: Boolean = false,
         var generateOnSave: Boolean = true,
         var validateOnSave: Boolean = true,
+        var languageServerEnabled: Boolean = true,
     )
 }

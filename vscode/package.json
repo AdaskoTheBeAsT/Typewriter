@@ -176,6 +176,15 @@
           "default": true,
           "description": "Validate after saving files matched by typewriter.json inputExtensions. Ignored when generateOnSave is enabled."
         },
+        "typewriter.embeddedLanguages.forwarding": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "off"
+          ],
+          "default": "auto",
+          "description": "Forward IntelliSense inside C# helper blocks and TypeScript output regions of .tst files to installed C# and TypeScript language extensions through virtual documents. 'off' keeps only the built-in Typewriter template IntelliSense."
+        },
         "typewriter.languageServer.enabled": {
           "type": "boolean",
           "default": true,

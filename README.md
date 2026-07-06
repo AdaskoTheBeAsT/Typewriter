@@ -25,6 +25,8 @@
   - [✨ Why Typewriter?](#-why-typewriter)
   - [🚀 Why This Version Beats the Classic VS Extension](#-why-this-version-beats-the-classic-vs-extension)
     - [New goodies at a glance](#new-goodies-at-a-glance)
+  - [🧠 Template IntelliSense: What Changed and Where It Works](#-template-intellisense-what-changed-and-where-it-works)
+    - [IDE support matrix](#ide-support-matrix)
   - [📦 What Is in the Box](#-what-is-in-the-box)
   - [🚦 Quick Start (5 Minutes to Generated Code)](#-quick-start-5-minutes-to-generated-code)
     - [1️⃣ Choose your IDE plugin or dotnet tool](#1️⃣-choose-your-ide-plugin-or-dotnet-tool)
@@ -136,6 +138,32 @@ The previous [`AdaskoTheBeAsT/Typewriter`](https://github.com/AdaskoTheBeAsT/Typ
 - **Modern C# metadata**: Roslyn metadata covers records, nullable reference types, generics, tuples, doc comments, attributes, static constants, static readonly fields, events, delegates, nested types, and Web API helpers.
 - **Web API hardening**: route helpers ignore named-only HTTP attribute arguments, honor `Template = "..."`, and safely encode nullable string/date query values.
 - **Recipe-backed compatibility**: real Angular/React recipes from `NetCoreTypewriterRecipes` are snapshot-tested so old-template support improves against production templates, not toy examples.
+
+---
+
+## 🧠 Template IntelliSense: What Changed and Where It Works
+
+The classic VS extension offered basic completion inside `.tst` files. This version moves all template intelligence into the shared Language Server, then layers real compiler services on top. Concretely, editing a `.tst` file now gives you:
+
+- **Documented template members.** Completion and hover for `$Classes`, `$Properties`, `$BaseClass`, `$Fields`, `$DocComment`, `$IsNullable`, filters, and the rest of the template dialect include a description of what each member returns, so you no longer need to guess what `$BaseClass` or `$Value` means for the current context.
+- **Real Roslyn IntelliSense inside `${ ... }` C# helper blocks.** Helper code is projected into a virtual C# document analyzed by an in-process Roslyn workspace: member completion, hover, and go-to-definition work against the actual `Typewriter.CodeModel` API. The whole code model is XML-documented, so hovering `.BaseClass` on a `Class` explains "the direct base class this class inherits from, or null when the class inherits only from object" instead of showing a bare signature.
+- **Workspace-aware completions.** Type names, properties, methods, constants, and enum values from *your* loaded C# projects are offered while writing template blocks and lambda filters, with details such as `Property UserModel.CreatedAt: DateTime`.
+- **Forwarding to full language services (VS Code).** Through virtual documents (`typewriter/embeddedDocument`, `typewriter/embeddedPosition`, `typewriter/templateRange` LSP requests), C# helper blocks are forwarded to the installed C# extension and TypeScript output regions to the built-in TypeScript service, and results are mapped back to `.tst` positions. Controlled by `typewriter.embeddedLanguages.forwarding` (`"auto"` by default, `"off"` to keep only the built-in Typewriter IntelliSense).
+- **Live everything.** Diagnostics, semantic highlighting for Typewriter/C#/TypeScript regions, go-to-definition into your C# sources, and go-to-generated-file all update as you type, backed by the same engine that generates the output.
+
+### IDE support matrix
+
+| Capability                                                            | 💜 VS Code | 🟣 Visual Studio 2026 | 🧠 Rider |
+| --------------------------------------------------------------------- | :--------: | :-------------------: | :------: |
+| Template member completion, hover, and docs (`$BaseClass`, ...)       |     ✅      |    ✅ (LSP client)     |    ✅ (LSP client) |
+| Roslyn IntelliSense in `${ ... }` C# helper blocks (built-in)          |     ✅      |           ✅           |    ✅ (LSP client) |
+| Project-aware IntelliSense (your types in helper blocks)               |     ✅      |           ✅           |    ✅ (LSP client) |
+| Forwarding to installed C# / TypeScript language services              |     ✅      |          🚧           |    🚧     |
+| Semantic highlighting of template / C# / TypeScript regions            |     ✅      |   ✅ (classification)  |    ✅ (LSP) |
+| Live diagnostics in the editor                                        |     ✅      |    ✅ (Error List)     |    ✅ (LSP) |
+| Generate / validate on save                                           |     ✅      |           ✅           |    ✅     |
+
+**Will this work in VS, VS Code, and Rider?** Yes. All three IDEs now share the same language server, so template member IntelliSense (documented completions and hover for `$BaseClass`, `$Properties`, ...), real Roslyn IntelliSense inside `${ ... }` C# helper blocks (with XML doc tooltips and project-aware type completions), live diagnostics, and go-to-definition work identically in VS Code, Visual Studio 2026, and Rider. VS Code additionally forwards to the installed C# extension and built-in TypeScript service through virtual documents (`typewriter.embeddedLanguages.forwarding`), which is VS Code client-side code that could be replicated in VS and Rider later. Rider enables the LSP client via the built-in IntelliJ Platform LSP API; toggle it in Settings under Typewriter.
 
 ---
 
@@ -1080,6 +1108,8 @@ Diagnostics land in the **Error List**, logs in the **Output** window, and `.tst
 ### 🧠 JetBrains Rider
 
 Frontend plugin in [`rider/`](rider) ([plugin README](rider/README.md)). It is an IntelliJ Platform plugin written in Kotlin for Rider UI concerns: `.tst` file recognition, syntax highlighting, **Tools → Typewriter** actions, project settings, and save-time generation/validation through the CLI.
+
+The plugin also registers the Typewriter language server through the IntelliJ Platform LSP API, giving Rider the same IntelliSense as VS Code and Visual Studio: template member completion and hover with documentation, real Roslyn IntelliSense inside `${ ... }` C# helper blocks (including project-aware type completions), live diagnostics, and go-to-definition. Toggle it under **Settings → Typewriter → Enable language server IntelliSense** (enabled by default).
 
 This is not a ReSharper backend plugin. Deep C# semantic loading remains in the shared Typewriter CLI/Roslyn engine, so the Rider plugin can stay thin unless future Rider-native inspections or refactorings require a C# backend.
 

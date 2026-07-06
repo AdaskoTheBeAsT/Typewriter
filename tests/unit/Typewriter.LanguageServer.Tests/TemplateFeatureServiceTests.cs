@@ -198,6 +198,44 @@ public sealed class TemplateFeatureServiceTests
     }
 
     [Fact]
+    public async Task GetHoverAsyncReturnsEmbeddedCSharpRecordDocumentation()
+    {
+        const string Template = """
+            ${
+                string RecordName(Record record) => record.Name;
+            }
+            """;
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var templatePath = Path.Combine(path1: directory, path2: "Test.tst");
+            var document = CreateDocument(path: templatePath, text: Template);
+            var settings = new LanguageServerSettings(
+                RootPath: directory,
+                WorkspacePath: directory,
+                ProjectPath: null,
+                Framework: null,
+                AllProjects: false);
+
+            using var service = new TemplateFeatureService();
+            var hover = await service.GetHoverAsync(
+                document: document,
+                settings: settings,
+                position: PositionOf(text: Template, marker: "Record record"),
+                cancellationToken: CancellationToken.None);
+
+            hover.Should().NotBeNull();
+            hover!.Contents.Value.Should().NotContain("Record=Record");
+            hover.Contents.Value.Should().Contain("A C# record made available to templates");
+            hover.Contents.Value.Should().Contain("$Records[...]");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GetDefinitionsAsyncReturnsCSharpSourceLocation()
     {
         var directory = CreateProjectDirectory();
@@ -322,6 +360,99 @@ public sealed class TemplateFeatureServiceTests
 
             hover.Should().NotBeNull();
             hover!.Contents.Value.Should().Contain("FormatName");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task EmbeddedCSharpHoverReturnsCodeModelXmlDocumentation()
+    {
+        const string Template = """
+            ${
+                string BaseName(Class c) => c.BaseClass?.Name ?? string.Empty;
+            }
+            """;
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var templatePath = Path.Combine(path1: directory, path2: "Test.tst");
+            var document = CreateDocument(path: templatePath, text: Template);
+            var memberIndex = Template.IndexOf(value: "BaseClass?", comparisonType: StringComparison.Ordinal);
+
+            using var service = new EmbeddedCSharpLanguageService();
+            var hover = await service.GetHoverAsync(
+                document: document,
+                templateOffset: memberIndex,
+                cancellationToken: CancellationToken.None);
+
+            hover.Should().NotBeNull();
+            hover!.Contents.Value.Should().Contain("BaseClass");
+            hover.Contents.Value.Should().Contain("direct base class");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task EmbeddedCSharpHoverOnAliasedTypeReturnsTargetTypeDocumentation()
+    {
+        const string Template = """
+            ${
+                string RecordName(Record r) => r.Name;
+            }
+            """;
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var templatePath = Path.Combine(path1: directory, path2: "Test.tst");
+            var document = CreateDocument(path: templatePath, text: Template);
+            var typeIndex = Template.IndexOf(value: "Record r", comparisonType: StringComparison.Ordinal);
+
+            using var service = new EmbeddedCSharpLanguageService();
+            var hover = await service.GetHoverAsync(
+                document: document,
+                templateOffset: typeIndex,
+                cancellationToken: CancellationToken.None);
+
+            hover.Should().NotBeNull();
+            hover!.Contents.Value.Should().NotContain("Record=Record");
+            hover.Contents.Value.Should().Contain("$Records[...]");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task EmbeddedCSharpCompletionsIncludeProjectTypesWhenProjectIsLoaded()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            const string Template = """
+                ${
+                    Cust
+                }
+                """;
+            var document = CreateDocument(path: project.TemplatePath, text: Template);
+            var settings = CreateSettings(directory: directory, projectPath: project.ProjectPath);
+            var position = PositionOf(text: Template, marker: "Cust");
+
+            using var service = new TemplateFeatureService();
+            var completions = await service.GetCompletionsAsync(
+                document: document,
+                settings: settings,
+                position: position with { Character = position.Character + 4 },
+                cancellationToken: CancellationToken.None);
+
+            completions.Items.Should().Contain(item => item.Label == "Customer");
         }
         finally
         {

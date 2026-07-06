@@ -97,6 +97,8 @@ try {
         "tools/typewriter-lsp/Typewriter.LanguageServer.dll",
         "tools/typewriter-lsp/Typewriter.LanguageServer.deps.json",
         "tools/typewriter-lsp/Typewriter.LanguageServer.runtimeconfig.json",
+        "tools/typewriter-lsp/Typewriter.Engine.xml",
+        "tools/typewriter-lsp/Typewriter.Abstractions.xml",
         "tools/typewriter-lsp/Buildalyzer.Logger.dll",
         "tools/typewriter-lsp/Buildalyzer.Logger/net472/Buildalyzer.Logger.dll"
     )) {
