@@ -114,6 +114,7 @@ internal static class WorkspaceProjectResolver
         ArgumentNullException.ThrowIfNull(argument: unresolvedNames);
 
         var workspaceProjects = GetWorkspaceProjects(workspacePath: workspacePath);
+        var workspaceProjectSet = workspaceProjects.ToHashSet(comparer: StringComparer.OrdinalIgnoreCase);
         var resolvedPaths = new List<string>();
         var resolvedPathSet = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
         foreach (var projectName in projectNames)
@@ -121,6 +122,7 @@ internal static class WorkspaceProjectResolver
             var resolvedPath = ResolveProjectPathByName(
                 workspacePath: workspacePath,
                 workspaceProjects: workspaceProjects,
+                workspaceProjectSet: workspaceProjectSet,
                 projectName: projectName);
             if (string.IsNullOrWhiteSpace(value: resolvedPath))
             {
@@ -140,6 +142,7 @@ internal static class WorkspaceProjectResolver
     private static string? ResolveProjectPathByName(
         string workspacePath,
         IReadOnlyList<string> workspaceProjects,
+        IReadOnlySet<string> workspaceProjectSet,
         string projectName)
     {
         if (string.IsNullOrWhiteSpace(value: projectName))
@@ -155,9 +158,14 @@ internal static class WorkspaceProjectResolver
                 path: Path.IsPathRooted(path: normalized)
                     ? normalized
                     : Path.Combine(path1: GetSearchRoot(workspacePath: Path.GetFullPath(path: workspacePath)), path2: normalized));
-            if (File.Exists(path: candidate))
+            if (workspaceProjectSet.Contains(item: candidate))
             {
                 return candidate;
+            }
+
+            if (File.Exists(path: candidate))
+            {
+                return null;
             }
 
             trimmedName = Path.GetFileNameWithoutExtension(path: trimmedName);

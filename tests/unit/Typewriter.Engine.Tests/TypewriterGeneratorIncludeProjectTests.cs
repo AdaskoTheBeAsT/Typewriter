@@ -145,6 +145,74 @@ public sealed class TypewriterGeneratorIncludeProjectTests
     }
 
     [Fact]
+    public async Task GenerateAsyncReportsWarningWhenIncludedProjectPathIsOutsideWorkspace()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var workspaceDirectory = Path.Combine(path1: directory, path2: "Workspace");
+            var appProjectPath = Path.Combine(path1: workspaceDirectory, path2: "App", path3: "App.csproj");
+            var externalProjectPath = Path.Combine(path1: directory, path2: "External", path3: "External.csproj");
+            Directory.CreateDirectory(path: Path.GetDirectoryName(path: appProjectPath)!);
+            Directory.CreateDirectory(path: Path.GetDirectoryName(path: externalProjectPath)!);
+            await File.WriteAllTextAsync(path: appProjectPath, contents: "<Project />");
+            await File.WriteAllTextAsync(path: externalProjectPath, contents: "<Project />");
+
+            var localModel = CreateClassMetadata(name: "LocalDto");
+            var metadataProvider = new ProjectMappedMetadataProvider(
+                metadataByProjectPath: new Dictionary<string, ProjectMetadata>(comparer: StringComparer.OrdinalIgnoreCase)
+                {
+                    [key: appProjectPath] = new ProjectMetadata(
+                        ProjectPath: appProjectPath,
+                        SourceFiles: [new SourceFileMetadata(Path: Path.Combine(path1: workspaceDirectory, path2: "App", path3: "LocalDto.cs"), Types: [localModel])],
+                        Types: [localModel],
+                        Diagnostics: []),
+                });
+
+            var templatePath = Path.Combine(path1: workspaceDirectory, path2: "App", path3: "Models.tst");
+            var generator = new TypewriterGenerator(
+                templateDiscovery: new StaticTemplateDiscovery(
+                    templates: new TemplateFile(
+                        Path: templatePath,
+                        Content: """
+                                 ${
+                                     Template(Settings settings)
+                                     {
+                                         settings.IncludeProject("../External/External.csproj");
+                                     }
+                                 }
+                                 $Classes[
+                                 export class $Name {
+                                 }
+                                 ]
+                                 """)),
+                metadataProvider: metadataProvider,
+                fileWriter: new PassthroughFileWriter());
+
+            var result = await generator.GenerateAsync(
+                request: new GenerationRequest(
+                    WorkspacePath: workspaceDirectory,
+                    ProjectPath: appProjectPath,
+                    TemplatePath: templatePath,
+                    Mode: GenerationMode.Generate,
+                    Configuration: TypewriterConfiguration.Default),
+                cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            var diagnostic = result.Diagnostics.Should().ContainSingle(predicate: candidate => candidate.Code == "TW0009").Which;
+            diagnostic.Severity.Should().Be(DiagnosticSeverity.Warning);
+            diagnostic.Message.Should().Contain("../External/External.csproj");
+            metadataProvider.Projects.Select(selector: project => project.ProjectPath).Should().NotContain(externalProjectPath);
+            result.GeneratedFiles.Should().ContainSingle()
+                .Which.Path.Should().Be(Path.Combine(path1: workspaceDirectory, path2: "App", path3: "LocalDto.ts"));
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GenerateAsyncIgnoresIncludeProjectPointingToCurrentProject()
     {
         var directory = CreateProjectDirectory();

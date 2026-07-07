@@ -6,6 +6,7 @@ namespace Typewriter.Configuration;
 
 public class Settings
 {
+    private static readonly IReadOnlyList<string> EmptyIncludedProjects = [];
     private char _stringLiteralCharacter = '"';
     private List<string>? _includedProjects;
 
@@ -51,7 +52,7 @@ public class Settings
 
     public virtual ILog Log { get; init; } = NullLog.Instance;
 
-    public virtual IReadOnlyList<string> IncludedProjects => _includedProjects ?? (IReadOnlyList<string>)[];
+    public virtual IReadOnlyList<string> IncludedProjects => _includedProjects ?? EmptyIncludedProjects;
 
     public virtual Settings IncludeProject(string projectName)
     {
