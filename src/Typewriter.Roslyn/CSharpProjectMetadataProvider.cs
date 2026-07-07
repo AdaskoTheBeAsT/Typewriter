@@ -4,8 +4,6 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
-using System.Security.Cryptography;
-using System.Text;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -22,6 +20,11 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
     private static readonly ConcurrentDictionary<ProjectMetadataCacheKey, ProjectMetadataCacheEntry> MetadataCache = [];
     private static readonly ConcurrentBag<HashSet<ITypeSymbol>> TypeReferenceVisitedSymbolSets = [];
     private static readonly ConditionalWeakTable<ISymbol, CachedDocComment> DocCommentCache = [];
+    private static readonly ConditionalWeakTable<ITypeSymbol, TypeReferenceCacheNode> TypeReferenceCache = [];
+    private static readonly ConcurrentDictionary<string, CachedSyntaxTree> SyntaxTreeCache = new(comparer: StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentQueue<string> SyntaxTreeCacheOrder = new();
+    private static readonly ConcurrentDictionary<string, int> SourceParseCounts = new(comparer: StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, string> LastCacheOutcomeByProject = new(comparer: StringComparer.OrdinalIgnoreCase);
     private readonly IProjectWorkspaceLoader _projectLoader;
 
     public CSharpProjectMetadataProvider()
@@ -32,6 +35,13 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
     public CSharpProjectMetadataProvider(IProjectWorkspaceLoader projectLoader)
     {
         _projectLoader = projectLoader;
+    }
+
+    private enum CacheLookupOutcome
+    {
+        Miss,
+        Hit,
+        RebuildFromSources,
     }
 
     public Task<ProjectMetadata> GetMetadataAsync(
@@ -75,6 +85,21 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         return result.Compilation;
     }
 
+    internal static int GetSourceParseCountForTests(string path) =>
+        SourceParseCounts.TryGetValue(key: NormalizeSourceCachePath(path: path), value: out var count) ? count : 0;
+
+    internal static string? GetLastCacheOutcomeForTests(string projectPath) =>
+        LastCacheOutcomeByProject.TryGetValue(key: NormalizeSourceCachePath(path: projectPath), value: out var outcome) ? outcome : null;
+
+    internal static void ClearCachesForTests()
+    {
+        MetadataCache.Clear();
+        SyntaxTreeCache.Clear();
+        SyntaxTreeCacheOrder.Clear();
+        SourceParseCounts.Clear();
+        LastCacheOutcomeByProject.Clear();
+    }
+
     private static async Task<ProjectMetadata> GetMergedMetadataAsync(
         IProjectWorkspaceLoader projectLoader,
         ProjectContext project,
@@ -106,13 +131,16 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             return cachedResult;
         }
 
+        var validationVersion = MetadataCacheInvalidation.CurrentVersion;
         var metadataCacheKey = new ProjectMetadataCacheKey(
             ProjectPath: projectPath,
             WorkspacePath: Path.GetFullPath(path: project.WorkspacePath),
             TargetFramework: project.TargetFramework ?? string.Empty,
             RunFullDiagnostics: project.RunFullDiagnostics);
-        if (TryGetCachedResult(cacheKey: metadataCacheKey, result: out cachedResult))
+        var cacheLookup = LookupCache(cacheKey: metadataCacheKey);
+        if (cacheLookup.Outcome == CacheLookupOutcome.Hit)
         {
+            cachedResult = cacheLookup.Result!;
             loadedProjects[key: projectPath] = cachedResult;
             return cachedResult;
         }
@@ -125,19 +153,30 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 CompilationReferences: []);
         }
 
-        if (!File.Exists(path: projectPath))
+        ProjectLoadResult loadedProject;
+        if (cacheLookup.Outcome == CacheLookupOutcome.RebuildFromSources)
         {
-            return CacheResult(
-                projectPath: projectPath,
-                result: new ProjectMetadataBuildResult(
-                    Metadata: CreateProjectFileMissingMetadata(projectPath: projectPath),
-                    Compilation: null,
-                    CompilationReferences: []),
-                loadedProjects: loadedProjects,
-                loadingProjects: loadingProjects);
+            loadedProject = cacheLookup.LoadedProject!;
+            MetadataCacheMetrics.RecordSourceOnlyRebuild();
+        }
+        else
+        {
+            if (!File.Exists(path: projectPath))
+            {
+                return CacheResult(
+                    projectPath: projectPath,
+                    result: new ProjectMetadataBuildResult(
+                        Metadata: CreateProjectFileMissingMetadata(projectPath: projectPath),
+                        Compilation: null,
+                        CompilationReferences: []),
+                    loadedProjects: loadedProjects,
+                    loadingProjects: loadingProjects);
+            }
+
+            loadedProject = await projectLoader.LoadAsync(project: project, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            MetadataCacheMetrics.RecordFullLoad();
         }
 
-        var loadedProject = await projectLoader.LoadAsync(project: project, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         if (loadedProject.Diagnostics.Any(predicate: diagnostic => diagnostic.Severity == Typewriter.Abstractions.DiagnosticSeverity.Error))
         {
             return CacheResult(
@@ -189,7 +228,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 projectPath: projectPath,
                 compilation: currentProject.Compilation,
                 referencedProjects: referencedProjects));
-        AddCachedResult(cacheKey: metadataCacheKey, result: result);
+        AddCachedResult(cacheKey: metadataCacheKey, result: result, loadedProject: loadedProject, validatedVersion: validationVersion);
         return CacheResult(
             projectPath: projectPath,
             result: result,
@@ -210,21 +249,44 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         var parseOptions = CSharpParseOptions.Default
             .WithLanguageVersion(version: LanguageVersion.Preview)
             .WithPreprocessorSymbols(preprocessorSymbols: loadedProject.PreprocessorSymbols);
-        var syntaxTrees = new List<SyntaxTree>(capacity: sourcePaths.Length);
-        foreach (var sourcePath in sourcePaths)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        var parseOptionsKey = CreateParseOptionsKey(parseOptions: parseOptions);
+        var parsedTrees = new SyntaxTree[sourcePaths.Length];
+        await Parallel.ForAsync(
+            fromInclusive: 0,
+            toExclusive: sourcePaths.Length,
+            cancellationToken: cancellationToken,
+            body: async (index, token) =>
+            {
+                token.ThrowIfCancellationRequested();
+                var sourcePath = sourcePaths[index];
+                var cacheKey = NormalizeSourceCachePath(path: sourcePath);
+                var stamp = FileStamp.Create(path: sourcePath);
+                if (stamp.Exists
+                    && SyntaxTreeCache.TryGetValue(key: cacheKey, value: out var cachedTree)
+                    && cachedTree.Stamp == stamp
+                    && cachedTree.ParseOptionsKey.Equals(value: parseOptionsKey, comparisonType: StringComparison.Ordinal))
+                {
+                    parsedTrees[index] = cachedTree.Tree;
+                    MetadataCacheMetrics.RecordReusedSyntaxTree();
+                    return;
+                }
+
 #pragma warning disable SCS0018 // Potential Path Traversal vulnerability was found where '{0}' in '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.
-            var sourceText = await File.ReadAllTextAsync(path: sourcePath, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+                var sourceText = await File.ReadAllTextAsync(path: sourcePath, cancellationToken: token).ConfigureAwait(continueOnCapturedContext: false);
 #pragma warning restore SCS0018 // Potential Path Traversal vulnerability was found where '{0}' in '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.
-            syntaxTrees.Add(
-                item: CSharpSyntaxTree.ParseText(
+                var parsedTree = CSharpSyntaxTree.ParseText(
                     text: sourceText,
                     options: parseOptions,
                     path: sourcePath,
-                    cancellationToken: cancellationToken));
-        }
+                    cancellationToken: token);
+                parsedTrees[index] = parsedTree;
+                AddCachedSyntaxTree(cacheKey: cacheKey, entry: new CachedSyntaxTree(ParseOptionsKey: parseOptionsKey, Stamp: stamp, Tree: parsedTree));
+                MetadataCacheMetrics.RecordParsedSourceFile();
+                _ = SourceParseCounts.AddOrUpdate(key: cacheKey, addValue: 1, updateValueFactory: static (_, count) => count + 1);
+            }).ConfigureAwait(continueOnCapturedContext: false);
 
+        var syntaxTrees = new List<SyntaxTree>(capacity: sourcePaths.Length + 1);
+        syntaxTrees.AddRange(collection: parsedTrees);
         syntaxTrees.Add(item: CreateDefaultGlobalUsingsTree(globalUsings: loadedProject.GlobalUsings, parseOptions: parseOptions, cancellationToken: cancellationToken));
 
         var compilation = CSharpCompilation.Create(
@@ -373,25 +435,57 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         }
     }
 
-    private static bool TryGetCachedResult(
-        ProjectMetadataCacheKey cacheKey,
-        out ProjectMetadataBuildResult result)
+    private static CacheLookupResult LookupCache(ProjectMetadataCacheKey cacheKey)
     {
-        if (MetadataCache.TryGetValue(key: cacheKey, value: out var entry)
-            && entry.Fingerprint.IsCurrent())
+        if (!MetadataCache.TryGetValue(key: cacheKey, value: out var entry))
         {
-            result = entry.Result;
-            return true;
+            MetadataCacheMetrics.RecordCacheMiss(reason: null);
+            RecordCacheOutcome(projectPath: cacheKey.ProjectPath, outcome: "miss");
+            return CacheLookupResult.Miss;
+        }
+
+        var currentVersion = MetadataCacheInvalidation.CurrentVersion;
+        var dirtyPaths = MetadataCacheInvalidation.GetDirtySince(sinceVersion: entry.LastValidatedVersion);
+        ManifestValidation validation;
+        bool dirtyValidated;
+        if (dirtyPaths is not null)
+        {
+            dirtyValidated = true;
+            validation = dirtyPaths.Count == 0
+                ? ManifestValidation.Valid
+                : entry.Manifest.ValidateDirtyPaths(dirtyPaths: dirtyPaths);
+        }
+        else
+        {
+            dirtyValidated = false;
+            validation = entry.Manifest.Validate();
+        }
+
+        if (validation.IsValid)
+        {
+            entry.LastValidatedVersion = currentVersion;
+            MetadataCacheMetrics.RecordCacheHit(dirtyValidated: dirtyValidated);
+            RecordCacheOutcome(projectPath: cacheKey.ProjectPath, outcome: dirtyValidated ? "hit-dirty-validated" : "hit-stat-validated");
+            return new CacheLookupResult(Outcome: CacheLookupOutcome.Hit, Result: entry.Result, LoadedProject: null);
         }
 
         _ = MetadataCache.TryRemove(key: cacheKey, value: out _);
-        result = null!;
-        return false;
+        MetadataCacheMetrics.RecordCacheMiss(reason: validation.InvalidationReason);
+        if (validation.CanRebuildFromSources && entry.LoadedProject is not null)
+        {
+            RecordCacheOutcome(projectPath: cacheKey.ProjectPath, outcome: "source-rebuild");
+            return new CacheLookupResult(Outcome: CacheLookupOutcome.RebuildFromSources, Result: null, LoadedProject: entry.LoadedProject);
+        }
+
+        RecordCacheOutcome(projectPath: cacheKey.ProjectPath, outcome: "miss");
+        return CacheLookupResult.Miss;
     }
 
     private static void AddCachedResult(
         ProjectMetadataCacheKey cacheKey,
-        ProjectMetadataBuildResult result)
+        ProjectMetadataBuildResult result,
+        ProjectLoadResult loadedProject,
+        long validatedVersion)
     {
         if (result.Metadata.Diagnostics.Any(predicate: diagnostic => diagnostic.Severity == Typewriter.Abstractions.DiagnosticSeverity.Error))
         {
@@ -399,9 +493,66 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         }
 
         MetadataCache[key: cacheKey] = new ProjectMetadataCacheEntry(
-            Result: result,
-            Fingerprint: ProjectMetadataFingerprint.Create(result: result));
+            result: result,
+            manifest: ProjectInputManifest.Create(result: result),
+            loadedProject: loadedProject,
+            validatedVersion: validatedVersion);
         TrimMetadataCache();
+    }
+
+    private static void RecordCacheOutcome(
+        string projectPath,
+        string outcome) =>
+        LastCacheOutcomeByProject[key: projectPath] = outcome;
+
+    private static string NormalizeSourceCachePath(string path)
+    {
+        try
+        {
+            return Path.GetFullPath(path: path);
+        }
+        catch (ArgumentException)
+        {
+            return path;
+        }
+        catch (NotSupportedException)
+        {
+            return path;
+        }
+        catch (PathTooLongException)
+        {
+            return path;
+        }
+    }
+
+    private static string CreateParseOptionsKey(CSharpParseOptions parseOptions) =>
+        string.Join(
+            separator: ';',
+            values: parseOptions.PreprocessorSymbolNames
+                .Order(comparer: StringComparer.Ordinal)
+                .Prepend(element: parseOptions.LanguageVersion.ToString()));
+
+    private static void AddCachedSyntaxTree(
+        string cacheKey,
+        CachedSyntaxTree entry)
+    {
+        if (SyntaxTreeCache.TryAdd(key: cacheKey, value: entry))
+        {
+            SyntaxTreeCacheOrder.Enqueue(item: cacheKey);
+            TrimSyntaxTreeCache();
+            return;
+        }
+
+        SyntaxTreeCache[key: cacheKey] = entry;
+    }
+
+    private static void TrimSyntaxTreeCache()
+    {
+        const int MaxEntries = 8192;
+        while (SyntaxTreeCache.Count > MaxEntries && SyntaxTreeCacheOrder.TryDequeue(result: out var oldest))
+        {
+            _ = SyntaxTreeCache.TryRemove(key: oldest, value: out _);
+        }
     }
 
     private static void TrimMetadataCache()
@@ -1262,10 +1413,23 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         ITypeSymbol symbol,
         NullableAnnotation nullableAnnotation)
     {
+        var annotationIndex = (int)nullableAnnotation;
+        TypeReferenceCacheNode? cacheNode = null;
+        if (annotationIndex >= 0 && annotationIndex < 3)
+        {
+            cacheNode = TypeReferenceCache.GetOrCreateValue(key: symbol);
+            var cached = Volatile.Read(location: ref cacheNode.ByAnnotation[annotationIndex]);
+            if (cached is not null)
+            {
+                return cached;
+            }
+        }
+
         var visitedSymbols = RentVisitedSymbols();
+        TypeMetadataReference reference;
         try
         {
-            return CreateTypeReference(
+            reference = CreateTypeReference(
                 symbol: symbol,
                 nullableAnnotation: nullableAnnotation,
                 visitedSymbols: visitedSymbols);
@@ -1274,6 +1438,13 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             ReturnVisitedSymbols(visitedSymbols: visitedSymbols);
         }
+
+        if (cacheNode is not null)
+        {
+            Volatile.Write(location: ref cacheNode.ByAnnotation[annotationIndex], value: reference);
+        }
+
+        return reference;
     }
 
     private static TypeMetadataReference CreateTypeReference(
@@ -1782,46 +1953,166 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         string TargetFramework,
         bool RunFullDiagnostics);
 
-    private sealed record ProjectMetadataCacheEntry(
-        ProjectMetadataBuildResult Result,
-        ProjectMetadataFingerprint Fingerprint);
-
-    private sealed record ProjectMetadataFingerprint(
-        IReadOnlyList<string> Paths,
-        IReadOnlyList<string> Directories,
-        string Hash)
+    private sealed record CacheLookupResult(
+        CacheLookupOutcome Outcome,
+        ProjectMetadataBuildResult? Result,
+        ProjectLoadResult? LoadedProject)
     {
-        public static ProjectMetadataFingerprint Create(ProjectMetadataBuildResult result)
+        public static CacheLookupResult Miss { get; } = new(Outcome: CacheLookupOutcome.Miss, Result: null, LoadedProject: null);
+    }
+
+    private sealed class ProjectMetadataCacheEntry
+    {
+        private long _lastValidatedVersion;
+
+        public ProjectMetadataCacheEntry(
+            ProjectMetadataBuildResult result,
+            ProjectInputManifest manifest,
+            ProjectLoadResult? loadedProject,
+            long validatedVersion)
         {
-            var paths = new SortedSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
-            AddPath(paths: paths, path: result.Metadata.ProjectPath);
+            Result = result;
+            Manifest = manifest;
+            LoadedProject = loadedProject;
+            _lastValidatedVersion = validatedVersion;
+        }
+
+        public ProjectMetadataBuildResult Result { get; }
+
+        public ProjectInputManifest Manifest { get; }
+
+        public ProjectLoadResult? LoadedProject { get; }
+
+        public long LastValidatedVersion
+        {
+            get => Interlocked.Read(location: ref _lastValidatedVersion);
+            set => Interlocked.Exchange(location1: ref _lastValidatedVersion, value: value);
+        }
+    }
+
+    private sealed record FileStamp(
+        bool Exists,
+        long Length,
+        long LastWriteTicks)
+    {
+        public static FileStamp Missing { get; } = new(Exists: false, Length: -1, LastWriteTicks: -1);
+
+        public static FileStamp Unreadable { get; } = new(Exists: false, Length: -2, LastWriteTicks: -2);
+
+        public static FileStamp Create(string path)
+        {
+            try
+            {
+#pragma warning disable SCS0018 // Potential Path Traversal vulnerability was found where '{0}' in '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.
+                var info = new FileInfo(fileName: path);
+#pragma warning restore SCS0018 // Potential Path Traversal vulnerability was found where '{0}' in '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.
+                return info.Exists
+                    ? new FileStamp(Exists: true, Length: info.Length, LastWriteTicks: info.LastWriteTimeUtc.Ticks)
+                    : Missing;
+            }
+            catch (IOException)
+            {
+                return Unreadable;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Unreadable;
+            }
+            catch (ArgumentException)
+            {
+                return Unreadable;
+            }
+            catch (NotSupportedException)
+            {
+                return Unreadable;
+            }
+        }
+    }
+
+    private sealed record CachedSyntaxTree(
+        string ParseOptionsKey,
+        FileStamp Stamp,
+        SyntaxTree Tree);
+
+    private sealed class TypeReferenceCacheNode
+    {
+        public TypeMetadataReference?[] ByAnnotation { get; } = new TypeMetadataReference?[3];
+    }
+
+    private sealed record ManifestValidation(
+        bool IsValid,
+        bool CanRebuildFromSources,
+        IReadOnlyList<string> ChangedSourceFiles,
+        string? InvalidationReason)
+    {
+        public static ManifestValidation Valid { get; } = new(
+            IsValid: true,
+            CanRebuildFromSources: false,
+            ChangedSourceFiles: [],
+            InvalidationReason: null);
+
+        public static ManifestValidation ShapeChanged(string reason) => new(
+            IsValid: false,
+            CanRebuildFromSources: false,
+            ChangedSourceFiles: [],
+            InvalidationReason: reason);
+
+        public static ManifestValidation SourcesChanged(IReadOnlyList<string> changedSourceFiles) => new(
+            IsValid: false,
+            CanRebuildFromSources: true,
+            ChangedSourceFiles: changedSourceFiles,
+            InvalidationReason: $"source changed: {changedSourceFiles[0]}");
+    }
+
+    private sealed class ProjectInputManifest
+    {
+        private readonly Dictionary<string, FileStamp> _sourceFiles;
+        private readonly Dictionary<string, FileStamp> _shapeFiles;
+        private readonly Dictionary<string, long> _directories;
+
+        private ProjectInputManifest(
+            Dictionary<string, FileStamp> sourceFiles,
+            Dictionary<string, FileStamp> shapeFiles,
+            Dictionary<string, long> directories)
+        {
+            _sourceFiles = sourceFiles;
+            _shapeFiles = shapeFiles;
+            _directories = directories;
+        }
+
+        public static ProjectInputManifest Create(ProjectMetadataBuildResult result)
+        {
+            var sourceFiles = new Dictionary<string, FileStamp>(comparer: StringComparer.OrdinalIgnoreCase);
             foreach (var sourceFile in result.Metadata.SourceFiles)
             {
-                AddPath(paths: paths, path: sourceFile.Path);
+                AddStamp(stamps: sourceFiles, path: sourceFile.Path);
             }
 
+            var shapeFiles = new Dictionary<string, FileStamp>(comparer: StringComparer.OrdinalIgnoreCase);
+            AddStamp(stamps: shapeFiles, path: result.Metadata.ProjectPath);
             foreach (var reference in result.CompilationReferences)
             {
-                AddPath(paths: paths, path: reference.ProjectPath);
+                AddStamp(stamps: shapeFiles, path: reference.ProjectPath);
             }
 
             if (result.Compilation is not null)
             {
                 foreach (var referencePath in result.Compilation.References.Select(selector: reference => reference.Display))
                 {
-                    AddPath(paths: paths, path: referencePath);
+                    AddStamp(stamps: shapeFiles, path: referencePath);
                 }
             }
 
-            var directories = new SortedSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+            var directories = new Dictionary<string, long>(comparer: StringComparer.OrdinalIgnoreCase);
             foreach (var projectPath in result.CompilationReferences.Select(selector: reference => reference.ProjectPath).Append(element: result.Metadata.ProjectPath))
             {
                 var projectDirectory = Path.GetDirectoryName(path: projectPath);
                 if (!string.IsNullOrWhiteSpace(value: projectDirectory) && Directory.Exists(path: projectDirectory))
                 {
-                    foreach (var directory in EnumerateDirectoriesForFingerprint(root: projectDirectory))
+                    foreach (var directory in EnumerateInputDirectories(root: projectDirectory)
+                                 .Where(predicate: directory => !directories.ContainsKey(key: directory)))
                     {
-                        directories.Add(item: directory);
+                        directories[key: directory] = GetDirectoryStamp(directory: directory);
                     }
                 }
             }
@@ -1830,22 +2121,110 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                          .Select(selector: sourceFile => Path.GetDirectoryName(path: sourceFile.Path))
                          .Where(predicate: sourceDirectory => !string.IsNullOrWhiteSpace(value: sourceDirectory)))
             {
-                directories.Add(item: Path.GetFullPath(path: sourceDirectory!));
+                var directory = Path.GetFullPath(path: sourceDirectory!);
+                if (!directories.ContainsKey(key: directory))
+                {
+                    directories[key: directory] = GetDirectoryStamp(directory: directory);
+                }
             }
 
-            var pathList = paths.ToArray();
-            var directoryList = directories.ToArray();
-            return new ProjectMetadataFingerprint(
-                Paths: pathList,
-                Directories: directoryList,
-                Hash: ComputeFingerprintHash(paths: pathList, directories: directoryList));
+            return new ProjectInputManifest(sourceFiles: sourceFiles, shapeFiles: shapeFiles, directories: directories);
         }
 
-        public bool IsCurrent() =>
-            Hash.Equals(value: ComputeFingerprintHash(paths: Paths, directories: Directories), comparisonType: StringComparison.Ordinal);
+        public ManifestValidation Validate()
+        {
+            foreach (var (path, stamp) in _shapeFiles)
+            {
+                if (FileStamp.Create(path: path) != stamp)
+                {
+                    return ManifestValidation.ShapeChanged(reason: $"input changed: {path}");
+                }
+            }
 
-        private static void AddPath(
-            ISet<string> paths,
+            foreach (var (directory, stamp) in _directories)
+            {
+                if (GetDirectoryStamp(directory: directory) != stamp)
+                {
+                    return ManifestValidation.ShapeChanged(reason: $"directory changed: {directory}");
+                }
+            }
+
+            List<string>? changedSources = null;
+            foreach (var (path, stamp) in _sourceFiles)
+            {
+                var current = FileStamp.Create(path: path);
+                if (current == stamp)
+                {
+                    continue;
+                }
+
+                if (!current.Exists)
+                {
+                    return ManifestValidation.ShapeChanged(reason: $"source removed: {path}");
+                }
+
+                (changedSources ??= []).Add(item: path);
+            }
+
+            return changedSources is null
+                ? ManifestValidation.Valid
+                : ManifestValidation.SourcesChanged(changedSourceFiles: changedSources);
+        }
+
+        public ManifestValidation ValidateDirtyPaths(IReadOnlyList<string> dirtyPaths)
+        {
+            List<string>? changedSources = null;
+            var checkedDirectories = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+            foreach (var dirtyPath in dirtyPaths)
+            {
+                if (_shapeFiles.TryGetValue(key: dirtyPath, value: out var shapeStamp)
+                    && FileStamp.Create(path: dirtyPath) != shapeStamp)
+                {
+                    return ManifestValidation.ShapeChanged(reason: $"input changed: {dirtyPath}");
+                }
+
+                if (_sourceFiles.TryGetValue(key: dirtyPath, value: out var sourceStamp))
+                {
+                    var current = FileStamp.Create(path: dirtyPath);
+                    if (current != sourceStamp)
+                    {
+                        if (!current.Exists)
+                        {
+                            return ManifestValidation.ShapeChanged(reason: $"source removed: {dirtyPath}");
+                        }
+
+                        (changedSources ??= []).Add(item: dirtyPath);
+                    }
+                }
+
+                if (_directories.TryGetValue(key: dirtyPath, value: out var directoryStamp)
+                    && checkedDirectories.Add(item: dirtyPath)
+                    && GetDirectoryStamp(directory: dirtyPath) != directoryStamp)
+                {
+                    return ManifestValidation.ShapeChanged(reason: $"directory changed: {dirtyPath}");
+                }
+
+                var parent = Path.GetDirectoryName(path: dirtyPath);
+                while (!string.IsNullOrEmpty(value: parent))
+                {
+                    if (_directories.TryGetValue(key: parent, value: out var parentStamp)
+                        && checkedDirectories.Add(item: parent)
+                        && GetDirectoryStamp(directory: parent) != parentStamp)
+                    {
+                        return ManifestValidation.ShapeChanged(reason: $"directory changed: {parent}");
+                    }
+
+                    parent = Path.GetDirectoryName(path: parent);
+                }
+            }
+
+            return changedSources is null
+                ? ManifestValidation.Valid
+                : ManifestValidation.SourcesChanged(changedSourceFiles: changedSources);
+        }
+
+        private static void AddStamp(
+            Dictionary<string, FileStamp> stamps,
             string? path)
         {
             if (string.IsNullOrWhiteSpace(value: path))
@@ -1853,21 +2232,49 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 return;
             }
 
+            string fullPath;
             try
             {
-                paths.Add(item: Path.GetFullPath(path: path));
+                fullPath = Path.GetFullPath(path: path);
             }
-            catch (ArgumentException ex)
+            catch (ArgumentException)
             {
-                _ = ex;
+                return;
             }
-            catch (NotSupportedException ex)
+            catch (NotSupportedException)
             {
-                _ = ex;
+                return;
+            }
+            catch (PathTooLongException)
+            {
+                return;
+            }
+
+            if (!stamps.ContainsKey(key: fullPath))
+            {
+                stamps[key: fullPath] = FileStamp.Create(path: fullPath);
             }
         }
 
-        private static IEnumerable<string> EnumerateDirectoriesForFingerprint(string root)
+        private static long GetDirectoryStamp(string directory)
+        {
+            try
+            {
+                return Directory.Exists(path: directory)
+                    ? new DirectoryInfo(path: directory).LastWriteTimeUtc.Ticks
+                    : -1L;
+            }
+            catch (IOException)
+            {
+                return -2L;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return -2L;
+            }
+        }
+
+        private static IEnumerable<string> EnumerateInputDirectories(string root)
         {
             var pending = new Stack<string>();
             pending.Push(item: Path.GetFullPath(path: root));
@@ -1876,103 +2283,19 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 var directory = pending.Pop();
                 yield return directory;
                 foreach (var childDirectory in Directory.EnumerateDirectories(path: directory)
-                             .Where(predicate: childDirectory => !IsIgnoredDirectoryForFingerprint(name: Path.GetFileName(path: childDirectory))))
+                             .Where(predicate: childDirectory => !IsIgnoredInputDirectory(name: Path.GetFileName(path: childDirectory))))
                 {
                     pending.Push(item: childDirectory);
                 }
             }
         }
 
-        private static bool IsIgnoredDirectoryForFingerprint(string name) =>
+        private static bool IsIgnoredInputDirectory(string name) =>
             name.Equals(value: ".git", comparisonType: StringComparison.OrdinalIgnoreCase)
             || name.Equals(value: "artifacts", comparisonType: StringComparison.OrdinalIgnoreCase)
             || name.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
             || name.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase)
             || name.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase);
-
-        private static string ComputeFingerprintHash(
-            IEnumerable<string> paths,
-            IEnumerable<string> directories)
-        {
-            using var hash = IncrementalHash.CreateHash(hashAlgorithm: HashAlgorithmName.SHA256);
-            foreach (var path in paths)
-            {
-                AppendHashValue(hash: hash, value: "file");
-                AppendPathFingerprint(hash: hash, path: path);
-            }
-
-            foreach (var directory in directories)
-            {
-                AppendHashValue(hash: hash, value: nameof(directory));
-                AppendDirectoryFingerprint(hash: hash, directory: directory);
-            }
-
-            return Convert.ToHexString(inArray: hash.GetHashAndReset());
-        }
-
-        private static void AppendPathFingerprint(
-            IncrementalHash hash,
-            string path)
-        {
-            AppendHashValue(hash: hash, value: path);
-            try
-            {
-                if (!File.Exists(path: path))
-                {
-                    AppendHashValue(hash: hash, value: "missing");
-                    return;
-                }
-
-#pragma warning disable SCS0018
-                var file = new FileInfo(fileName: path);
-#pragma warning restore SCS0018
-                AppendHashValue(hash: hash, value: file.Length.ToString(provider: CultureInfo.InvariantCulture));
-                AppendHashValue(hash: hash, value: file.LastWriteTimeUtc.Ticks.ToString(provider: CultureInfo.InvariantCulture));
-            }
-            catch (IOException)
-            {
-                AppendHashValue(hash: hash, value: "unreadable");
-            }
-            catch (UnauthorizedAccessException)
-            {
-                AppendHashValue(hash: hash, value: "unreadable");
-            }
-        }
-
-        private static void AppendDirectoryFingerprint(
-            IncrementalHash hash,
-            string directory)
-        {
-            AppendHashValue(hash: hash, value: directory);
-            try
-            {
-                if (!Directory.Exists(path: directory))
-                {
-                    AppendHashValue(hash: hash, value: "missing");
-                    return;
-                }
-
-                var info = new DirectoryInfo(path: directory);
-                AppendHashValue(hash: hash, value: info.LastWriteTimeUtc.Ticks.ToString(provider: CultureInfo.InvariantCulture));
-            }
-            catch (IOException)
-            {
-                AppendHashValue(hash: hash, value: "unreadable");
-            }
-            catch (UnauthorizedAccessException)
-            {
-                AppendHashValue(hash: hash, value: "unreadable");
-            }
-        }
-
-        private static void AppendHashValue(
-            IncrementalHash hash,
-            string value)
-        {
-            var bytes = Encoding.UTF8.GetBytes(s: value);
-            hash.AppendData(data: bytes);
-            hash.AppendData(data: [0]);
-        }
     }
 
     private sealed record CachedDocComment(DocCommentMetadata? Value);

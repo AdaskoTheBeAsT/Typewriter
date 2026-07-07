@@ -107,6 +107,7 @@ function createSaveRequest(document) {
                 templatePath: document.uri.fsPath,
                 resourceUri: document.uri,
                 allTemplates: false,
+                changedPaths: [document.uri.fsPath],
             };
         }
 
@@ -116,6 +117,7 @@ function createSaveRequest(document) {
                 templatePath: document.uri.fsPath,
                 resourceUri: document.uri,
                 allTemplates: false,
+                changedPaths: [document.uri.fsPath],
             };
         }
 
@@ -129,6 +131,7 @@ function createSaveRequest(document) {
             allTemplates: true,
             projectPath: findNearestProjectPathForInput(document.uri.fsPath),
             projectScoped: true,
+            changedPaths: [document.uri.fsPath],
         };
     }
 
@@ -139,6 +142,7 @@ function createSaveRequest(document) {
             allTemplates: true,
             projectPath: findNearestProjectPathForInput(document.uri.fsPath),
             projectScoped: true,
+            changedPaths: [document.uri.fsPath],
         };
     }
 
@@ -200,13 +204,22 @@ async function executeSaveRequest(context, request) {
         resourceUri: request.resourceUri,
         projectPath: request.projectPath,
         projectScoped: request.projectScoped,
+        changedPaths: request.changedPaths,
     });
 }
 
 function mergeSaveRequests(existing, incoming) {
-    return existing?.allTemplates && !incoming.allTemplates
+    if (!existing) {
+        return incoming;
+    }
+
+    const winner = existing.allTemplates && !incoming.allTemplates
         ? existing
         : incoming;
+    const changedPaths = existing.changedPaths && incoming.changedPaths
+        ? Array.from(new Set([...existing.changedPaths, ...incoming.changedPaths]))
+        : undefined;
+    return { ...winner, changedPaths };
 }
 
 function delay(milliseconds) {
@@ -376,6 +389,12 @@ function buildTypewriterArguments(command, workspacePath, templatePath, configur
 
     if (options.allTemplates && configuration.get("allProjects", false)) {
         args.push("--all-projects");
+    }
+
+    if (Array.isArray(options.changedPaths)) {
+        for (const changedPath of options.changedPaths) {
+            args.push("--changed", changedPath);
+        }
     }
 
     return args;
@@ -1312,6 +1331,9 @@ function buildGenerationRequest(command, workspacePath, templatePath, configurat
     const projectPath = resolveOptionalPath(configuration.get("projectPath"), getPathBase(workspacePath)) || options.projectPath;
     const templateSearchPath = options.projectScoped ? resolveProjectTemplateSearchPath(projectPath) : undefined;
     const framework = configuration.get("framework");
+    const changedInputs = Array.isArray(options.changedPaths)
+        ? options.changedPaths.map(changedPath => ({ fullPath: changedPath, kind: "modified" }))
+        : undefined;
     return {
         command,
         workspacePath,
@@ -1320,6 +1342,7 @@ function buildGenerationRequest(command, workspacePath, templatePath, configurat
         templateSearchPath,
         framework: typeof framework === "string" && framework.trim() ? framework.trim() : undefined,
         allProjects: Boolean(options.allTemplates && configuration.get("allProjects", false)),
+        changedInputs,
     };
 }
 

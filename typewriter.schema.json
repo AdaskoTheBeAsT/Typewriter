@@ -158,6 +158,19 @@
           "default": false
         }
       }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Generation behavior.",
+      "properties": {
+        "incremental": {
+          "type": "string",
+          "enum": ["auto", "off"],
+          "description": "Incremental generation. With 'auto', watch and IDE generate-on-save runs that only changed C# source files re-render only the affected outputs. 'off' always performs a full generation.",
+          "default": "auto"
+        }
+      }
     }
   }
 }

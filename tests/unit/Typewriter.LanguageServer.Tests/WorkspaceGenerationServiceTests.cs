@@ -1,3 +1,4 @@
+using Typewriter.Abstractions;
 using Xunit;
 
 namespace Typewriter.LanguageServer.Tests;
@@ -105,11 +106,21 @@ public sealed class WorkspaceGenerationServiceTests
             await File.WriteAllTextAsync(
                 path: sourcePath,
                 contents: "namespace App; public sealed class Model { public string Name { get; set; } = string.Empty; public int Age { get; set; } }");
-            var second = await service.GenerateAsync(request: request, settings: settings, cancellationToken: CancellationToken.None);
+            var versionBeforeSecondGeneration = MetadataCacheInvalidation.CurrentVersion;
+            var second = await service.GenerateAsync(
+                request: request with
+                {
+                    ChangedInputs = [new WorkspaceChangedInput(FullPath: sourcePath, Kind: "modified")],
+                },
+                settings: settings,
+                cancellationToken: CancellationToken.None);
 
             first.Success.Should().BeTrue();
             second.Success.Should().BeTrue();
             second.GeneratedFiles.Should().ContainSingle().Which.Changed.Should().BeTrue();
+            var dirtyPaths = MetadataCacheInvalidation.GetDirtySince(sinceVersion: versionBeforeSecondGeneration);
+            dirtyPaths.Should().NotBeNull();
+            dirtyPaths!.Should().Contain(Path.GetFullPath(path: sourcePath));
             var output = await File.ReadAllTextAsync(path: outputPath);
             output.Should().Contain("  name: string;");
             output.Should().Contain("  age: number;");

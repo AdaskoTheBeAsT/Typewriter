@@ -127,7 +127,29 @@ public static class TypewriterConfigurationLoader
             {
                 FailOnWarning = loaded.Diagnostics?.FailOnWarning ?? current.Diagnostics.FailOnWarning,
             },
+            Generation = current.Generation with
+            {
+                Incremental = NormalizeIncremental(incremental: loaded.Generation?.Incremental) ?? current.Generation.Incremental,
+            },
         };
+    }
+
+    private static string? NormalizeIncremental(string? incremental)
+    {
+        if (string.IsNullOrWhiteSpace(value: incremental))
+        {
+            return null;
+        }
+
+        var trimmed = incremental.Trim();
+        if (trimmed.Equals(value: GenerationConfiguration.IncrementalOff, comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            return GenerationConfiguration.IncrementalOff;
+        }
+
+        return trimmed.Equals(value: GenerationConfiguration.IncrementalAuto, comparisonType: StringComparison.OrdinalIgnoreCase)
+            ? GenerationConfiguration.IncrementalAuto
+            : null;
     }
 
     private static TypewriterConfiguration ApplyEnvironment(TypewriterConfiguration configuration)
@@ -222,6 +244,8 @@ public static class TypewriterConfigurationLoader
         public OutputConfigurationFile? Output { get; init; }
 
         public DiagnosticsConfigurationFile? Diagnostics { get; init; }
+
+        public GenerationConfigurationFile? Generation { get; init; }
     }
 
     internal sealed record OutputConfigurationFile
@@ -268,5 +292,10 @@ public static class TypewriterConfigurationLoader
     internal sealed record DiagnosticsConfigurationFile
     {
         public bool? FailOnWarning { get; init; }
+    }
+
+    internal sealed record GenerationConfigurationFile
+    {
+        public string? Incremental { get; init; }
     }
 }

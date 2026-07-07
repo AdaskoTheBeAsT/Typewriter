@@ -275,7 +275,7 @@ internal sealed class TypewriterSaveListener : IVsRunningDocTableEvents3, IDispo
     private Task ExecuteSaveRequestAsync(SaveGenerationRequest request) =>
         request.Scope == SaveGenerationScope.CurrentTemplate
             ? _commandService.GenerateSavedTemplateAsync(templatePath: request.Path, cancellationToken: CancellationToken.None)
-            : _commandService.GenerateSavedInputAsync(inputPath: request.Path, cancellationToken: CancellationToken.None);
+            : _commandService.GenerateSavedInputAsync(inputPath: request.Path, changedPaths: request.ChangedPaths, cancellationToken: CancellationToken.None);
 
     private static SaveGenerationRequest? CreateSaveGenerationRequest(
         string path,
@@ -292,12 +292,10 @@ internal sealed class TypewriterSaveListener : IVsRunningDocTableEvents3, IDispo
             return null;
         }
 
-        if (TemplateExtensions.Contains(item: extension))
-        {
-            return new SaveGenerationRequest(path: path, scope: SaveGenerationScope.CurrentTemplate);
-        }
-
-        return new SaveGenerationRequest(path: path, scope: SaveGenerationScope.AllTemplates);
+        var scope = TemplateExtensions.Contains(item: extension)
+            ? SaveGenerationScope.CurrentTemplate
+            : SaveGenerationScope.AllTemplates;
+        return new SaveGenerationRequest(path: path, scope: scope, changedPaths: [path]);
     }
 
     private static IEnumerable<string> FindConfigurationFiles(string path)
@@ -417,22 +415,36 @@ internal sealed class TypewriterSaveListener : IVsRunningDocTableEvents3, IDispo
     {
         public SaveGenerationRequest(
             string path,
-            SaveGenerationScope scope)
+            SaveGenerationScope scope,
+            IReadOnlyCollection<string> changedPaths)
         {
             Path = path;
             Scope = scope;
+            ChangedPaths = changedPaths;
         }
 
         public string Path { get; }
 
         public SaveGenerationScope Scope { get; }
 
+        public IReadOnlyCollection<string> ChangedPaths { get; }
+
         public static SaveGenerationRequest Merge(
             SaveGenerationRequest? existing,
-            SaveGenerationRequest incoming) =>
-            existing?.Scope == SaveGenerationScope.AllTemplates && incoming.Scope == SaveGenerationScope.CurrentTemplate
+            SaveGenerationRequest incoming)
+        {
+            if (existing is null)
+            {
+                return incoming;
+            }
+
+            var winner = existing.Scope == SaveGenerationScope.AllTemplates && incoming.Scope == SaveGenerationScope.CurrentTemplate
                 ? existing
                 : incoming;
+            var changedPaths = new HashSet<string>(collection: existing.ChangedPaths, comparer: StringComparer.OrdinalIgnoreCase);
+            changedPaths.UnionWith(other: incoming.ChangedPaths);
+            return new SaveGenerationRequest(path: winner.Path, scope: winner.Scope, changedPaths: changedPaths);
+        }
     }
 
     private enum SaveGenerationScope

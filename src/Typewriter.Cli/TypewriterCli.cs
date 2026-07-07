@@ -89,20 +89,61 @@ internal static class TypewriterCli
         var result = await GenerateOnceAsync(
             options: options,
             generator: CreateGenerator(),
+            changedInputs: CreateChangedInputs(changedPaths: options.ChangedPaths),
             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         WriteResult(result: result, output: options.Output);
         return GetExitCode(result: result);
+    }
+
+    private static IReadOnlyCollection<ChangedInput>? CreateChangedInputs(IReadOnlyList<string> changedPaths)
+    {
+        if (changedPaths.Count == 0)
+        {
+            return null;
+        }
+
+        var changedInputs = new List<ChangedInput>(capacity: changedPaths.Count);
+        foreach (var changedPath in changedPaths)
+        {
+            string fullPath;
+            try
+            {
+                fullPath = Path.GetFullPath(path: changedPath);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+            catch (NotSupportedException)
+            {
+                return null;
+            }
+            catch (PathTooLongException)
+            {
+                return null;
+            }
+
+            changedInputs.Add(
+                item: new ChangedInput(
+                    FullPath: fullPath,
+                    Kind: File.Exists(path: fullPath) ? ChangedInputKind.Modified : ChangedInputKind.Deleted));
+        }
+
+        return changedInputs;
     }
 
     private static async Task<int> WatchAsync(
         CliOptions options,
         CancellationToken cancellationToken)
     {
+        var resetMetadataTracking = false;
         try
         {
             var configuration = await CreateConfigurationAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             var generator = CreateGenerator();
             using var watcher = FileSystemGenerationWatcher.Create(options: options, configuration: configuration);
+            MetadataCacheInvalidation.EnableTracking();
+            resetMetadataTracking = true;
             await RunWatchedGenerationAsync(
                 options: options,
                 watcher: watcher,
@@ -123,6 +164,13 @@ internal static class TypewriterCli
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return 0;
+        }
+        finally
+        {
+            if (resetMetadataTracking)
+            {
+                MetadataCacheInvalidation.Reset();
+            }
         }
 
         return 0;
@@ -145,6 +193,7 @@ internal static class TypewriterCli
                 await GenerateAndWriteAsync(
                     options: options,
                     generator: generator,
+                    changedInputs: watcher.DrainChangedInputs(),
                     cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             }
             finally
@@ -173,11 +222,13 @@ internal static class TypewriterCli
     private static async Task GenerateAndWriteAsync(
         CliOptions options,
         TypewriterGenerator generator,
+        IReadOnlyCollection<ChangedInput>? changedInputs,
         CancellationToken cancellationToken)
     {
         var result = await GenerateOnceAsync(
             options: options,
             generator: generator,
+            changedInputs: changedInputs,
             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         WriteResult(result: result, output: options.Output);
     }
@@ -185,6 +236,7 @@ internal static class TypewriterCli
     private static async Task<GenerationResult> GenerateOnceAsync(
         CliOptions options,
         TypewriterGenerator generator,
+        IReadOnlyCollection<ChangedInput>? changedInputs,
         CancellationToken cancellationToken)
     {
         var configuration = await CreateConfigurationAsync(options: options, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
@@ -198,6 +250,7 @@ internal static class TypewriterCli
             TemplateSearchPath: options.TemplateSearchPath)
         {
             IncludeDiff = options.Diff,
+            ChangedInputs = changedInputs,
         };
 
         return await generator.GenerateAsync(request: request, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);

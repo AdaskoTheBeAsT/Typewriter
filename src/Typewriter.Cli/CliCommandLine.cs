@@ -95,6 +95,7 @@ internal static class CliCommandLine
 
     private sealed class CliOptionSet
     {
+#pragma warning disable S107
         private CliOptionSet(
             Option<string?> workspace,
             Option<string?> project,
@@ -105,7 +106,9 @@ internal static class CliCommandLine
             Option<bool> dryRun,
             Option<bool> failOnWarning,
             Option<bool> allProjects,
-            Option<bool> diff)
+            Option<bool> diff,
+            Option<string[]> changed)
+#pragma warning restore S107
         {
             Workspace = workspace;
             Project = project;
@@ -117,6 +120,7 @@ internal static class CliCommandLine
             FailOnWarning = failOnWarning;
             AllProjects = allProjects;
             Diff = diff;
+            Changed = changed;
         }
 
         private Option<string?> Workspace { get; }
@@ -138,6 +142,8 @@ internal static class CliCommandLine
         private Option<bool> AllProjects { get; }
 
         private Option<bool> Diff { get; }
+
+        private Option<string[]> Changed { get; }
 
         public static CliOptionSet Create()
         {
@@ -185,6 +191,10 @@ internal static class CliCommandLine
                 diff: new Option<bool>(name: "--diff")
                 {
                     Description = "Include unified diffs for changed files in the output.",
+                },
+                changed: new Option<string[]>(name: "--changed")
+                {
+                    Description = "Path of an input file changed since the previous generation. May be repeated. When every changed input is a C# source file, only the affected outputs are re-rendered.",
                 });
         }
 
@@ -200,6 +210,7 @@ internal static class CliCommandLine
             command.Options.Add(item: FailOnWarning);
             command.Options.Add(item: AllProjects);
             command.Options.Add(item: Diff);
+            command.Options.Add(item: Changed);
         }
 
         public CliOptions CreateOptions(
@@ -218,6 +229,9 @@ internal static class CliCommandLine
                 AllProjects: parseResult.GetValue(option: AllProjects),
                 Diff: parseResult.GetValue(option: Diff),
                 Force: false,
-                Help: false);
+                Help: false)
+            {
+                ChangedPaths = parseResult.GetValue(option: Changed) ?? [],
+            };
     }
 }

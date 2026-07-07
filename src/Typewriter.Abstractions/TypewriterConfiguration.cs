@@ -8,6 +8,8 @@ public sealed record TypewriterConfiguration(
     OutputConfiguration Output,
     DiagnosticsConfiguration Diagnostics)
 {
+    public GenerationConfiguration Generation { get; init; } = GenerationConfiguration.Default;
+
     public static IReadOnlyList<string> DefaultInputExtensions { get; } =
     [
         ".cs",

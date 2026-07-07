@@ -70,6 +70,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
             configuration: request.Configuration,
             solutionFullName: ResolveSolutionFullName(workspaceRootPath: workspace.RootPath));
         performanceTrace.Add(stage: "Render default resolution", elapsed: defaultsStopwatch.Elapsed);
+        var incrementalChangedSourcePaths = ResolveIncrementalChangedSourcePaths(request: request);
         foreach (var projectPath in projectPaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -79,6 +80,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                 templateWorkspace: CreateProjectWorkspace(request: request, workspace: workspace, projectPath: projectPath, projectCount: projectPaths.Count),
                 projectPath: projectPath,
                 renderDefaults: renderDefaults,
+                incrementalChangedSourcePaths: incrementalChangedSourcePaths,
                 diagnostics: diagnostics,
                 generatedFiles: generatedFiles,
                 plannedOutputPaths: plannedOutputPaths,
@@ -141,6 +143,77 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         return template.OutputPath is null
             && inspection?.IsSingleFileMode != true
             && project.SourceFiles.Any(predicate: sourceFile => sourceFile.Types.Count > 0);
+    }
+
+    /// <summary>
+    /// Resolves the changed source-file paths usable for incremental per-source-file
+    /// rendering. Returns <c>null</c> when a full generation is required: unknown
+    /// provenance, incremental generation disabled, validation mode, deleted or renamed
+    /// inputs, or any changed input that is not a C# source file (templates, project
+    /// files, configuration, and other shape inputs always trigger a full generation).
+    /// </summary>
+    /// <param name="request">The generation request.</param>
+    /// <returns>The full paths of the changed source files, or <c>null</c>.</returns>
+    private static IReadOnlyCollection<string>? ResolveIncrementalChangedSourcePaths(GenerationRequest request)
+    {
+        if (request.ChangedInputs is null
+            || request.ChangedInputs.Count == 0
+            || request.Mode != GenerationMode.Generate
+            || !request.Configuration.Generation.IsIncrementalEnabled)
+        {
+            return null;
+        }
+
+        var changedSourcePaths = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+        foreach (var changedInput in request.ChangedInputs)
+        {
+            if (changedInput.Kind is ChangedInputKind.Deleted or ChangedInputKind.Renamed
+                || !Path.GetExtension(path: changedInput.FullPath).Equals(value: ".cs", comparisonType: StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            try
+            {
+                _ = changedSourcePaths.Add(item: Path.GetFullPath(path: changedInput.FullPath));
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+            catch (NotSupportedException)
+            {
+                return null;
+            }
+            catch (PathTooLongException)
+            {
+                return null;
+            }
+        }
+
+        return changedSourcePaths;
+    }
+
+    private static IReadOnlyList<SourceFileRenderContext> FilterSourceFileRenderContexts(
+        IReadOnlyList<SourceFileRenderContext> renderContexts,
+        ProjectMetadataIndex metadataIndex,
+        IReadOnlyCollection<string>? incrementalChangedSourcePaths)
+    {
+        if (incrementalChangedSourcePaths is null || renderContexts.Count == 0)
+        {
+            return renderContexts;
+        }
+
+        var affectedSourceFiles = metadataIndex.GetAffectedSourceFiles(changedSourcePaths: incrementalChangedSourcePaths);
+        if (affectedSourceFiles.Count == 0)
+        {
+            return [];
+        }
+
+        var affectedSourceFileSet = new HashSet<string>(collection: affectedSourceFiles, comparer: StringComparer.OrdinalIgnoreCase);
+        return renderContexts
+            .Where(predicate: renderContext => affectedSourceFileSet.Contains(item: renderContext.SourceFile.Path))
+            .ToArray();
     }
 
     private static bool RequiresSingleFileModeInspection(TemplateDocument template) =>
@@ -376,6 +449,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         WorkspaceContext templateWorkspace,
         string projectPath,
         TemplateRenderDefaults renderDefaults,
+        IReadOnlyCollection<string>? incrementalChangedSourcePaths,
         ICollection<GenerationDiagnostic> diagnostics,
         ICollection<GeneratedFile> generatedFiles,
         IDictionary<string, string> plannedOutputPaths,
@@ -505,6 +579,10 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                         renderContexts = CreateSourceFileRenderContexts(project: templateProject, metadataIndex: templateIndex);
                     }
 
+                    renderContexts = FilterSourceFileRenderContexts(
+                        renderContexts: renderContexts,
+                        metadataIndex: templateIndex,
+                        incrementalChangedSourcePaths: incrementalChangedSourcePaths);
                     foreach (var sourceContext in renderContexts)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
@@ -762,6 +840,15 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                             handler: $"{entry.Stage}: {entry.Elapsed.TotalMilliseconds:F1} ms"),
                         Code: "TWPERF"));
             }
+
+            diagnostics.Add(
+                item: new GenerationDiagnostic(
+                    File: file,
+                    Line: null,
+                    Column: null,
+                    Severity: DiagnosticSeverity.Info,
+                    Message: "Metadata cache: " + MetadataCacheMetrics.CreateSummary(),
+                    Code: "TWPERF"));
         }
     }
 

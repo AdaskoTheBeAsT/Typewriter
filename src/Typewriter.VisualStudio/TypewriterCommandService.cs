@@ -88,10 +88,11 @@ internal sealed class TypewriterCommandService
 
     public Task GenerateSavedInputAsync(
         string inputPath,
+        IReadOnlyCollection<string>? changedPaths,
         CancellationToken cancellationToken) =>
         RunWithReportingAsync(
             message: "Typewriter generate-on-save failed.",
-            action: () => GenerateAllTemplatesAsync(inputPathOverride: inputPath, cancellationToken: cancellationToken),
+            action: () => GenerateAllTemplatesAsync(inputPathOverride: inputPath, changedPaths: changedPaths, cancellationToken: cancellationToken),
             cancellationToken: cancellationToken);
 
     private void AddCommand(
@@ -218,10 +219,11 @@ internal sealed class TypewriterCommandService
     }
 
     private Task GenerateAllTemplatesAsync(CancellationToken cancellationToken) =>
-        GenerateAllTemplatesAsync(inputPathOverride: null, cancellationToken: cancellationToken);
+        GenerateAllTemplatesAsync(inputPathOverride: null, changedPaths: null, cancellationToken: cancellationToken);
 
     private async Task GenerateAllTemplatesAsync(
         string? inputPathOverride,
+        IReadOnlyCollection<string>? changedPaths,
         CancellationToken cancellationToken)
     {
         var context = await CreateGenerationContextAsync(
@@ -236,7 +238,7 @@ internal sealed class TypewriterCommandService
             return;
         }
 
-        await ExecuteCliAsync(command: "generate", context: context, allTemplates: true, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        await ExecuteCliAsync(command: "generate", context: context, allTemplates: true, changedPaths: changedPaths, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
     }
 
     private async Task GenerateSolutionAllTemplatesAsync(CancellationToken cancellationToken)
@@ -327,9 +329,22 @@ internal sealed class TypewriterCommandService
         string command,
         GenerationContext context,
         bool allTemplates,
+        CancellationToken cancellationToken) =>
+        await ExecuteCliAsync(
+            command: command,
+            context: context,
+            allTemplates: allTemplates,
+            changedPaths: null,
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+
+    private async Task ExecuteCliAsync(
+        string command,
+        GenerationContext context,
+        bool allTemplates,
+        IReadOnlyCollection<string>? changedPaths,
         CancellationToken cancellationToken)
     {
-        var args = BuildTypewriterArguments(command: command, context: context, allTemplates: allTemplates);
+        var args = BuildTypewriterArguments(command: command, context: context, allTemplates: allTemplates, changedPaths: changedPaths);
         await _package.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken: cancellationToken);
         _diagnosticReporter.Clear();
 
@@ -342,6 +357,13 @@ internal sealed class TypewriterCommandService
             TemplateSearchPath = context.TemplateSearchPath,
             Framework = string.IsNullOrWhiteSpace(value: context.Framework) ? null : context.Framework,
             AllProjects = allTemplates && context.AllProjects,
+            ChangedInputs = changedPaths?
+                .Select(selector: changedPath => new TypewriterChangedInput
+                {
+                    FullPath = changedPath,
+                    Kind = File.Exists(path: changedPath) ? "modified" : "deleted",
+                })
+                .ToList(),
         };
         var persistentResult = await TypewriterLanguageClient.TryGenerateAsync(
             request: generationRequest,
@@ -395,7 +417,8 @@ internal sealed class TypewriterCommandService
     private static IReadOnlyList<string> BuildTypewriterArguments(
         string command,
         GenerationContext context,
-        bool allTemplates)
+        bool allTemplates,
+        IReadOnlyCollection<string>? changedPaths)
     {
         var args = new List<string>
         {
@@ -433,6 +456,15 @@ internal sealed class TypewriterCommandService
         if (allTemplates && context.AllProjects)
         {
             args.Add(item: "--all-projects");
+        }
+
+        if (changedPaths is not null)
+        {
+            foreach (var changedPath in changedPaths)
+            {
+                args.Add(item: "--changed");
+                args.Add(item: changedPath);
+            }
         }
 
         return args;
