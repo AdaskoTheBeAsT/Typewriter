@@ -7,6 +7,7 @@ namespace Typewriter.Engine;
 
 public sealed class TypewriterGenerator : ITypewriterGenerator
 {
+    private const char IncludedProjectCacheKeySeparator = '\0';
     private const int MaxTemplateDocumentCacheEntries = 256;
     private static readonly ConcurrentDictionary<TemplateDocumentCacheKey, TemplateDocumentCacheEntry> TemplateDocumentCache = new();
     private static readonly ConcurrentQueue<TemplateDocumentCacheKey> TemplateDocumentCacheOrder = new();
@@ -119,7 +120,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         IEnumerable<string> unresolvedNames,
         ICollection<GenerationDiagnostic> diagnostics)
     {
-        foreach (var unresolvedName in unresolvedNames)
+        foreach (var unresolvedName in unresolvedNames.Distinct(comparer: StringComparer.OrdinalIgnoreCase))
         {
             diagnostics.Add(
                 item: new GenerationDiagnostic(
@@ -611,7 +612,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         }
 
         var cacheKey = string.Join(
-            separator: '|',
+            separator: IncludedProjectCacheKeySeparator,
             values: additionalProjectPaths.Order(comparer: StringComparer.OrdinalIgnoreCase));
         if (includedProjectCache.TryGetValue(key: cacheKey, value: out var cachedContext))
         {

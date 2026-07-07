@@ -115,6 +115,7 @@ internal static class WorkspaceProjectResolver
 
         var workspaceProjects = GetWorkspaceProjects(workspacePath: workspacePath);
         var resolvedPaths = new List<string>();
+        var resolvedPathSet = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
         foreach (var projectName in projectNames)
         {
             var resolvedPath = ResolveProjectPathByName(
@@ -127,7 +128,7 @@ internal static class WorkspaceProjectResolver
                 continue;
             }
 
-            if (!resolvedPaths.Contains(value: resolvedPath, comparer: StringComparer.OrdinalIgnoreCase))
+            if (resolvedPathSet.Add(item: resolvedPath))
             {
                 resolvedPaths.Add(item: resolvedPath);
             }

@@ -111,6 +111,7 @@ public sealed class TypewriterGeneratorIncludeProjectTests
                                      Template(Settings settings)
                                      {
                                          settings.IncludeProject("Missing");
+                                         settings.IncludeProject("Missing");
                                      }
                                  }
                                  $Classes[
