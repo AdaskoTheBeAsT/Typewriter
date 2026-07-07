@@ -68,6 +68,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.7.0](#470)
     - [4.6.1](#461)
     - [4.6.0](#460)
     - [4.5.4](#454)
@@ -1271,6 +1272,19 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.7.0
+
+- Added a much richer shared Language Server experience for `.tst` templates: documented completions and hover, semantic highlighting, go-to-definition, project-aware template completions, and Roslyn-backed IntelliSense inside `${ ... }` C# helper blocks.
+- Added VS Code embedded-language forwarding through virtual C# and TypeScript documents, so the installed C# extension and TypeScript service can provide completion, hover, and definitions inside template helper/output regions. This is controlled by `typewriter.embeddedLanguages.forwarding`.
+- Added Rider LSP integration through the IntelliJ Platform LSP API, allowing Rider to use the shared Typewriter language server while retaining CLI-based generation and validation fallbacks.
+- Fixed `Settings.IncludeProject(name)` so templates can explicitly merge a named workspace project, plus its referenced projects, into the current template code model. Missing projects now raise `TW0009`, and `samples/issue98` covers the unreferenced-project scenario.
+- Improved watch mode and editor generate-on-save performance with changed-input tracking. `typewriter watch`, IDE integrations, and the language server can now pass changed paths through `--changed` / `changedInputs`, and the default `generation.incremental: "auto"` mode re-renders only affected outputs when only C# source files changed.
+- Added safe full-generation fallbacks for incremental runs when change provenance is unknown, the changed input is a template/project/config file, a file was deleted or renamed, or incremental generation is disabled with `generation.incremental: "off"`.
+- Improved Roslyn metadata caching for incremental generation with dirty-path invalidation, source-only rebuilds, syntax-tree and type-reference reuse, reverse dependency indexing, and optional metadata cache metrics in performance traces.
+- Added configuration/schema support for the new `generation.incremental` setting and CLI parsing coverage for repeated `--changed` arguments.
+- Added regression coverage for embedded-language services, LSP embedded document/range requests, `IncludeProject`, incremental rendering, dirty-path metadata refresh, and editor changed-path plumbing.
+- Added release and maintenance documentation for compatibility status, implemented work, packaging, Rider installation, and generation performance planning/progress.
 
 ### 4.6.1
 
