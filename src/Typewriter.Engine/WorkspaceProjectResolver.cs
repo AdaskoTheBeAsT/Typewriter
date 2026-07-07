@@ -105,6 +105,101 @@ internal static class WorkspaceProjectResolver
         return [];
     }
 
+    public static IReadOnlyList<string> ResolveProjectPathsByName(
+        string workspacePath,
+        IEnumerable<string> projectNames,
+        ICollection<string> unresolvedNames)
+    {
+        ArgumentNullException.ThrowIfNull(argument: projectNames);
+        ArgumentNullException.ThrowIfNull(argument: unresolvedNames);
+
+        var workspaceProjects = GetWorkspaceProjects(workspacePath: workspacePath);
+        var workspaceProjectSet = workspaceProjects.ToHashSet(comparer: StringComparer.OrdinalIgnoreCase);
+        var resolvedPaths = new List<string>();
+        var resolvedPathSet = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+        foreach (var projectName in projectNames)
+        {
+            var resolvedPath = ResolveProjectPathByName(
+                workspacePath: workspacePath,
+                workspaceProjects: workspaceProjects,
+                workspaceProjectSet: workspaceProjectSet,
+                projectName: projectName);
+            if (string.IsNullOrWhiteSpace(value: resolvedPath))
+            {
+                unresolvedNames.Add(item: projectName);
+                continue;
+            }
+
+            if (resolvedPathSet.Add(item: resolvedPath))
+            {
+                resolvedPaths.Add(item: resolvedPath);
+            }
+        }
+
+        return resolvedPaths;
+    }
+
+    private static string? ResolveProjectPathByName(
+        string workspacePath,
+        IReadOnlyList<string> workspaceProjects,
+        IReadOnlySet<string> workspaceProjectSet,
+        string projectName)
+    {
+        if (string.IsNullOrWhiteSpace(value: projectName))
+        {
+            return null;
+        }
+
+        var trimmedName = projectName.Trim();
+        if (trimmedName.EndsWith(value: ".csproj", comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            var normalized = trimmedName.Replace(oldChar: '\\', newChar: Path.DirectorySeparatorChar);
+            var candidate = Path.GetFullPath(
+                path: Path.IsPathRooted(path: normalized)
+                    ? normalized
+                    : Path.Combine(path1: GetSearchRoot(workspacePath: Path.GetFullPath(path: workspacePath)), path2: normalized));
+            if (workspaceProjectSet.Contains(item: candidate))
+            {
+                return candidate;
+            }
+
+            if (File.Exists(path: candidate))
+            {
+                return null;
+            }
+
+            trimmedName = Path.GetFileNameWithoutExtension(path: trimmedName);
+        }
+
+        return workspaceProjects.FirstOrDefault(
+            predicate: projectPath => Path.GetFileNameWithoutExtension(path: projectPath)
+                .Equals(value: trimmedName, comparisonType: StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string[] GetWorkspaceProjects(string workspacePath)
+    {
+        var root = Path.GetFullPath(path: workspacePath);
+        if (IsSolutionFile(path: root) && File.Exists(path: root))
+        {
+            return GetProjectsFromSolution(solutionPath: root);
+        }
+
+        if (File.Exists(path: root))
+        {
+            root = Path.GetDirectoryName(path: root) ?? root;
+        }
+
+        if (!Directory.Exists(path: root))
+        {
+            return [];
+        }
+
+        return EnumerateProjectFiles(root: root)
+            .Select(selector: Path.GetFullPath)
+            .Order(comparer: StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     private static string[] GetProjectsFromSolution(string solutionPath) =>
         solutionPath.EndsWith(value: ".slnx", comparisonType: StringComparison.OrdinalIgnoreCase)
             ? GetProjectsFromSlnx(solutionPath: solutionPath)

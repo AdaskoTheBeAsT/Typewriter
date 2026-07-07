@@ -181,6 +181,24 @@ internal sealed class TemplateReferenceResolver
             : trimmed[..4000] + "...";
     }
 
+    private static string? ResolveDotNetExecutablePath()
+    {
+        var executableName = OperatingSystem.IsWindows()
+            ? "dotnet.exe"
+            : "dotnet";
+        var path = Environment.GetEnvironmentVariable(variable: "PATH") ?? string.Empty;
+        foreach (var directory in path.Split(separator: Path.PathSeparator, options: StringSplitOptions.RemoveEmptyEntries))
+        {
+            var candidate = Path.Combine(path1: directory, path2: executableName);
+            if (File.Exists(path: candidate))
+            {
+                return Path.GetFullPath(path: candidate);
+            }
+        }
+
+        return null;
+    }
+
     private static void TryDeleteDirectory(string directory)
     {
         try
@@ -358,17 +376,25 @@ internal sealed class TemplateReferenceResolver
         string projectPath,
         string packageRoot)
     {
+        var dotNetPath = ResolveDotNetExecutablePath();
+        if (dotNetPath is null)
+        {
+            return new RestoreResult(Success: false, Message: "The dotnet executable could not be found on PATH.");
+        }
+
+#pragma warning disable SCS0001,SEC0032 // The executable path is resolved to an absolute existing dotnet host before ProcessStartInfo uses it.
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = "dotnet",
+                FileName = dotNetPath,
                 WorkingDirectory = _templateDirectory,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             },
         };
+#pragma warning restore SCS0001,SEC0032
         process.StartInfo.ArgumentList.Add(item: "restore");
         process.StartInfo.ArgumentList.Add(item: projectPath);
         process.StartInfo.ArgumentList.Add(item: "--packages");

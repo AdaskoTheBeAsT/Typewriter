@@ -7,6 +7,7 @@ namespace Typewriter.Engine;
 
 public sealed class TypewriterGenerator : ITypewriterGenerator
 {
+    private const char IncludedProjectCacheKeySeparator = '\0';
     private const int MaxTemplateDocumentCacheEntries = 256;
     private static readonly ConcurrentDictionary<TemplateDocumentCacheKey, TemplateDocumentCacheEntry> TemplateDocumentCache = new();
     private static readonly ConcurrentQueue<TemplateDocumentCacheKey> TemplateDocumentCacheOrder = new();
@@ -114,6 +115,24 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                 Code: DiagnosticCodes.DuplicateGeneratedOutput));
     }
 
+    private static void ReportUnresolvedIncludedProjects(
+        TemplateDocument template,
+        IEnumerable<string> unresolvedNames,
+        ICollection<GenerationDiagnostic> diagnostics)
+    {
+        foreach (var unresolvedName in unresolvedNames.Distinct(comparer: StringComparer.OrdinalIgnoreCase))
+        {
+            diagnostics.Add(
+                item: new GenerationDiagnostic(
+                    File: template.Path,
+                    Line: null,
+                    Column: null,
+                    Severity: DiagnosticSeverity.Warning,
+                    Message: $"Project '{unresolvedName}' passed to Settings.IncludeProject was not found in the workspace.",
+                    Code: DiagnosticCodes.IncludedProjectNotFound));
+        }
+    }
+
     private static bool ShouldRenderPerSourceFile(
         TemplateDocument template,
         ProjectMetadata project,
@@ -127,6 +146,9 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
     private static bool RequiresSingleFileModeInspection(TemplateDocument template) =>
         template.OutputPath is null
         && template.CodeBlocks.Any(predicate: block => block.Content.Contains(value: "SingleFileMode", comparisonType: StringComparison.Ordinal));
+
+    private static bool RequiresIncludedProjectsInspection(TemplateDocument template) =>
+        template.CodeBlocks.Any(predicate: block => block.Content.Contains(value: "IncludeProject", comparisonType: StringComparison.Ordinal));
 
     private static TemplateRenderResult ApplyLegacySourceOutputPath(
         SourceFileMetadata sourceFile,
@@ -401,6 +423,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         }
 
         var projectIndex = ProjectMetadataIndex.Create(metadata: project);
+        var includedProjectCache = new Dictionary<string, TemplateProjectContext>(comparer: StringComparer.OrdinalIgnoreCase);
         IReadOnlyList<SourceFileRenderContext>? sourceFileRenderContexts = null;
         foreach (var templateFile in templates)
         {
@@ -425,7 +448,8 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                 }
 
                 TemplateRenderInspection? renderInspection = null;
-                if (RequiresSingleFileModeInspection(template: template))
+                if (RequiresSingleFileModeInspection(template: template)
+                    || RequiresIncludedProjectsInspection(template: template))
                 {
                     var inspectionDiagnostics = new List<GenerationDiagnostic>();
                     renderInspection = TemplateRenderer.InspectTemplate(
@@ -446,15 +470,42 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                     }
                 }
 
-                if (ShouldRenderPerSourceFile(template: template, project: project, inspection: renderInspection))
+                var templateProjectContext = new TemplateProjectContext(Metadata: project, Index: projectIndex);
+                if (renderInspection is not null && renderInspection.IncludedProjects.Count > 0)
+                {
+                    templateProjectContext = await ResolveIncludedProjectsAsync(
+                        request: request,
+                        workspace: workspace,
+                        template: template,
+                        project: project,
+                        projectIndex: projectIndex,
+                        includedProjectNames: renderInspection.IncludedProjects,
+                        includedProjectCache: includedProjectCache,
+                        diagnostics: diagnostics,
+                        cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+                }
+
+                var templateProject = templateProjectContext.Metadata;
+                var templateIndex = templateProjectContext.Index;
+                if (ShouldRenderPerSourceFile(template: template, project: templateProject, inspection: renderInspection))
                 {
                     foreach (var templateDiagnostic in templateDiagnostics)
                     {
                         diagnostics.Add(item: templateDiagnostic);
                     }
 
-                    sourceFileRenderContexts ??= CreateSourceFileRenderContexts(project: project, metadataIndex: projectIndex);
-                    foreach (var sourceContext in sourceFileRenderContexts)
+                    IReadOnlyList<SourceFileRenderContext> renderContexts;
+                    if (ReferenceEquals(objA: templateProject, objB: project))
+                    {
+                        sourceFileRenderContexts ??= CreateSourceFileRenderContexts(project: project, metadataIndex: projectIndex);
+                        renderContexts = sourceFileRenderContexts;
+                    }
+                    else
+                    {
+                        renderContexts = CreateSourceFileRenderContexts(project: templateProject, metadataIndex: templateIndex);
+                    }
+
+                    foreach (var sourceContext in renderContexts)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         var sourceDiagnostics = new List<GenerationDiagnostic>();
@@ -503,11 +554,11 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                 var renderStopwatch = Stopwatch.StartNew();
                 var renderResult = _templateRenderer.RenderTemplate(
                     template: template,
-                    metadata: project,
+                    metadata: templateProject,
                     diagnostics: templateDiagnostics,
                     defaults: renderDefaults,
                     compiledTemplateFactory: compiledTemplateFactory,
-                    metadataIndex: projectIndex);
+                    metadataIndex: templateIndex);
                 performanceTrace.Add(stage: $"Render template ({Path.GetFileName(path: template.Path)})", elapsed: renderStopwatch.Elapsed);
                 foreach (var templateDiagnostic in templateDiagnostics)
                 {
@@ -529,6 +580,91 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                 compiledTemplateFactory?.Dispose();
             }
         }
+    }
+
+#pragma warning disable S107
+    private async Task<TemplateProjectContext> ResolveIncludedProjectsAsync(
+        GenerationRequest request,
+        WorkspaceContext workspace,
+        TemplateDocument template,
+        ProjectMetadata project,
+        ProjectMetadataIndex projectIndex,
+        IReadOnlyList<string> includedProjectNames,
+        IDictionary<string, TemplateProjectContext> includedProjectCache,
+        ICollection<GenerationDiagnostic> diagnostics,
+        CancellationToken cancellationToken)
+#pragma warning restore S107
+    {
+        var unresolvedNames = new List<string>();
+        var includedProjectPaths = WorkspaceProjectResolver.ResolveProjectPathsByName(
+            workspacePath: workspace.RootPath,
+            projectNames: includedProjectNames,
+            unresolvedNames: unresolvedNames);
+        ReportUnresolvedIncludedProjects(template: template, unresolvedNames: unresolvedNames, diagnostics: diagnostics);
+
+        var currentProjectPath = Path.GetFullPath(path: project.ProjectPath);
+        var additionalProjectPaths = includedProjectPaths
+            .Where(predicate: includedPath => !includedPath.Equals(value: currentProjectPath, comparisonType: StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (additionalProjectPaths.Length == 0)
+        {
+            return new TemplateProjectContext(Metadata: project, Index: projectIndex);
+        }
+
+        var cacheKey = string.Join(
+            separator: IncludedProjectCacheKeySeparator,
+            values: additionalProjectPaths.Order(comparer: StringComparer.OrdinalIgnoreCase));
+        if (includedProjectCache.TryGetValue(key: cacheKey, value: out var cachedContext))
+        {
+            return cachedContext;
+        }
+
+        var includedMetadata = await LoadIncludedProjectMetadataAsync(
+            request: request,
+            workspace: workspace,
+            includedProjectPaths: additionalProjectPaths,
+            diagnostics: diagnostics,
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        var mergedProject = ProjectMetadataMerger.Merge(project: project, includedProjects: includedMetadata);
+        var templateProjectContext = new TemplateProjectContext(
+            Metadata: mergedProject,
+            Index: ProjectMetadataIndex.Create(metadata: mergedProject));
+        includedProjectCache[key: cacheKey] = templateProjectContext;
+        return templateProjectContext;
+    }
+
+    private async Task<IReadOnlyList<ProjectMetadata>> LoadIncludedProjectMetadataAsync(
+        GenerationRequest request,
+        WorkspaceContext workspace,
+        IReadOnlyList<string> includedProjectPaths,
+        ICollection<GenerationDiagnostic> diagnostics,
+        CancellationToken cancellationToken)
+    {
+        var includedMetadata = new List<ProjectMetadata>();
+        foreach (var includedProjectPath in includedProjectPaths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var included = await _metadataProvider.GetMetadataAsync(
+                project: new ProjectContext(
+                    ProjectPath: includedProjectPath,
+                    WorkspacePath: workspace.RootPath,
+                    TargetFramework: request.Configuration.DefaultTargetFramework,
+                    RunFullDiagnostics: request.Mode == GenerationMode.Validate),
+                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            foreach (var diagnostic in included.Diagnostics)
+            {
+                diagnostics.Add(item: diagnostic);
+            }
+
+            if (included.Diagnostics.Any(predicate: diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                continue;
+            }
+
+            includedMetadata.Add(item: included);
+        }
+
+        return includedMetadata;
     }
 
 #pragma warning disable S107
@@ -633,6 +769,10 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         SourceFileMetadata SourceFile,
         ProjectMetadata Project,
         ProjectMetadataIndex MetadataIndex);
+
+    private sealed record TemplateProjectContext(
+        ProjectMetadata Metadata,
+        ProjectMetadataIndex Index);
 
     private sealed record TemplateDocumentCacheKey(
         string Path,

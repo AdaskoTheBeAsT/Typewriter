@@ -6,7 +6,9 @@ namespace Typewriter.Configuration;
 
 public class Settings
 {
+    private static readonly IReadOnlyList<string> EmptyIncludedProjects = [];
     private char _stringLiteralCharacter = '"';
+    private List<string>? _includedProjects;
 
     public string OutputExtension { get; set; } = ".ts";
 
@@ -50,8 +52,16 @@ public class Settings
 
     public virtual ILog Log { get; init; } = NullLog.Instance;
 
+    public virtual IReadOnlyList<string> IncludedProjects => _includedProjects ?? EmptyIncludedProjects;
+
     public virtual Settings IncludeProject(string projectName)
     {
+        if (!string.IsNullOrWhiteSpace(value: projectName))
+        {
+            _includedProjects ??= [];
+            _includedProjects.Add(item: projectName.Trim());
+        }
+
         return this;
     }
 

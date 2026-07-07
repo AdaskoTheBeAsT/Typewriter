@@ -101,7 +101,8 @@ public sealed class TemplateRenderer
         var settings = state.TemplateSettings;
         return new TemplateRenderInspection(
             IsSingleFileMode: settings?.IsSingleFileMode == true,
-            UsesOutputFilenameFactory: state.UsesOutputFilenameFactory);
+            UsesOutputFilenameFactory: state.UsesOutputFilenameFactory,
+            IncludedProjects: settings?.IncludedProjects ?? []);
     }
 #pragma warning restore SA1204
 
