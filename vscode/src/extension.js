@@ -216,8 +216,12 @@ function mergeSaveRequests(existing, incoming) {
     const winner = existing.allTemplates && !incoming.allTemplates
         ? existing
         : incoming;
-    const changedPaths = existing.changedPaths && incoming.changedPaths
-        ? Array.from(new Set([...existing.changedPaths, ...incoming.changedPaths]))
+    const changedPathSet = new Set([
+        ...(existing.changedPaths ?? []),
+        ...(incoming.changedPaths ?? []),
+    ]);
+    const changedPaths = changedPathSet.size > 0
+        ? Array.from(changedPathSet)
         : undefined;
     return { ...winner, changedPaths };
 }

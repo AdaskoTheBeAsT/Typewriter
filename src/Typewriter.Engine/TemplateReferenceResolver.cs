@@ -387,9 +387,7 @@ internal sealed class TemplateReferenceResolver
         {
             StartInfo = new ProcessStartInfo
             {
-#pragma warning disable S4036
-                FileName = "dotnet",
-#pragma warning restore S4036
+                FileName = dotNetPath,
                 WorkingDirectory = _templateDirectory,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
