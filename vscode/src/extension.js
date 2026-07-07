@@ -14,7 +14,7 @@ const defaultInputExtensions = [".cs", ".csproj", ".json", ".props", ".sln", ".s
 const templateExtensions = new Set([".tst"]);
 const ignoredInputDirectories = new Set([".git", ".gradle", ".idea", ".vs", ".vscode", "bin", "obj", "node_modules", "generated"]);
 const saveQueue = {
-    pending: undefined,
+    pending: [],
     timer: undefined,
     running: false,
     lastSaveAt: 0,
@@ -150,8 +150,12 @@ function createSaveRequest(document) {
 }
 
 function scheduleSaveRequest(context, request) {
-    saveQueue.pending = mergeSaveRequests(saveQueue.pending, request);
+    queueSaveRequest(request);
     saveQueue.lastSaveAt = Date.now();
+    scheduleSaveTimer(context);
+}
+
+function scheduleSaveTimer(context) {
     if (saveQueue.timer) {
         clearTimeout(saveQueue.timer);
     }
@@ -160,6 +164,16 @@ function scheduleSaveRequest(context, request) {
         saveQueue.timer = undefined;
         void processSaveQueue(context);
     }, saveDebounceDelayMs);
+}
+
+function queueSaveRequest(request) {
+    const existingIndex = saveQueue.pending.findIndex(candidate => canMergeSaveRequests(candidate, request));
+    if (existingIndex >= 0) {
+        saveQueue.pending[existingIndex] = mergeSaveRequests(saveQueue.pending[existingIndex], request);
+        return;
+    }
+
+    saveQueue.pending.push(request);
 }
 
 async function processSaveQueue(context) {
@@ -171,18 +185,20 @@ async function processSaveQueue(context) {
     try {
         while (true) {
             await waitForSaveQuietPeriod();
-            const request = saveQueue.pending;
-            saveQueue.pending = undefined;
-            if (!request) {
+            const requests = saveQueue.pending;
+            saveQueue.pending = [];
+            if (requests.length === 0) {
                 return;
             }
 
-            await executeSaveRequest(context, request);
+            for (const request of requests) {
+                await executeSaveRequest(context, request);
+            }
         }
     } finally {
         saveQueue.running = false;
-        if (saveQueue.pending && !saveQueue.timer) {
-            scheduleSaveRequest(context, saveQueue.pending);
+        if (saveQueue.pending.length > 0 && !saveQueue.timer) {
+            scheduleSaveTimer(context);
         }
     }
 }
@@ -208,11 +224,16 @@ async function executeSaveRequest(context, request) {
     });
 }
 
-function mergeSaveRequests(existing, incoming) {
-    if (!existing) {
-        return incoming;
-    }
+function canMergeSaveRequests(existing, incoming) {
+    return existing.command === incoming.command
+        && Boolean(existing.allTemplates) === Boolean(incoming.allTemplates)
+        && Boolean(existing.projectScoped) === Boolean(incoming.projectScoped)
+        && getRequestWorkspaceKey(existing) === getRequestWorkspaceKey(incoming)
+        && normalizeRequestPath(existing.projectPath) === normalizeRequestPath(incoming.projectPath)
+        && normalizeRequestPath(existing.templatePath) === normalizeRequestPath(incoming.templatePath);
+}
 
+function mergeSaveRequests(existing, incoming) {
     const winner = existing.allTemplates && !incoming.allTemplates
         ? existing
         : incoming;
@@ -224,6 +245,24 @@ function mergeSaveRequests(existing, incoming) {
         ? Array.from(changedPathSet)
         : undefined;
     return { ...winner, changedPaths };
+}
+
+function getRequestWorkspaceKey(request) {
+    if (request.resourceUri?.fsPath) {
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(request.resourceUri);
+        return normalizeRequestPath(workspaceFolder?.uri?.fsPath ?? path.dirname(request.resourceUri.fsPath));
+    }
+
+    return "";
+}
+
+function normalizeRequestPath(value) {
+    if (typeof value !== "string" || !value) {
+        return "";
+    }
+
+    const normalized = path.normalize(value);
+    return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 function delay(milliseconds) {
