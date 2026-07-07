@@ -274,6 +274,7 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
 
     private void MarkChangedInputsOverflowed()
     {
+        MetadataCacheInvalidation.MarkAllDirty();
         lock (_sync)
         {
             _changedInputsOverflowed = true;

@@ -1,25 +1,32 @@
- From repo root:
+# Rider Plugin Install And Test
 
-   powershell
-     .\rider\gradlew.bat -p rider verifyPluginProjectConfiguration
-     .\rider\gradlew.bat -p rider verifyPlugin
-     .\rider\gradlew.bat -p rider runIde
+From the repository root, verify the Rider plugin project and launch a Rider sandbox:
 
-   runIde should launch a Rider sandbox with the plugin installed. Open a solution containing .tst files, then test:
+```powershell
+.\rider\gradlew.bat -p rider verifyPluginProjectConfiguration
+.\rider\gradlew.bat -p rider verifyPlugin
+.\rider\gradlew.bat -p rider runIde
+```
 
-   •  .tst file recognition and highlighting
-   •  Tools > Typewriter > Generate Current Template
-   •  Tools > Typewriter > Generate All Templates
-   •  Tools > Typewriter > Validate Current Template
-   •  Settings > Typewriter options
-   •  save-time generation/validation
+`runIde` should launch a Rider sandbox with the plugin installed. Open a solution containing `.tst` files, then test:
 
-   To test packaged install:
+- `.tst` file recognition and highlighting
+- `Tools > Typewriter > Generate Current Template`
+- `Tools > Typewriter > Generate All Templates`
+- `Tools > Typewriter > Validate Current Template`
+- `Settings > Typewriter` options
+- Save-time generation and validation
 
-   powershell
-     .\rider\gradlew.bat -p rider buildPlugin
+To test packaged install:
 
-   Then install rider\build\distributions\typewriter-rider-<version>.zip in Rider via Settings > Plugins > Gear > Install Plugin from
-    Disk.
+```powershell
+.\rider\gradlew.bat -p rider buildPlugin
+```
 
-    .\Build-RiderPluginWithTools.ps1 -Configuration Release
+Then install `rider\build\distributions\typewriter-rider-<version>.zip` in Rider through `Settings > Plugins > Gear > Install Plugin from Disk`.
+
+To build the packaged plugin with embedded Typewriter tools:
+
+```powershell
+.\Build-RiderPluginWithTools.ps1 -Configuration Release
+```
