@@ -62,6 +62,15 @@ internal sealed class TypewriterGenerationRequest
     public string? Framework { get; set; }
 
     public bool AllProjects { get; set; }
+
+    public List<TypewriterChangedInput>? ChangedInputs { get; set; }
+}
+
+internal sealed class TypewriterChangedInput
+{
+    public string FullPath { get; set; } = string.Empty;
+
+    public string Kind { get; set; } = "modified";
 }
 
 internal sealed class CliGeneratedFile

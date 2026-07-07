@@ -1212,6 +1212,99 @@ public sealed class CSharpProjectMetadataProviderTests
         }
     }
 
+    [Fact]
+    public async Task GetMetadataReusesCacheAndRebuildsFromSourcesOnDirtyPath()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            CSharpProjectMetadataProvider.ClearCachesForTests();
+            MetadataCacheInvalidation.Reset();
+            MetadataCacheInvalidation.EnableTracking();
+
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            var modelsPath = Path.Combine(path1: directory, path2: "Models.cs");
+            var servicesPath = Path.Combine(path1: directory, path2: "Services.cs");
+            await File.WriteAllTextAsync(
+                path: modelsPath,
+                contents: """
+                          namespace Sample;
+
+                          public sealed class User
+                          {
+                              public string Name { get; init; } = "";
+                          }
+                          """);
+            await File.WriteAllTextAsync(
+                path: servicesPath,
+                contents: """
+                          namespace Sample;
+
+                          public sealed class UserService
+                          {
+                              public User GetUser() => new();
+                          }
+                          """);
+
+            var provider = new CSharpProjectMetadataProvider();
+            var projectContext = new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory);
+
+            var firstMetadata = await provider.GetMetadataAsync(project: projectContext, cancellationToken: CancellationToken.None);
+            firstMetadata.Diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == Typewriter.Abstractions.DiagnosticSeverity.Error);
+            firstMetadata.Types.Should().Contain(type => type.Name == "User");
+            firstMetadata.Types.Should().Contain(type => type.Name == "UserService");
+            CSharpProjectMetadataProvider.GetLastCacheOutcomeForTests(projectPath: projectPath).Should().Be("miss");
+            var modelsParseCountAfterFirst = CSharpProjectMetadataProvider.GetSourceParseCountForTests(path: modelsPath);
+            var servicesParseCountAfterFirst = CSharpProjectMetadataProvider.GetSourceParseCountForTests(path: servicesPath);
+            modelsParseCountAfterFirst.Should().BePositive();
+            servicesParseCountAfterFirst.Should().BePositive();
+
+            var secondMetadata = await provider.GetMetadataAsync(project: projectContext, cancellationToken: CancellationToken.None);
+            secondMetadata.Types.Should().HaveCount(expected: firstMetadata.Types.Count);
+            CSharpProjectMetadataProvider.GetLastCacheOutcomeForTests(projectPath: projectPath).Should().Be("hit-dirty-validated");
+            CSharpProjectMetadataProvider.GetSourceParseCountForTests(path: modelsPath).Should().Be(modelsParseCountAfterFirst);
+            CSharpProjectMetadataProvider.GetSourceParseCountForTests(path: servicesPath).Should().Be(servicesParseCountAfterFirst);
+
+            await File.WriteAllTextAsync(
+                path: modelsPath,
+                contents: """
+                          namespace Sample;
+
+                          public sealed class User
+                          {
+                              public string Name { get; init; } = "";
+                              public string Email { get; init; } = "";
+                          }
+                          """);
+            MetadataCacheInvalidation.MarkDirty(fullPath: modelsPath);
+
+            var thirdMetadata = await provider.GetMetadataAsync(project: projectContext, cancellationToken: CancellationToken.None);
+            thirdMetadata.Diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == Typewriter.Abstractions.DiagnosticSeverity.Error);
+            var user = thirdMetadata.Types.Should().ContainSingle(type => type.Name == "User").Which;
+            user.Properties.Should().Contain(property => property.Name == "Email");
+            CSharpProjectMetadataProvider.GetLastCacheOutcomeForTests(projectPath: projectPath).Should().Be("source-rebuild");
+            CSharpProjectMetadataProvider.GetSourceParseCountForTests(path: modelsPath).Should().BeGreaterThan(expected: modelsParseCountAfterFirst);
+            CSharpProjectMetadataProvider.GetSourceParseCountForTests(path: servicesPath).Should().Be(servicesParseCountAfterFirst);
+        }
+        finally
+        {
+            MetadataCacheInvalidation.Reset();
+            CSharpProjectMetadataProvider.ClearCachesForTests();
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(

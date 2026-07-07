@@ -14,7 +14,7 @@ const defaultInputExtensions = [".cs", ".csproj", ".json", ".props", ".sln", ".s
 const templateExtensions = new Set([".tst"]);
 const ignoredInputDirectories = new Set([".git", ".gradle", ".idea", ".vs", ".vscode", "bin", "obj", "node_modules", "generated"]);
 const saveQueue = {
-    pending: undefined,
+    pending: [],
     timer: undefined,
     running: false,
     lastSaveAt: 0,
@@ -107,6 +107,7 @@ function createSaveRequest(document) {
                 templatePath: document.uri.fsPath,
                 resourceUri: document.uri,
                 allTemplates: false,
+                changedPaths: [document.uri.fsPath],
             };
         }
 
@@ -116,6 +117,7 @@ function createSaveRequest(document) {
                 templatePath: document.uri.fsPath,
                 resourceUri: document.uri,
                 allTemplates: false,
+                changedPaths: [document.uri.fsPath],
             };
         }
 
@@ -129,6 +131,7 @@ function createSaveRequest(document) {
             allTemplates: true,
             projectPath: findNearestProjectPathForInput(document.uri.fsPath),
             projectScoped: true,
+            changedPaths: [document.uri.fsPath],
         };
     }
 
@@ -139,6 +142,7 @@ function createSaveRequest(document) {
             allTemplates: true,
             projectPath: findNearestProjectPathForInput(document.uri.fsPath),
             projectScoped: true,
+            changedPaths: [document.uri.fsPath],
         };
     }
 
@@ -146,8 +150,12 @@ function createSaveRequest(document) {
 }
 
 function scheduleSaveRequest(context, request) {
-    saveQueue.pending = mergeSaveRequests(saveQueue.pending, request);
+    queueSaveRequest(request);
     saveQueue.lastSaveAt = Date.now();
+    scheduleSaveTimer(context);
+}
+
+function scheduleSaveTimer(context) {
     if (saveQueue.timer) {
         clearTimeout(saveQueue.timer);
     }
@@ -156,6 +164,16 @@ function scheduleSaveRequest(context, request) {
         saveQueue.timer = undefined;
         void processSaveQueue(context);
     }, saveDebounceDelayMs);
+}
+
+function queueSaveRequest(request) {
+    const existingIndex = saveQueue.pending.findIndex(candidate => canMergeSaveRequests(candidate, request));
+    if (existingIndex >= 0) {
+        saveQueue.pending[existingIndex] = mergeSaveRequests(saveQueue.pending[existingIndex], request);
+        return;
+    }
+
+    saveQueue.pending.push(request);
 }
 
 async function processSaveQueue(context) {
@@ -167,18 +185,20 @@ async function processSaveQueue(context) {
     try {
         while (true) {
             await waitForSaveQuietPeriod();
-            const request = saveQueue.pending;
-            saveQueue.pending = undefined;
-            if (!request) {
+            const requests = saveQueue.pending;
+            saveQueue.pending = [];
+            if (requests.length === 0) {
                 return;
             }
 
-            await executeSaveRequest(context, request);
+            for (const request of requests) {
+                await executeSaveRequest(context, request);
+            }
         }
     } finally {
         saveQueue.running = false;
-        if (saveQueue.pending && !saveQueue.timer) {
-            scheduleSaveRequest(context, saveQueue.pending);
+        if (saveQueue.pending.length > 0 && !saveQueue.timer) {
+            scheduleSaveTimer(context);
         }
     }
 }
@@ -200,13 +220,49 @@ async function executeSaveRequest(context, request) {
         resourceUri: request.resourceUri,
         projectPath: request.projectPath,
         projectScoped: request.projectScoped,
+        changedPaths: request.changedPaths,
     });
 }
 
+function canMergeSaveRequests(existing, incoming) {
+    return existing.command === incoming.command
+        && Boolean(existing.allTemplates) === Boolean(incoming.allTemplates)
+        && Boolean(existing.projectScoped) === Boolean(incoming.projectScoped)
+        && getRequestWorkspaceKey(existing) === getRequestWorkspaceKey(incoming)
+        && normalizeRequestPath(existing.projectPath) === normalizeRequestPath(incoming.projectPath)
+        && normalizeRequestPath(existing.templatePath) === normalizeRequestPath(incoming.templatePath);
+}
+
 function mergeSaveRequests(existing, incoming) {
-    return existing?.allTemplates && !incoming.allTemplates
+    const winner = existing.allTemplates && !incoming.allTemplates
         ? existing
         : incoming;
+    const changedPathSet = new Set([
+        ...(existing.changedPaths ?? []),
+        ...(incoming.changedPaths ?? []),
+    ]);
+    const changedPaths = changedPathSet.size > 0
+        ? Array.from(changedPathSet)
+        : undefined;
+    return { ...winner, changedPaths };
+}
+
+function getRequestWorkspaceKey(request) {
+    if (request.resourceUri?.fsPath) {
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(request.resourceUri);
+        return normalizeRequestPath(workspaceFolder?.uri?.fsPath ?? path.dirname(request.resourceUri.fsPath));
+    }
+
+    return "";
+}
+
+function normalizeRequestPath(value) {
+    if (typeof value !== "string" || !value) {
+        return "";
+    }
+
+    const normalized = path.normalize(value);
+    return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 function delay(milliseconds) {
@@ -376,6 +432,12 @@ function buildTypewriterArguments(command, workspacePath, templatePath, configur
 
     if (options.allTemplates && configuration.get("allProjects", false)) {
         args.push("--all-projects");
+    }
+
+    if (Array.isArray(options.changedPaths)) {
+        for (const changedPath of options.changedPaths) {
+            args.push("--changed", changedPath);
+        }
     }
 
     return args;
@@ -1312,6 +1374,9 @@ function buildGenerationRequest(command, workspacePath, templatePath, configurat
     const projectPath = resolveOptionalPath(configuration.get("projectPath"), getPathBase(workspacePath)) || options.projectPath;
     const templateSearchPath = options.projectScoped ? resolveProjectTemplateSearchPath(projectPath) : undefined;
     const framework = configuration.get("framework");
+    const changedInputs = Array.isArray(options.changedPaths)
+        ? options.changedPaths.map(changedPath => ({ fullPath: changedPath, kind: "modified" }))
+        : undefined;
     return {
         command,
         workspacePath,
@@ -1320,6 +1385,7 @@ function buildGenerationRequest(command, workspacePath, templatePath, configurat
         templateSearchPath,
         framework: typeof framework === "string" && framework.trim() ? framework.trim() : undefined,
         allProjects: Boolean(options.allTemplates && configuration.get("allProjects", false)),
+        changedInputs,
     };
 }
 

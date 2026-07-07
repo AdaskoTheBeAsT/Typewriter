@@ -45,6 +45,56 @@ public sealed class CliCommandLineTests
     }
 
     [Fact]
+    public async Task InvokeAsyncReadsRepeatedChangedOptions()
+    {
+        CliOptions? capturedOptions = null;
+        var command = CliCommandLine.CreateRootCommand(
+            executeAsync: (options, _) =>
+            {
+                capturedOptions = options;
+                return Task.FromResult(result: 0);
+            });
+
+        await command.Parse(
+            args:
+            [
+                "generate",
+                "--project",
+                "sample.csproj",
+                "--changed",
+                "Models/UserDto.cs",
+                "--changed",
+                "Models/OrderDto.cs",
+            ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
+
+        capturedOptions.Should().NotBeNull();
+        capturedOptions!.ChangedPaths.Should().Equal("Models/UserDto.cs", "Models/OrderDto.cs");
+    }
+
+    [Fact]
+    public async Task InvokeAsyncDefaultsChangedPathsToEmptyWhenOptionIsOmitted()
+    {
+        CliOptions? capturedOptions = null;
+        var command = CliCommandLine.CreateRootCommand(
+            executeAsync: (options, _) =>
+            {
+                capturedOptions = options;
+                return Task.FromResult(result: 0);
+            });
+
+        await command.Parse(
+            args:
+            [
+                "generate",
+                "--project",
+                "sample.csproj",
+            ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
+
+        capturedOptions.Should().NotBeNull();
+        capturedOptions!.ChangedPaths.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task InvokeAsyncDefaultsToGenerateWhenCommandIsOmitted()
     {
         CliOptions? capturedOptions = null;

@@ -320,6 +320,136 @@ public sealed class TypewriterGeneratorWorkspaceTests
     }
 
     [Fact]
+    public async Task GenerateAsyncRendersOnlyAffectedSourceFilesWhenChangedInputsAreProvided()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var context = await CreateIncrementalGenerationContextAsync(directory: directory);
+
+            var result = await context.Generator.GenerateAsync(
+                request: context.Request with
+                {
+                    ChangedInputs = [new ChangedInput(FullPath: context.UserDtoPath, Kind: ChangedInputKind.Modified)],
+                },
+                cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            result.GeneratedFiles.Select(selector: file => file.Path).Order(comparer: StringComparer.OrdinalIgnoreCase).Should().Equal(
+                Path.Combine(path1: directory, path2: "OrderDto.ts"),
+                Path.Combine(path1: directory, path2: "UserDto.ts"));
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task GenerateAsyncRendersNothingWhenChangedSourceFileIsNotPartOfTheProject()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var context = await CreateIncrementalGenerationContextAsync(directory: directory);
+
+            var result = await context.Generator.GenerateAsync(
+                request: context.Request with
+                {
+                    ChangedInputs = [new ChangedInput(FullPath: Path.Combine(path1: directory, path2: "Untracked.cs"), Kind: ChangedInputKind.Modified)],
+                },
+                cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            result.GeneratedFiles.Should().BeEmpty();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task GenerateAsyncRendersAllSourceFilesWhenChangedInputsContainNonCSharpFile()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var context = await CreateIncrementalGenerationContextAsync(directory: directory);
+
+            var result = await context.Generator.GenerateAsync(
+                request: context.Request with
+                {
+                    ChangedInputs =
+                    [
+                        new ChangedInput(FullPath: context.UserDtoPath, Kind: ChangedInputKind.Modified),
+                        new ChangedInput(FullPath: context.TemplatePath, Kind: ChangedInputKind.Modified),
+                    ],
+                },
+                cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            result.GeneratedFiles.Should().HaveCount(3);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task GenerateAsyncRendersAllSourceFilesWhenChangedInputIsDeleted()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var context = await CreateIncrementalGenerationContextAsync(directory: directory);
+
+            var result = await context.Generator.GenerateAsync(
+                request: context.Request with
+                {
+                    ChangedInputs = [new ChangedInput(FullPath: context.UserDtoPath, Kind: ChangedInputKind.Deleted)],
+                },
+                cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            result.GeneratedFiles.Should().HaveCount(3);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task GenerateAsyncRendersAllSourceFilesWhenIncrementalGenerationIsDisabled()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var context = await CreateIncrementalGenerationContextAsync(directory: directory);
+
+            var result = await context.Generator.GenerateAsync(
+                request: context.Request with
+                {
+                    Configuration = TypewriterConfiguration.Default with
+                    {
+                        Generation = new GenerationConfiguration(Incremental: GenerationConfiguration.IncrementalOff),
+                    },
+                    ChangedInputs = [new ChangedInput(FullPath: context.UserDtoPath, Kind: ChangedInputKind.Modified)],
+                },
+                cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            result.GeneratedFiles.Should().HaveCount(3);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GenerateAsyncResolvesRecordBaseFromFullProjectWhenRenderingPerSourceFile()
     {
         var directory = CreateProjectDirectory();
@@ -890,6 +1020,52 @@ public sealed class TypewriterGeneratorWorkspaceTests
         return projectPath;
     }
 
+    private static async Task<IncrementalGenerationContext> CreateIncrementalGenerationContextAsync(string directory)
+    {
+        var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+        var templatePath = Path.Combine(path1: directory, path2: "Models.tst");
+        await File.WriteAllTextAsync(path: projectPath, contents: "<Project />");
+
+        var userModel = CreateClassMetadata(name: "UserDto");
+        var orderModel = CreateClassMetadata(
+            name: "OrderDto",
+            properties: [CreatePropertyMetadata(declaringTypeName: "OrderDto", name: "Customer", type: userModel)]);
+        var productModel = CreateClassMetadata(name: "ProductDto");
+        var userDtoPath = Path.Combine(path1: directory, path2: "UserDto.cs");
+        var metadataProvider = new CapturingMetadataProvider(
+            types: [userModel, orderModel, productModel],
+            sourceFiles:
+            [
+                new SourceFileMetadata(Path: userDtoPath, Types: [userModel]),
+                new SourceFileMetadata(Path: Path.Combine(path1: directory, path2: "OrderDto.cs"), Types: [orderModel]),
+                new SourceFileMetadata(Path: Path.Combine(path1: directory, path2: "ProductDto.cs"), Types: [productModel]),
+            ]);
+        var generator = new TypewriterGenerator(
+            templateDiscovery: new StaticTemplateDiscovery(
+                templates: new TemplateFile(
+                    Path: templatePath,
+                    Content: """
+                             $Classes[
+                             export class $Name {
+                             }
+                             ]
+                             """)),
+            metadataProvider: metadataProvider,
+            fileWriter: new PassthroughFileWriter());
+        var request = new GenerationRequest(
+            WorkspacePath: directory,
+            ProjectPath: projectPath,
+            TemplatePath: templatePath,
+            Mode: GenerationMode.Generate,
+            Configuration: TypewriterConfiguration.Default);
+
+        return new IncrementalGenerationContext(
+            Generator: generator,
+            Request: request,
+            UserDtoPath: userDtoPath,
+            TemplatePath: templatePath);
+    }
+
     private static TypewriterConfiguration CreateConfiguration(FileNameConvention fileNameConvention) =>
         TypewriterConfiguration.Default with
         {
@@ -899,18 +1075,37 @@ public sealed class TypewriterGeneratorWorkspaceTests
             },
         };
 
-    private static TypeMetadata CreateClassMetadata(string name) =>
+    private static TypeMetadata CreateClassMetadata(
+        string name,
+        IReadOnlyList<PropertyMetadata>? properties = null) =>
         new(
             Name: name,
             FullName: "Sample." + name,
             Namespace: "Sample",
             Kind: TypeMetadataKind.Class,
             Accessibility: MetadataAccessibility.Public,
-            Properties: [],
+            Properties: properties ?? [],
             Attributes: [],
             BaseTypes: [],
             EnumValues: [],
             IsNullableAware: true);
+
+    private static PropertyMetadata CreatePropertyMetadata(
+        string declaringTypeName,
+        string name,
+        TypeMetadata type) =>
+        new(
+            Name: name,
+            FullName: "Sample." + declaringTypeName + "." + name,
+            Type: CreateTypeReference(type: type),
+            Accessibility: MetadataAccessibility.Public,
+            HasGetter: true,
+            HasSetter: true,
+            IsRequired: false,
+            Attributes: [])
+        {
+            ParentTypeFullName = "Sample." + declaringTypeName,
+        };
 
     private static TypeMetadata CreateRecordMetadata(
         string name,
@@ -1043,4 +1238,10 @@ public sealed class TypewriterGeneratorWorkspaceTests
             CancellationToken cancellationToken) =>
             Task.FromResult(result: file);
     }
+
+    private sealed record IncrementalGenerationContext(
+        TypewriterGenerator Generator,
+        GenerationRequest Request,
+        string UserDtoPath,
+        string TemplatePath);
 }

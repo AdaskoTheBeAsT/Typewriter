@@ -4,9 +4,12 @@ namespace Typewriter.Cli;
 
 internal sealed class FileSystemGenerationWatcher : IDisposable
 {
+    private const int MaxTrackedChangedInputs = 4096;
     private readonly Lock _sync = new();
     private readonly FileSystemWatcher[] _watchers;
     private readonly HashSet<string> _watchedExtensions;
+    private readonly Dictionary<string, ChangedInputKind> _changedInputs = new(comparer: StringComparer.OrdinalIgnoreCase);
+    private bool _changedInputsOverflowed;
     private TaskCompletionSource _changeSignal = CreateSignal();
 
     private FileSystemGenerationWatcher(
@@ -53,6 +56,36 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
         while (IsSignaled());
     }
 
+    /// <summary>
+    /// Returns the inputs changed since the previous drain and clears the accumulated set.
+    /// Returns <c>null</c> when the provenance is unknown (no change recorded yet, the
+    /// tracked set overflowed, or a watcher error occurred) and a full generation is required.
+    /// </summary>
+    /// <returns>The changed inputs, or <c>null</c> when a full generation is required.</returns>
+    public IReadOnlyCollection<ChangedInput>? DrainChangedInputs()
+    {
+        lock (_sync)
+        {
+            if (_changedInputsOverflowed)
+            {
+                _changedInputsOverflowed = false;
+                _changedInputs.Clear();
+                return null;
+            }
+
+            if (_changedInputs.Count == 0)
+            {
+                return null;
+            }
+
+            var drained = _changedInputs
+                .Select(selector: pair => new ChangedInput(FullPath: pair.Key, Kind: pair.Value))
+                .ToArray();
+            _changedInputs.Clear();
+            return drained;
+        }
+    }
+
     private static IEnumerable<string> ResolveWatchRoots(CliOptions options)
     {
         var roots = new[]
@@ -94,6 +127,14 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
 
     private static TaskCompletionSource CreateSignal() =>
         new(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private static ChangedInputKind MapChangedInputKind(WatcherChangeTypes changeType) =>
+        changeType switch
+        {
+            WatcherChangeTypes.Created => ChangedInputKind.Added,
+            WatcherChangeTypes.Deleted => ChangedInputKind.Deleted,
+            _ => ChangedInputKind.Modified,
+        };
 
     private bool ShouldWatchPath(string path)
     {
@@ -143,7 +184,20 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
         object sender,
         RenamedEventArgs args)
     {
-        if (ShouldWatchPath(path: args.FullPath) || ShouldWatchPath(path: args.OldFullPath))
+        var signal = false;
+        if (ShouldWatchPath(path: args.OldFullPath))
+        {
+            RecordChange(path: args.OldFullPath, kind: ChangedInputKind.Renamed);
+            signal = true;
+        }
+
+        if (ShouldWatchPath(path: args.FullPath))
+        {
+            RecordChange(path: args.FullPath, kind: ChangedInputKind.Renamed);
+            signal = true;
+        }
+
+        if (signal)
         {
             Signal();
         }
@@ -155,14 +209,78 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
     {
         if (ShouldWatchPath(path: args.FullPath))
         {
+            RecordChange(path: args.FullPath, kind: MapChangedInputKind(changeType: args.ChangeType));
             Signal();
         }
     }
 
     private void OnWatcherError(
         object sender,
-        ErrorEventArgs args) =>
+        ErrorEventArgs args)
+    {
+        MetadataCacheInvalidation.MarkAllDirty();
+        lock (_sync)
+        {
+            _changedInputsOverflowed = true;
+            _changedInputs.Clear();
+        }
+
         Signal();
+    }
+
+    private void RecordChange(
+        string path,
+        ChangedInputKind kind)
+    {
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(path: path);
+        }
+        catch (ArgumentException)
+        {
+            MarkChangedInputsOverflowed();
+            return;
+        }
+        catch (NotSupportedException)
+        {
+            MarkChangedInputsOverflowed();
+            return;
+        }
+        catch (PathTooLongException)
+        {
+            MarkChangedInputsOverflowed();
+            return;
+        }
+
+        MetadataCacheInvalidation.MarkDirty(fullPath: fullPath);
+        lock (_sync)
+        {
+            if (_changedInputsOverflowed)
+            {
+                return;
+            }
+
+            if (_changedInputs.Count >= MaxTrackedChangedInputs && !_changedInputs.ContainsKey(key: fullPath))
+            {
+                _changedInputsOverflowed = true;
+                _changedInputs.Clear();
+                return;
+            }
+
+            _changedInputs[key: fullPath] = kind;
+        }
+    }
+
+    private void MarkChangedInputsOverflowed()
+    {
+        MetadataCacheInvalidation.MarkAllDirty();
+        lock (_sync)
+        {
+            _changedInputsOverflowed = true;
+            _changedInputs.Clear();
+        }
+    }
 
     private void Signal()
     {

@@ -13,8 +13,14 @@ internal sealed class WorkspaceGenerationService : IWorkspaceGenerationService, 
 
     private readonly SemaphoreSlim _generationLock = new(initialCount: 1, maxCount: 1);
 
+    public WorkspaceGenerationService()
+    {
+        MetadataCacheInvalidation.EnableTracking();
+    }
+
     public void Dispose()
     {
+        MetadataCacheInvalidation.Reset();
         _generationLock.Dispose();
     }
 
@@ -47,16 +53,18 @@ internal sealed class WorkspaceGenerationService : IWorkspaceGenerationService, 
                     DryRun = mode == GenerationMode.Validate || configuration.Output.DryRun,
                 },
             };
+            var changedInputs = MapChangedInputs(changedInputs: request.ChangedInputs, basePath: GetPathBase(path: workspacePath));
+            ApplyMetadataInvalidation(changedInputs: changedInputs);
 
             var result = await _generator.GenerateAsync(
-                request: new GenerationRequest(
-                    WorkspacePath: workspacePath,
-                    ProjectPath: projectPath,
-                    TemplatePath: ResolveOptionalPath(value: request.TemplatePath, basePath: GetPathBase(path: workspacePath)),
-                    Mode: mode,
-                    Configuration: configuration,
-                    AllProjects: request.AllProjects ?? settings.AllProjects,
-                    TemplateSearchPath: ResolveOptionalPath(value: request.TemplateSearchPath, basePath: GetPathBase(path: workspacePath))),
+                request: CreateGenerationRequest(
+                    request: request,
+                    settings: settings,
+                    workspacePath: workspacePath,
+                    projectPath: projectPath,
+                    mode: mode,
+                    configuration: configuration,
+                    changedInputs: changedInputs),
                 cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             return new WorkspaceGenerationResult(
                 Success: result.Success,
@@ -79,6 +87,49 @@ internal sealed class WorkspaceGenerationService : IWorkspaceGenerationService, 
         finally
         {
             _ = _generationLock.Release();
+        }
+    }
+
+    private static GenerationRequest CreateGenerationRequest(
+        WorkspaceGenerationRequest request,
+        LanguageServerSettings settings,
+        string workspacePath,
+        string? projectPath,
+        GenerationMode mode,
+        TypewriterConfiguration configuration,
+        IReadOnlyCollection<ChangedInput>? changedInputs)
+    {
+        var basePath = GetPathBase(path: workspacePath);
+        return new GenerationRequest(
+            WorkspacePath: workspacePath,
+            ProjectPath: projectPath,
+            TemplatePath: ResolveOptionalPath(value: request.TemplatePath, basePath: basePath),
+            Mode: mode,
+            Configuration: configuration,
+            AllProjects: request.AllProjects ?? settings.AllProjects,
+            TemplateSearchPath: ResolveOptionalPath(value: request.TemplateSearchPath, basePath: basePath))
+        {
+            ChangedInputs = changedInputs,
+        };
+    }
+
+    private static void ApplyMetadataInvalidation(IReadOnlyCollection<ChangedInput>? changedInputs)
+    {
+        if (changedInputs is null || changedInputs.Count == 0)
+        {
+            MetadataCacheInvalidation.MarkAllDirty();
+            return;
+        }
+
+        foreach (var changedInput in changedInputs)
+        {
+            if (changedInput.Kind is ChangedInputKind.Deleted or ChangedInputKind.Renamed)
+            {
+                MetadataCacheInvalidation.MarkAllDirty();
+                return;
+            }
+
+            MetadataCacheInvalidation.MarkDirty(fullPath: changedInput.FullPath);
         }
     }
 
@@ -110,6 +161,67 @@ internal sealed class WorkspaceGenerationService : IWorkspaceGenerationService, 
         return Path.IsPathRooted(path: value)
             ? Path.GetFullPath(path: value)
             : Path.GetFullPath(path: Path.Combine(path1: basePath, path2: value));
+    }
+
+    /// <summary>
+    /// Maps the request's changed inputs to engine changed inputs. Returns <c>null</c>
+    /// (unknown provenance, full generation) when no changed inputs were provided or any
+    /// entry cannot be resolved to a path.
+    /// </summary>
+    /// <param name="changedInputs">The changed inputs from the generation request.</param>
+    /// <param name="basePath">The base path used to resolve relative paths.</param>
+    /// <returns>The mapped changed inputs, or <c>null</c>.</returns>
+    private static IReadOnlyCollection<ChangedInput>? MapChangedInputs(
+        IReadOnlyList<WorkspaceChangedInput>? changedInputs,
+        string basePath)
+    {
+        if (changedInputs is null || changedInputs.Count == 0)
+        {
+            return null;
+        }
+
+        var mapped = new List<ChangedInput>(capacity: changedInputs.Count);
+        foreach (var changedInput in changedInputs)
+        {
+            string? fullPath;
+            try
+            {
+                fullPath = ResolveOptionalPath(value: changedInput.FullPath, basePath: basePath);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+            catch (NotSupportedException)
+            {
+                return null;
+            }
+            catch (PathTooLongException)
+            {
+                return null;
+            }
+
+            if (fullPath is null)
+            {
+                return null;
+            }
+
+            mapped.Add(item: new ChangedInput(FullPath: fullPath, Kind: MapChangedInputKind(kind: changedInput.Kind)));
+        }
+
+        return mapped;
+    }
+
+    private static ChangedInputKind MapChangedInputKind(string? kind)
+    {
+        if (string.IsNullOrWhiteSpace(value: kind))
+        {
+            return ChangedInputKind.Modified;
+        }
+
+        return Enum.TryParse<ChangedInputKind>(value: kind, ignoreCase: true, result: out var parsed)
+            ? parsed
+            : ChangedInputKind.Modified;
     }
 
     private static string GetPathBase(string path)
