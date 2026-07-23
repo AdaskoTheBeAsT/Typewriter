@@ -21,6 +21,7 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Typewriter.Abstractions/Typewriter.Abstractions.csproj" />
+    <Project Path="src/Typewriter.Annotations/Typewriter.Annotations.csproj" />
     <Project Path="src/Typewriter.Buildalyzer/Typewriter.Buildalyzer.csproj" />
     <Project Path="src/Typewriter.Engine/Typewriter.Engine.csproj" />
     <Project Path="src/Typewriter.Roslyn/Typewriter.Roslyn.csproj" />

@@ -13,9 +13,12 @@ public sealed class TypeScriptTypeMapper
     public const string DefaultTimeOnlyType = OutputConfiguration.DefaultTimeOnlyType;
     public const string DefaultTimeOnlyInitializer = OutputConfiguration.DefaultTimeOnlyInitializer;
     public const string DefaultDecimalType = OutputConfiguration.DefaultDecimalType;
+    public const string DefaultDecimalInitializer = OutputConfiguration.DefaultDecimalInitializer;
     public const string DefaultGuidType = OutputConfiguration.DefaultGuidType;
+    public const string DefaultGuidInitializer = OutputConfiguration.DefaultGuidInitializer;
 
     private readonly ConcurrentDictionary<MapCacheKey, string> _cache = new();
+    private readonly ConcurrentDictionary<SemanticMapCacheKey, string> _semanticCache = new();
 
     public string Map(TypeMetadataReference type) =>
         Map(type: type, strictNull: true);
@@ -65,6 +68,35 @@ public sealed class TypeScriptTypeMapper
                 guidType: key.GuidType,
                 dateOnlyType: key.DateOnlyType,
                 timeOnlyType: key.TimeOnlyType),
+            factoryArgument: this);
+    }
+
+    internal string Map(
+        TypeMetadataReference type,
+        bool strictNull,
+        TypeScriptDateMapping dateMapping,
+        string? decimalType,
+        string? guidType,
+        FrontendRuntimeTypeKind runtimeType = FrontendRuntimeTypeKind.Auto)
+    {
+        ArgumentNullException.ThrowIfNull(argument: type);
+        ArgumentNullException.ThrowIfNull(argument: dateMapping);
+
+        return _semanticCache.GetOrAdd(
+            key: new SemanticMapCacheKey(
+                Type: type,
+                StrictNull: strictNull,
+                DateMapping: dateMapping,
+                DecimalType: NormalizeDecimalType(decimalType: decimalType),
+                GuidType: NormalizeGuidType(guidType: guidType),
+                RuntimeType: runtimeType),
+            valueFactory: static (key, mapper) => mapper.MapSemanticUncached(
+                type: key.Type,
+                strictNull: key.StrictNull,
+                dateMapping: key.DateMapping,
+                decimalType: key.DecimalType,
+                guidType: key.GuidType,
+                runtimeType: key.RuntimeType),
             factoryArgument: this);
     }
 
@@ -265,6 +297,12 @@ public sealed class TypeScriptTypeMapper
             return true;
         }
 
+        if (fullName is "NodaTime.Duration" or "NodaTime.Period")
+        {
+            mapped = type.Name;
+            return true;
+        }
+
         mapped = type.IsDateLike ? "string" : null;
         return type.IsDateLike;
     }
@@ -431,6 +469,181 @@ public sealed class TypeScriptTypeMapper
         return mapped;
     }
 
+    private string MapSemanticUncached(
+        TypeMetadataReference type,
+        bool strictNull,
+        TypeScriptDateMapping dateMapping,
+        string decimalType,
+        string guidType,
+        FrontendRuntimeTypeKind runtimeType)
+    {
+        var mapped = MapSemanticCore(
+            type: type,
+            strictNull: strictNull,
+            dateMapping: dateMapping,
+            decimalType: decimalType,
+            guidType: guidType,
+            runtimeType: runtimeType);
+        if (strictNull && type.IsNullable && !HasTopLevelNullUnion(mapped: mapped))
+        {
+            return $"{mapped} | null";
+        }
+
+        return mapped;
+    }
+
+    private string MapSemanticCore(
+        TypeMetadataReference type,
+        bool strictNull,
+        TypeScriptDateMapping dateMapping,
+        string decimalType,
+        string guidType,
+        FrontendRuntimeTypeKind runtimeType)
+    {
+        if (TryMapSemanticContainer(
+            type: type,
+            strictNull: strictNull,
+            dateMapping: dateMapping,
+            decimalType: decimalType,
+            guidType: guidType,
+            runtimeType: runtimeType,
+            mapped: out var containerType))
+        {
+            return containerType;
+        }
+
+        var overridden = runtimeType switch
+        {
+            FrontendRuntimeTypeKind.Decimal => decimalType,
+            FrontendRuntimeTypeKind.Uuid => guidType,
+            FrontendRuntimeTypeKind.String => "string",
+            _ => null,
+        };
+        if (overridden is not null)
+        {
+            return overridden;
+        }
+
+        if ((dateMapping.Library != Configuration.DateLibrary.Legacy || runtimeType != FrontendRuntimeTypeKind.Auto)
+            && DateSemanticTypeResolver.Resolve(type: type, runtimeType: runtimeType) is { } semanticKind)
+        {
+            return dateMapping.GetType(kind: semanticKind);
+        }
+
+        if (type.TypeArguments.Count > 0)
+        {
+            var arguments = string.Join(
+                separator: ", ",
+                values: type.TypeArguments.Select(
+                    selector: argument => Map(
+                        type: argument,
+                        strictNull: strictNull,
+                        dateMapping: dateMapping,
+                        decimalType: decimalType,
+                        guidType: guidType,
+                        runtimeType: runtimeType)));
+            return type.Name + "<" + arguments + ">";
+        }
+
+        return Map(
+            type: type,
+            strictNull: false,
+            dateType: dateMapping.DateType,
+            decimalType: decimalType,
+            guidType: guidType,
+            dateOnlyType: dateMapping.DateOnlyType,
+            timeOnlyType: dateMapping.TimeOnlyType);
+    }
+
+    private bool TryMapSemanticContainer(
+        TypeMetadataReference type,
+        bool strictNull,
+        TypeScriptDateMapping dateMapping,
+        string decimalType,
+        string guidType,
+        FrontendRuntimeTypeKind runtimeType,
+        [NotNullWhen(returnValue: true)] out string? mapped)
+    {
+        if (IsTaskLike(fullName: type.FullName))
+        {
+            mapped = type.TypeArguments.Count > 0
+                ? Map(
+                    type: type.TypeArguments[index: 0],
+                    strictNull: strictNull,
+                    dateMapping: dateMapping,
+                    decimalType: decimalType,
+                    guidType: guidType,
+                    runtimeType: runtimeType)
+                : "void";
+            return true;
+        }
+
+        if (type.IsDictionary)
+        {
+            mapped = MapSemanticDictionaryType(
+                type: type,
+                strictNull: strictNull,
+                dateMapping: dateMapping,
+                decimalType: decimalType,
+                guidType: guidType,
+                runtimeType: runtimeType);
+            return true;
+        }
+
+        if (type.IsCollection && type.ElementType is not null)
+        {
+            var elementType = Map(
+                type: type.ElementType,
+                strictNull: strictNull,
+                dateMapping: dateMapping,
+                decimalType: decimalType,
+                guidType: guidType,
+                runtimeType: runtimeType);
+            mapped = $"{FormatArrayElementType(mapped: elementType)}[]";
+            return true;
+        }
+
+        mapped = null;
+        return false;
+    }
+
+    private string MapSemanticDictionaryType(
+        TypeMetadataReference type,
+        bool strictNull,
+        TypeScriptDateMapping dateMapping,
+        string decimalType,
+        string guidType,
+        FrontendRuntimeTypeKind runtimeType)
+    {
+        var keyType = type.TypeArguments.Count > 0
+            ? type.TypeArguments[index: 0]
+            : null;
+        var valueType = type.TypeArguments.Count > 1
+            ? Map(
+                type: type.TypeArguments[index: 1],
+                strictNull: strictNull,
+                dateMapping: dateMapping,
+                decimalType: decimalType,
+                guidType: guidType,
+                runtimeType: runtimeType)
+            : "unknown";
+        var keyTypeName = keyType is null
+            ? "string"
+            : MapDictionaryKeyType(
+                type: keyType,
+                dateType: dateMapping.DateType,
+                decimalType: decimalType,
+                guidType: guidType,
+                dateOnlyType: dateMapping.DateOnlyType,
+                timeOnlyType: dateMapping.TimeOnlyType);
+
+        return keyTypeName is "string" or "number"
+            || (keyType is not null && IsGuid(fullName: keyType.FullName))
+            || keyType?.IsEnum == true
+            ? $"Record<{keyTypeName}, {valueType}>"
+            : $"Map<{keyTypeName}, {valueType}>";
+    }
+
     private sealed record MapCacheKey(
         TypeMetadataReference Type,
         bool StrictNull,
@@ -439,4 +652,12 @@ public sealed class TypeScriptTypeMapper
         string GuidType,
         string DateOnlyType,
         string TimeOnlyType);
+
+    private sealed record SemanticMapCacheKey(
+        TypeMetadataReference Type,
+        bool StrictNull,
+        TypeScriptDateMapping DateMapping,
+        string DecimalType,
+        string GuidType,
+        FrontendRuntimeTypeKind RuntimeType);
 }

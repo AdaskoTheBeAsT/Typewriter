@@ -119,6 +119,9 @@ jobs:
         shell: pwsh
         run: .\Build-LanguageServerNuGetTool.ps1 -Configuration Release -OutputDirectory $env:PACKAGE_OUTPUT_DIRECTORY -NoRestore -NoBuild
 
+      - name: Pack annotations NuGet package
+        run: dotnet pack src/Typewriter.Annotations/Typewriter.Annotations.csproj --configuration Release --no-build --output $env:PACKAGE_OUTPUT_DIRECTORY
+
       - name: Package VS Code extension
         shell: pwsh
         run: .\Build-VSCodeExtension.ps1 -OutputDirectory $env:PACKAGE_OUTPUT_DIRECTORY -InstallDependencies
@@ -139,6 +142,7 @@ jobs:
           $expectedArtifacts = @(
             "$env:PACKAGE_OUTPUT_DIRECTORY/AdaskoTheBeAsT.Typewriter.Cli.$env:VERSION.nupkg",
             "$env:PACKAGE_OUTPUT_DIRECTORY/AdaskoTheBeAsT.Typewriter.LanguageServer.$env:VERSION.nupkg",
+            "$env:PACKAGE_OUTPUT_DIRECTORY/AdaskoTheBeAsT.Typewriter.Annotations.$env:VERSION.nupkg",
             "$env:PACKAGE_OUTPUT_DIRECTORY/typewriter-vscode-$env:VERSION.vsix",
             "$env:PACKAGE_OUTPUT_DIRECTORY/Typewriter.VisualStudio-$env:VERSION.vsix",
             "$env:PACKAGE_OUTPUT_DIRECTORY/Typewriter-Rider-$env:VERSION.zip"

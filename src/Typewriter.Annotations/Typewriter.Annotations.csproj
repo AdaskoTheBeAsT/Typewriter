@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>true</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageId>AdaskoTheBeAsT.Typewriter.Annotations</PackageId>
+    <Authors>AdaskoTheBeAsT</Authors>
+    <Description>Source-level attributes that guide Typewriter runtime schema generation for frontend JSON hydration.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/AdaskoTheBeAsT/Typewriter</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/AdaskoTheBeAsT/Typewriter</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>typewriter;typescript;code-generation;runtime-schema;annotations</PackageTags>
+    <NoWarn>$(NoWarn);SA0001</NoWarn>
+  </PropertyGroup>
+</Project>

@@ -1,4 +1,5 @@
 using Typewriter.Abstractions;
+using Typewriter.Configuration;
 using Typewriter.Engine;
 using Xunit;
 
@@ -2423,6 +2424,40 @@ public sealed class TemplateRendererTests
         mapper.Map(type: timeOnlyType, strictNull: true, dateType: "DateTime", dateOnlyType: "LocalDate", timeOnlyType: "LocalTime").Should().Be("LocalTime");
         mapper.Map(type: localDateType, strictNull: true, dateType: "DateTime", dateOnlyType: "LocalDate", timeOnlyType: "LocalTime").Should().Be("LocalDate");
         mapper.Map(type: localTimeType, strictNull: true, dateType: "DateTime", dateOnlyType: "LocalDate", timeOnlyType: "LocalTime").Should().Be("LocalTime");
+    }
+
+    [Fact]
+    public void TypeScriptMapperAppliesSemanticProfilesRecursively()
+    {
+        var mapper = new TypeScriptTypeMapper();
+        var stringType = TypeReference(name: "String", fullName: "System.String", isNullable: false);
+        var instantType = TypeReference(name: "DateTimeOffset", fullName: "System.DateTimeOffset", isNullable: true, isPrimitive: false, isDateLike: true);
+        var dateType = TypeReference(name: "DateOnly", fullName: "System.DateOnly", isNullable: false, isPrimitive: false, isDateLike: true);
+        var listType = TypeReference(
+            name: "List",
+            fullName: "System.Collections.Generic.List",
+            isNullable: false,
+            isPrimitive: false,
+            isCollection: true,
+            elementType: instantType,
+            typeArguments: [instantType]);
+        var dictionaryType = TypeReference(
+            name: "Dictionary",
+            fullName: "System.Collections.Generic.Dictionary",
+            isNullable: false,
+            isPrimitive: false,
+            isCollection: true,
+            isDictionary: true,
+            elementType: TypeReference(name: "KeyValuePair", fullName: "System.Collections.Generic.KeyValuePair", isNullable: false, isPrimitive: false),
+            typeArguments: [stringType, dateType]);
+        var mapping = DateLibraryProfiles.GetMapping(
+            library: DateLibrary.JsJoda,
+            dateType: "Date",
+            dateOnlyType: "Date",
+            timeOnlyType: "string");
+
+        mapper.Map(type: listType, strictNull: true, dateMapping: mapping, decimalType: null, guidType: null).Should().Be("(Instant | null)[]");
+        mapper.Map(type: dictionaryType, strictNull: true, dateMapping: mapping, decimalType: null, guidType: null).Should().Be("Record<string, LocalDate>");
     }
 
     [Fact]

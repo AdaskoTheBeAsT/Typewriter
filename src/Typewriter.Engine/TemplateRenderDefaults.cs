@@ -1,4 +1,5 @@
 using Typewriter.Abstractions;
+using Typewriter.Configuration;
 
 namespace Typewriter.Engine;
 
@@ -14,8 +15,12 @@ public sealed record TemplateRenderDefaults(
     string TimeOnlyTypeGeneration = TypeScriptTypeMapper.DefaultTimeOnlyType,
     string TimeOnlyInitializerGeneration = TypeScriptTypeMapper.DefaultTimeOnlyInitializer,
     string GuidTypeGeneration = TypeScriptTypeMapper.DefaultGuidType,
-    string DecimalTypeGeneration = TypeScriptTypeMapper.DefaultDecimalType)
+    string GuidInitializerGeneration = TypeScriptTypeMapper.DefaultGuidInitializer,
+    string DecimalTypeGeneration = TypeScriptTypeMapper.DefaultDecimalType,
+    string DecimalInitializerGeneration = TypeScriptTypeMapper.DefaultDecimalInitializer)
 {
+    public DateLibrary DateLibraryGeneration { get; init; } = DateLibrary.Legacy;
+
     // Matches the original Typewriter defaults: strict null unions and a UTF-8 BOM.
     public static TemplateRenderDefaults Default { get; } = new(
         StrictNullGeneration: true,
@@ -40,7 +45,12 @@ public sealed record TemplateRenderDefaults(
             TimeOnlyTypeGeneration: configuration.Output.TimeOnlyType,
             TimeOnlyInitializerGeneration: configuration.Output.TimeOnlyInitializer,
             GuidTypeGeneration: configuration.Output.GuidType,
-            DecimalTypeGeneration: configuration.Output.DecimalType);
+            GuidInitializerGeneration: configuration.Output.GuidInitializer,
+            DecimalTypeGeneration: configuration.Output.DecimalType,
+            DecimalInitializerGeneration: configuration.Output.DecimalInitializer)
+        {
+            DateLibraryGeneration = configuration.Output.DateLibrary,
+        };
     }
 
     private static char ToStringLiteralCharacter(QuoteStyle quoteStyle)

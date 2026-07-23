@@ -140,7 +140,10 @@ internal static class TemplateRuntimeCompiler
             timeOnlyTypeGeneration: defaults.TimeOnlyTypeGeneration,
             timeOnlyInitializerGeneration: defaults.TimeOnlyInitializerGeneration,
             guidTypeGeneration: defaults.GuidTypeGeneration,
-            decimalTypeGeneration: defaults.DecimalTypeGeneration);
+            guidInitializerGeneration: defaults.GuidInitializerGeneration,
+            decimalTypeGeneration: defaults.DecimalTypeGeneration,
+            decimalInitializerGeneration: defaults.DecimalInitializerGeneration,
+            dateLibraryGeneration: defaults.DateLibraryGeneration);
         var adapterFactory = new TemplateCodeModelAdapterFactory(metadata: metadata, settings: settings, metadataIndex: metadataIndex);
         var host = CreateHost(hostType: hostType, settings: settings, file: adapterFactory.CreateFile(project: metadata));
         return new CompiledTemplateHelper(
