@@ -43,6 +43,8 @@
     - [Top-level settings](#top-level-settings)
     - [`output` settings](#output-settings)
     - [Date and time mapping](#date-and-time-mapping)
+    - [System and NodaTime profile matrix](#system-and-nodatime-profile-matrix)
+    - [Guid mapping](#guid-mapping)
     - [Numeric and decimal mapping](#numeric-and-decimal-mapping)
     - [`diagnostics` settings](#diagnostics-settings)
     - [🔍 Discovery and precedence](#-discovery-and-precedence)
@@ -68,6 +70,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.9.0](#490)
     - [4.8.0](#480)
     - [4.7.0](#470)
     - [4.6.1](#461)
@@ -120,7 +123,7 @@ The previous [`AdaskoTheBeAsT/Typewriter`](https://github.com/AdaskoTheBeAsT/Typ
 | Template runtime  | Classic helpers and settings                                                           | Classic helpers plus `#load`, NuGet `#r`, `settings.Log` diagnostics, `Template(Settings, File)`, `OnRenderComplete`, parent/current helper parameters, and richer stack traces |
 | Type mapping      | Mostly template-authored conventions                                                   | Configurable date-time, date-only, time-only, NodaTime, `Guid`, and `decimal` mappings with matching default initializers                                                       |
 | Metadata depth    | Classic type/member surface                                                            | Structs, indexers, member initializer `$Value`, preserved XML doc inline elements, and JSDoc formatting helpers                                                                 |
-| Performance       | Event-driven generation per IDE workflow                                               | Persistent generation, scoped discovery, metadata indexes, cached templates, glob matchers, type mappings, and loaded dependencies                                             |
+| Performance       | Event-driven generation per IDE workflow                                               | Persistent generation, scoped discovery, metadata indexes, cached templates, glob matchers, type mappings, and loaded dependencies                                              |
 | Packaging         | VSIX releases                                                                          | NuGet tool packages, language-server package, VSIX, VS Code VSIX, and Rider plugin artifacts from CI                                                                            |
 
 ### New goodies at a glance
@@ -155,15 +158,15 @@ The classic VS extension offered basic completion inside `.tst` files. This vers
 
 ### IDE support matrix
 
-| Capability                                                            | 💜 VS Code | 🟣 Visual Studio 2026 | 🧠 Rider |
-| --------------------------------------------------------------------- | :--------: | :-------------------: | :------: |
-| Template member completion, hover, and docs (`$BaseClass`, ...)       |     ✅      |    ✅ (LSP client)     |    ✅ (LSP client) |
-| Roslyn IntelliSense in `${ ... }` C# helper blocks (built-in)          |     ✅      |           ✅           |    ✅ (LSP client) |
-| Project-aware IntelliSense (your types in helper blocks)               |     ✅      |           ✅           |    ✅ (LSP client) |
-| Forwarding to installed C# / TypeScript language services              |     ✅      |          🚧           |    🚧     |
-| Semantic highlighting of template / C# / TypeScript regions            |     ✅      |   ✅ (classification)  |    ✅ (LSP) |
-| Live diagnostics in the editor                                        |     ✅      |    ✅ (Error List)     |    ✅ (LSP) |
-| Generate / validate on save                                           |     ✅      |           ✅           |    ✅     |
+| Capability                                                      | 💜 VS Code | 🟣 Visual Studio 2026 |    🧠 Rider     |
+| --------------------------------------------------------------- | :-------: | :------------------: | :------------: |
+| Template member completion, hover, and docs (`$BaseClass`, ...) |     ✅     |    ✅ (LSP client)    | ✅ (LSP client) |
+| Roslyn IntelliSense in `${ ... }` C# helper blocks (built-in)   |     ✅     |          ✅           | ✅ (LSP client) |
+| Project-aware IntelliSense (your types in helper blocks)        |     ✅     |          ✅           | ✅ (LSP client) |
+| Forwarding to installed C# / TypeScript language services       |     ✅     |          🚧           |       🚧        |
+| Semantic highlighting of template / C# / TypeScript regions     |     ✅     |  ✅ (classification)  |    ✅ (LSP)     |
+| Live diagnostics in the editor                                  |     ✅     |    ✅ (Error List)    |    ✅ (LSP)     |
+| Generate / validate on save                                     |     ✅     |          ✅           |       ✅        |
 
 **Will this work in VS, VS Code, and Rider?** Yes. All three IDEs now share the same language server, so template member IntelliSense (documented completions and hover for `$BaseClass`, `$Properties`, ...), real Roslyn IntelliSense inside `${ ... }` C# helper blocks (with XML doc tooltips and project-aware type completions), live diagnostics, and go-to-definition work identically in VS Code, Visual Studio 2026, and Rider. VS Code additionally forwards to the installed C# extension and built-in TypeScript service through virtual documents (`typewriter.embeddedLanguages.forwarding`), which is VS Code client-side code that could be replicated in VS and Rider later. Rider enables the LSP client via the built-in IntelliJ Platform LSP API; toggle it in Settings under Typewriter.
 
@@ -375,30 +378,30 @@ Generated by `typewriter init`. The generated file includes a `$schema` referenc
 
 ### `output` settings
 
-| Key                      | Default      | Description                                                                                                                                              |
-| ------------------------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `newline`                | `"lf"`       | `lf` or `crlf` line endings in generated files                                                                                                           |
-| `encoding`               | `"utf-8"`    | `utf-8` (no BOM) or `utf-8-bom` ⚠️ the original Typewriter emitted a BOM by default — set `utf-8-bom` for byte-identical output                           |
-| `writeOnlyWhenChanged`   | `true`       | Skip disk writes when content is unchanged (keeps file watchers and HMR calm)                                                                            |
-| `dryRun`                 | `false`      | Render without writing files                                                                                                                             |
-| `fileNameConvention`     | `"preserve"` | Output file naming: `preserve`, `kebab`, `pascal`, `camel`, `snake`                                                                                      |
-| `strictNull`             | `true`       | Render nullable types as `T \| null`; templates can override via `settings.DisableStrictNullGeneration()`                                                |
-| `indentStyle`            | `"preserve"` | Re-indent generated output: `preserve`, `space`, or `tab` (the rendered indent unit is detected automatically)                                           |
-| `indentSize`             | `4`          | Target indent width used when `indentStyle` is `space`                                                                                                   |
-| `insertFinalNewline`     | `false`      | Ensure generated files end with a single trailing newline                                                                                                |
-| `trimTrailingWhitespace` | `false`      | Strip trailing spaces and tabs from every generated line                                                                                                 |
-| `quoteStyle`             | `"double"`   | Default string literal character for generated defaults: `double`, `single`, or `backtick`; `settings.UseStringLiteralCharacter(...)` in a template wins |
-| `dateLibrary`            | `"legacy"`   | Coherent semantic profile: `legacy`, `nativeDate`, `temporal`, `moment`, `luxon`, `dateFns`, `dayJs`, or `jsJoda`; `settings.UseDateLibrary(...)` wins |
-| `dateType`               | `"Date"`     | TypeScript type used for `DateTime`, `DateTimeOffset`, and date-time-like NodaTime values; `settings.UseDateType(...)` wins                             |
-| `dateInitializer`        | `"new Date()"` | TypeScript initializer used for non-null date-time defaults; `settings.UseDateInitializer(...)` wins                                                    |
-| `dateOnlyType`           | `"Date"`     | TypeScript type used for `DateOnly`, `NodaTime.LocalDate`, and `NodaTime.OffsetDate`; `settings.UseDateOnlyType(...)` wins                              |
-| `dateOnlyInitializer`    | `"new Date()"` | TypeScript initializer used for non-null date-only defaults; `settings.UseDateOnlyInitializer(...)` wins                                                |
-| `timeOnlyType`           | `"string"`   | TypeScript type used for `TimeOnly`, `NodaTime.LocalTime`, and `NodaTime.OffsetTime`; `settings.UseTimeOnlyType(...)` wins                              |
-| `timeOnlyInitializer`    | `"\"00:00:00\""` | TypeScript initializer used for non-null time-only defaults; default literal follows `quoteStyle`, and `settings.UseTimeOnlyInitializer(...)` wins   |
-| `guidType`               | `"string"`   | TypeScript type used for C# `Guid`; set to `uuid`, `UUID`, or a branded alias with `settings.UseGuidType(...)` or config                                |
-| `guidInitializer`        | `"auto"`     | Non-null `Guid` initializer; `auto` emits the empty GUID string, or `new Uint8Array(16)` for `Uint8Array`; `settings.UseGuidInitializer(...)` wins      |
-| `decimalType`            | `"number"`   | TypeScript type used for C# `decimal`; `settings.UseDecimalType(...)` in a template wins                                                                 |
-| `decimalInitializer`     | `"auto"`     | Non-null `decimal` initializer; `auto` emits `0`, or `new <decimalType>(0)` for a custom type; `settings.UseDecimalInitializer(...)` wins               |
+| Key                      | Default          | Description                                                                                                                                              |
+| ------------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `newline`                | `"lf"`           | `lf` or `crlf` line endings in generated files                                                                                                           |
+| `encoding`               | `"utf-8"`        | `utf-8` (no BOM) or `utf-8-bom` ⚠️ the original Typewriter emitted a BOM by default — set `utf-8-bom` for byte-identical output                           |
+| `writeOnlyWhenChanged`   | `true`           | Skip disk writes when content is unchanged (keeps file watchers and HMR calm)                                                                            |
+| `dryRun`                 | `false`          | Render without writing files                                                                                                                             |
+| `fileNameConvention`     | `"preserve"`     | Output file naming: `preserve`, `kebab`, `pascal`, `camel`, `snake`                                                                                      |
+| `strictNull`             | `true`           | Render nullable types as `T \| null`; templates can override via `settings.DisableStrictNullGeneration()`                                                |
+| `indentStyle`            | `"preserve"`     | Re-indent generated output: `preserve`, `space`, or `tab` (the rendered indent unit is detected automatically)                                           |
+| `indentSize`             | `4`              | Target indent width used when `indentStyle` is `space`                                                                                                   |
+| `insertFinalNewline`     | `false`          | Ensure generated files end with a single trailing newline                                                                                                |
+| `trimTrailingWhitespace` | `false`          | Strip trailing spaces and tabs from every generated line                                                                                                 |
+| `quoteStyle`             | `"double"`       | Default string literal character for generated defaults: `double`, `single`, or `backtick`; `settings.UseStringLiteralCharacter(...)` in a template wins |
+| `dateLibrary`            | `"legacy"`       | Coherent semantic profile: `legacy`, `nativeDate`, `temporal`, `moment`, `luxon`, `dateFns`, `dayJs`, or `jsJoda`; `settings.UseDateLibrary(...)` wins   |
+| `dateType`               | `"Date"`         | TypeScript type used for `DateTime`, `DateTimeOffset`, and date-time-like NodaTime values; `settings.UseDateType(...)` wins                              |
+| `dateInitializer`        | `"new Date()"`   | TypeScript initializer used for non-null date-time defaults; `settings.UseDateInitializer(...)` wins                                                     |
+| `dateOnlyType`           | `"Date"`         | TypeScript type used for `DateOnly`, `NodaTime.LocalDate`, and `NodaTime.OffsetDate`; `settings.UseDateOnlyType(...)` wins                               |
+| `dateOnlyInitializer`    | `"new Date()"`   | TypeScript initializer used for non-null date-only defaults; `settings.UseDateOnlyInitializer(...)` wins                                                 |
+| `timeOnlyType`           | `"string"`       | TypeScript type used for `TimeOnly`, `NodaTime.LocalTime`, and `NodaTime.OffsetTime`; `settings.UseTimeOnlyType(...)` wins                               |
+| `timeOnlyInitializer`    | `"\"00:00:00\""` | TypeScript initializer used for non-null time-only defaults; default literal follows `quoteStyle`, and `settings.UseTimeOnlyInitializer(...)` wins       |
+| `guidType`               | `"string"`       | TypeScript type used for C# `Guid`; set to `uuid`, `UUID`, or a branded alias with `settings.UseGuidType(...)` or config                                 |
+| `guidInitializer`        | `"auto"`         | Non-null `Guid` initializer; `auto` emits the empty GUID string, or `new Uint8Array(16)` for `Uint8Array`; `settings.UseGuidInitializer(...)` wins       |
+| `decimalType`            | `"number"`       | TypeScript type used for C# `decimal`; `settings.UseDecimalType(...)` in a template wins                                                                 |
+| `decimalInitializer`     | `"auto"`         | Non-null `decimal` initializer; `auto` emits `0`, or `new <decimalType>(0)` for a custom type; `settings.UseDecimalInitializer(...)` wins                |
 
 ### Date and time mapping
 
@@ -440,16 +443,16 @@ ${
 
 All supported values are:
 
-| `output.dateLibrary` value | Template API equivalent | Profile |
-| --- | --- | --- |
-| `"legacy"` | `settings.UseDateLibrary(DateLibrary.Legacy)` | Preserves the legacy `dateType`, `dateOnlyType`, `timeOnlyType`, and initializer settings |
-| `"nativeDate"` | `settings.UseDateLibrary(DateLibrary.NativeDate)` | Native JavaScript `Date` where it can represent the semantic type; otherwise `string` |
-| `"temporal"` | `settings.UseDateLibrary(DateLibrary.Temporal)` | Temporal types from `@js-temporal/polyfill` |
-| `"moment"` | `settings.UseDateLibrary(DateLibrary.Moment)` | Moment and Moment Duration types |
-| `"luxon"` | `settings.UseDateLibrary(DateLibrary.Luxon)` | Luxon `DateTime` and `Duration` types |
-| `"dateFns"` | `settings.UseDateLibrary(DateLibrary.DateFns)` | Native `Date` plus the date-fns `Duration` type |
-| `"dayJs"` | `settings.UseDateLibrary(DateLibrary.DayJs)` | Day.js types with its duration plugin |
-| `"jsJoda"` | `settings.UseDateLibrary(DateLibrary.JsJoda)` | js-joda semantic date/time types plus `@js-joda/timezone` |
+| `output.dateLibrary` value | Template API equivalent                           | Profile                                                                                   |
+| -------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `"legacy"`                 | `settings.UseDateLibrary(DateLibrary.Legacy)`     | Preserves the legacy `dateType`, `dateOnlyType`, `timeOnlyType`, and initializer settings |
+| `"nativeDate"`             | `settings.UseDateLibrary(DateLibrary.NativeDate)` | Native JavaScript `Date` where it can represent the semantic type; otherwise `string`     |
+| `"temporal"`               | `settings.UseDateLibrary(DateLibrary.Temporal)`   | Temporal types from `@js-temporal/polyfill`                                               |
+| `"moment"`                 | `settings.UseDateLibrary(DateLibrary.Moment)`     | Moment and Moment Duration types                                                          |
+| `"luxon"`                  | `settings.UseDateLibrary(DateLibrary.Luxon)`      | Luxon `DateTime` and `Duration` types                                                     |
+| `"dateFns"`                | `settings.UseDateLibrary(DateLibrary.DateFns)`    | Native `Date` plus the date-fns `Duration` type                                           |
+| `"dayJs"`                  | `settings.UseDateLibrary(DateLibrary.DayJs)`      | Day.js types with its duration plugin                                                     |
+| `"jsJoda"`                 | `settings.UseDateLibrary(DateLibrary.JsJoda)`     | js-joda semantic date/time types plus `@js-joda/timezone`                                 |
 
 The JSON values above show the canonical camel-case spellings accepted by `output.dateLibrary`. `legacy` is the default.
 
@@ -457,25 +460,25 @@ The profile supplies semantic TypeScript types, non-null initializers, and `sett
 
 ### System and NodaTime profile matrix
 
-| C# type | Semantic kind | Native `Date` | Temporal | Moment | Luxon | date-fns | Day.js | js-joda |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `DateTime` | plain date-time | `Date` | `Temporal.PlainDateTime` | `moment.Moment` | `DateTime` | `Date` | `Dayjs` | `LocalDateTime` |
-| `DateTimeOffset` | instant | `Date` | `Temporal.Instant` | `moment.Moment` | `DateTime` | `Date` | `Dayjs` | `Instant` |
-| `DateOnly` | plain date | `Date` | `Temporal.PlainDate` | `moment.Moment` | `DateTime` | `Date` | `Dayjs` | `LocalDate` |
-| `TimeOnly` | plain time | `string` | `Temporal.PlainTime` | `string` | `DateTime` | `string` | `string` | `LocalTime` |
-| `TimeSpan` | elapsed duration | `string` | `Temporal.Duration` | `moment.Duration` | `Duration` | `Duration` | `ReturnType<typeof dayjs.duration>` | `Duration` |
-| `NodaTime.Instant` | instant | `Date` | `Temporal.Instant` | `moment.Moment` | `DateTime` | `Date` | `Dayjs` | `Instant` |
-| `NodaTime.LocalDate` | plain date | `Date` | `Temporal.PlainDate` | `moment.Moment` | `DateTime` | `Date` | `Dayjs` | `LocalDate` |
-| `NodaTime.OffsetDate` | plain date | `Date` | `Temporal.PlainDate` | `moment.Moment` | `DateTime` | `Date` | `Dayjs` | `LocalDate` |
-| `NodaTime.LocalTime` | plain time | `string` | `Temporal.PlainTime` | `string` | `DateTime` | `string` | `string` | `LocalTime` |
-| `NodaTime.OffsetTime` | plain time | `string` | `Temporal.PlainTime` | `string` | `DateTime` | `string` | `string` | `LocalTime` |
-| `NodaTime.LocalDateTime` | plain date-time | `Date` | `Temporal.PlainDateTime` | `moment.Moment` | `DateTime` | `Date` | `Dayjs` | `LocalDateTime` |
-| `NodaTime.OffsetDateTime` | instant | `Date` | `Temporal.Instant` | `moment.Moment` | `DateTime` | `Date` | `Dayjs` | `Instant` |
-| `NodaTime.ZonedDateTime` | zoned date-time | `string` | `Temporal.ZonedDateTime` | `string` | `DateTime` | `string` | `string` | `ZonedDateTime` |
-| `NodaTime.Duration` | elapsed duration | `string` | `Temporal.Duration` | `moment.Duration` | `Duration` | `Duration` | `ReturnType<typeof dayjs.duration>` | `Duration` |
-| `NodaTime.Period` | calendar period | `string` | `Temporal.Duration` | `moment.Duration` | `Duration` | `Duration` | `ReturnType<typeof dayjs.duration>` | `Period` |
-| `NodaTime.YearMonth` | plain year-month | `string` | `Temporal.PlainYearMonth` | `string` | `DateTime` | `string` | `string` | `YearMonth` |
-| `NodaTime.AnnualDate` | plain month-day | `string` | `Temporal.PlainMonthDay` | `string` | `DateTime` | `string` | `string` | `MonthDay` |
+| C# type                   | Semantic kind    | Native `Date` | Temporal                  | Moment            | Luxon      | date-fns   | Day.js                              | js-joda         |
+| ------------------------- | ---------------- | ------------- | ------------------------- | ----------------- | ---------- | ---------- | ----------------------------------- | --------------- |
+| `DateTime`                | plain date-time  | `Date`        | `Temporal.PlainDateTime`  | `moment.Moment`   | `DateTime` | `Date`     | `Dayjs`                             | `LocalDateTime` |
+| `DateTimeOffset`          | instant          | `Date`        | `Temporal.Instant`        | `moment.Moment`   | `DateTime` | `Date`     | `Dayjs`                             | `Instant`       |
+| `DateOnly`                | plain date       | `Date`        | `Temporal.PlainDate`      | `moment.Moment`   | `DateTime` | `Date`     | `Dayjs`                             | `LocalDate`     |
+| `TimeOnly`                | plain time       | `string`      | `Temporal.PlainTime`      | `string`          | `DateTime` | `string`   | `string`                            | `LocalTime`     |
+| `TimeSpan`                | elapsed duration | `string`      | `Temporal.Duration`       | `moment.Duration` | `Duration` | `Duration` | `ReturnType<typeof dayjs.duration>` | `Duration`      |
+| `NodaTime.Instant`        | instant          | `Date`        | `Temporal.Instant`        | `moment.Moment`   | `DateTime` | `Date`     | `Dayjs`                             | `Instant`       |
+| `NodaTime.LocalDate`      | plain date       | `Date`        | `Temporal.PlainDate`      | `moment.Moment`   | `DateTime` | `Date`     | `Dayjs`                             | `LocalDate`     |
+| `NodaTime.OffsetDate`     | plain date       | `Date`        | `Temporal.PlainDate`      | `moment.Moment`   | `DateTime` | `Date`     | `Dayjs`                             | `LocalDate`     |
+| `NodaTime.LocalTime`      | plain time       | `string`      | `Temporal.PlainTime`      | `string`          | `DateTime` | `string`   | `string`                            | `LocalTime`     |
+| `NodaTime.OffsetTime`     | plain time       | `string`      | `Temporal.PlainTime`      | `string`          | `DateTime` | `string`   | `string`                            | `LocalTime`     |
+| `NodaTime.LocalDateTime`  | plain date-time  | `Date`        | `Temporal.PlainDateTime`  | `moment.Moment`   | `DateTime` | `Date`     | `Dayjs`                             | `LocalDateTime` |
+| `NodaTime.OffsetDateTime` | instant          | `Date`        | `Temporal.Instant`        | `moment.Moment`   | `DateTime` | `Date`     | `Dayjs`                             | `Instant`       |
+| `NodaTime.ZonedDateTime`  | zoned date-time  | `string`      | `Temporal.ZonedDateTime`  | `string`          | `DateTime` | `string`   | `string`                            | `ZonedDateTime` |
+| `NodaTime.Duration`       | elapsed duration | `string`      | `Temporal.Duration`       | `moment.Duration` | `Duration` | `Duration` | `ReturnType<typeof dayjs.duration>` | `Duration`      |
+| `NodaTime.Period`         | calendar period  | `string`      | `Temporal.Duration`       | `moment.Duration` | `Duration` | `Duration` | `ReturnType<typeof dayjs.duration>` | `Period`        |
+| `NodaTime.YearMonth`      | plain year-month | `string`      | `Temporal.PlainYearMonth` | `string`          | `DateTime` | `string`   | `string`                            | `YearMonth`     |
+| `NodaTime.AnnualDate`     | plain month-day  | `string`      | `Temporal.PlainMonthDay`  | `string`          | `DateTime` | `string`   | `string`                            | `MonthDay`      |
 
 `Duration` means elapsed time, while `Period` means calendar-relative units such as years and months. They remain separate schema kinds even when a frontend library represents both with the same runtime class. A `string` entry means that the selected library backend cannot faithfully represent that semantic kind.
 
@@ -497,14 +500,14 @@ The neutral annotation values include `Instant`, `PlainDate`, `PlainTime`, `Plai
 
 The `AdaskoTheBeAsT.Typewriter.Annotations` package also includes source-level attributes that recipes and templates recognise by simple name:
 
-| Attribute | Applies to | Purpose |
-|---|---|---|
+| Attribute                       | Applies to                     | Purpose                                                                                                                       |
+| ------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | `GenerateFrontendTypeAttribute` | Class, interface, enum, method | Marks a type or method for inclusion in frontend generation; optional `DllName` routes the type to a specific output assembly |
-| `FrontendRuntimeTypeAttribute` | Property, field, parameter | Overrides the semantic runtime type for a single member |
-| `FrontendNoTransformAttribute` | Property, field, parameter | Emits the value as a plain passthrough, skipping runtime transformation |
-| `AsStringAttribute` | Enum | Emits enum values as strings instead of numbers |
-| `LabelForEnumAttribute` | Field (enum member) | Attaches a human-readable label to an enum value |
-| `CustomNameAttribute` | Method | Overrides the generated frontend method name |
+| `FrontendRuntimeTypeAttribute`  | Property, field, parameter     | Overrides the semantic runtime type for a single member                                                                       |
+| `FrontendNoTransformAttribute`  | Property, field, parameter     | Emits the value as a plain passthrough, skipping runtime transformation                                                       |
+| `AsStringAttribute`             | Enum                           | Emits enum values as strings instead of numbers                                                                               |
+| `LabelForEnumAttribute`         | Field (enum member)            | Attaches a human-readable label to an enum value                                                                              |
+| `CustomNameAttribute`           | Method                         | Overrides the generated frontend method name                                                                                  |
 
 Typewriter matches these by simple name, so user-defined attributes with the same name in any namespace continue to work without the package.
 
@@ -541,15 +544,15 @@ If the selected date type is not global, update your template to emit the requir
 
 If your API returns ISO strings for `DateTime`, `DateTimeOffset`, `DateOnly`, or NodaTime values, pair generated models with [date-interceptors](https://github.com/adaskothebeast/date-interceptors) for runtime conversion. This is required when generated TypeScript uses `Date`, Day.js, Moment.js, Luxon, js-joda, Temporal, or another runtime date type, because JSON still arrives as strings and must be translated to the corresponding object type.
 
-| Target runtime | Date-time config | Date-only config | Time-only config | Type imports | Converter |
-| -------------- | ---------------- | ---------------- | ---------------- | ------------ | --------- |
-| Native `Date` | `dateType: "Date"`, `dateInitializer: "new Date()"` | `dateOnlyType: "Date"`, `dateOnlyInitializer: "new Date()"` | `timeOnlyType: "string"`, `timeOnlyInitializer: "\"00:00:00\""` | none | `@adaskothebeast/hierarchical-convert-to-date` |
-| date-fns | same as native `Date` | same as native `Date` | ISO `string` | none | `@adaskothebeast/hierarchical-convert-to-date-fns` |
-| Day.js | `Dayjs`, `dayjs()` | `Dayjs`, `dayjs()` | ISO `string` | `import type { Dayjs } from 'dayjs';` | `@adaskothebeast/hierarchical-convert-to-dayjs` |
-| Moment.js | `Moment`, `moment()` | `Moment`, `moment()` | ISO `string` | `import type { Moment } from 'moment';` | `@adaskothebeast/hierarchical-convert-to-moment` |
-| Luxon | `DateTime`, `DateTime.now()` | `DateTime`, `DateTime.now().startOf('day')` | ISO `string` | `import type { DateTime } from 'luxon';` | `@adaskothebeast/hierarchical-convert-to-luxon` |
-| js-joda | `ZonedDateTime`, `ZonedDateTime.now()` or `LocalDateTime`, `LocalDateTime.now()` | `LocalDate`, `LocalDate.now()` | `LocalTime`, `LocalTime.now()` | `import type { LocalDate, LocalTime, ZonedDateTime } from '@js-joda/core';` | `@adaskothebeast/hierarchical-convert-to-js-joda` |
-| Temporal | `Temporal.Instant`, `Temporal.Now.instant()` or `Temporal.PlainDateTime`, `Temporal.Now.plainDateTimeISO()` | `Temporal.PlainDate`, `Temporal.Now.plainDateISO()` | `Temporal.PlainTime`, `Temporal.Now.plainTimeISO()` | `import { Temporal } from '@js-temporal/polyfill';` | `@adaskothebeast/hierarchical-convert-to-temporal` |
+| Target runtime | Date-time config                                                                                            | Date-only config                                            | Time-only config                                                | Type imports                                                                | Converter                                          |
+| -------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------- |
+| Native `Date`  | `dateType: "Date"`, `dateInitializer: "new Date()"`                                                         | `dateOnlyType: "Date"`, `dateOnlyInitializer: "new Date()"` | `timeOnlyType: "string"`, `timeOnlyInitializer: "\"00:00:00\""` | none                                                                        | `@adaskothebeast/hierarchical-convert-to-date`     |
+| date-fns       | same as native `Date`                                                                                       | same as native `Date`                                       | ISO `string`                                                    | none                                                                        | `@adaskothebeast/hierarchical-convert-to-date-fns` |
+| Day.js         | `Dayjs`, `dayjs()`                                                                                          | `Dayjs`, `dayjs()`                                          | ISO `string`                                                    | `import type { Dayjs } from 'dayjs';`                                       | `@adaskothebeast/hierarchical-convert-to-dayjs`    |
+| Moment.js      | `Moment`, `moment()`                                                                                        | `Moment`, `moment()`                                        | ISO `string`                                                    | `import type { Moment } from 'moment';`                                     | `@adaskothebeast/hierarchical-convert-to-moment`   |
+| Luxon          | `DateTime`, `DateTime.now()`                                                                                | `DateTime`, `DateTime.now().startOf('day')`                 | ISO `string`                                                    | `import type { DateTime } from 'luxon';`                                    | `@adaskothebeast/hierarchical-convert-to-luxon`    |
+| js-joda        | `ZonedDateTime`, `ZonedDateTime.now()` or `LocalDateTime`, `LocalDateTime.now()`                            | `LocalDate`, `LocalDate.now()`                              | `LocalTime`, `LocalTime.now()`                                  | `import type { LocalDate, LocalTime, ZonedDateTime } from '@js-joda/core';` | `@adaskothebeast/hierarchical-convert-to-js-joda`  |
+| Temporal       | `Temporal.Instant`, `Temporal.Now.instant()` or `Temporal.PlainDateTime`, `Temporal.Now.plainDateTimeISO()` | `Temporal.PlainDate`, `Temporal.Now.plainDateISO()`         | `Temporal.PlainTime`, `Temporal.Now.plainTimeISO()`             | `import { Temporal } from '@js-temporal/polyfill';`                         | `@adaskothebeast/hierarchical-convert-to-temporal` |
 
 ```bash
 # Native Date
@@ -628,14 +631,14 @@ approvedAt: ZonedDateTime | null;
 
 Recommended semantic mappings:
 
-| C# or NodaTime type | Recommended TypeScript shape | Notes |
-| ------------------- | ---------------------------- | ----- |
-| `DateTime`, `DateTimeOffset`, `NodaTime.Instant`, `NodaTime.OffsetDateTime`, `NodaTime.ZonedDateTime` | `Date`, `Temporal.Instant`, Luxon `DateTime`, Day.js `Dayjs`, or js-joda `Instant`/`ZonedDateTime` | Use a real date-time object when clients compare, format, or calculate with the value. Use [date-interceptors](https://github.com/adaskothebeast/date-interceptors) to convert JSON strings at runtime. |
-| `DateOnly`, `NodaTime.LocalDate`, `NodaTime.OffsetDate` | ISO `string`, `Temporal.PlainDate`, or js-joda `LocalDate` | Avoid native `Date` for pure dates if timezone shifts matter. |
-| `TimeOnly`, `NodaTime.LocalTime`, `NodaTime.OffsetTime` | ISO `string`, `Temporal.PlainTime`, or js-joda `LocalTime` | JavaScript has no native time-only type. |
-| `NodaTime.LocalDateTime` | `Temporal.PlainDateTime`, Luxon `DateTime`, js-joda `LocalDateTime`, or ISO `string` | Use `output.dateType` for this local date-time type. |
-| `TimeSpan`, `NodaTime.Duration` | ISO duration `string`, `Temporal.Duration`, js-joda `Duration`, or a numeric convention such as milliseconds | Pick one wire format and document it. `Duration` means elapsed time. |
-| `NodaTime.Period` | ISO period `string`, `Temporal.Duration`, js-joda `Period`, or date-fns `Duration` | `Period` is calendar-based, such as 1 month and 3 days, so keep it distinct from elapsed `Duration`. |
+| C# or NodaTime type                                                                                   | Recommended TypeScript shape                                                                                 | Notes                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DateTime`, `DateTimeOffset`, `NodaTime.Instant`, `NodaTime.OffsetDateTime`, `NodaTime.ZonedDateTime` | `Date`, `Temporal.Instant`, Luxon `DateTime`, Day.js `Dayjs`, or js-joda `Instant`/`ZonedDateTime`           | Use a real date-time object when clients compare, format, or calculate with the value. Use [date-interceptors](https://github.com/adaskothebeast/date-interceptors) to convert JSON strings at runtime. |
+| `DateOnly`, `NodaTime.LocalDate`, `NodaTime.OffsetDate`                                               | ISO `string`, `Temporal.PlainDate`, or js-joda `LocalDate`                                                   | Avoid native `Date` for pure dates if timezone shifts matter.                                                                                                                                           |
+| `TimeOnly`, `NodaTime.LocalTime`, `NodaTime.OffsetTime`                                               | ISO `string`, `Temporal.PlainTime`, or js-joda `LocalTime`                                                   | JavaScript has no native time-only type.                                                                                                                                                                |
+| `NodaTime.LocalDateTime`                                                                              | `Temporal.PlainDateTime`, Luxon `DateTime`, js-joda `LocalDateTime`, or ISO `string`                         | Use `output.dateType` for this local date-time type.                                                                                                                                                    |
+| `TimeSpan`, `NodaTime.Duration`                                                                       | ISO duration `string`, `Temporal.Duration`, js-joda `Duration`, or a numeric convention such as milliseconds | Pick one wire format and document it. `Duration` means elapsed time.                                                                                                                                    |
+| `NodaTime.Period`                                                                                     | ISO period `string`, `Temporal.Duration`, js-joda `Period`, or date-fns `Duration`                           | `Period` is calendar-based, such as 1 month and 3 days, so keep it distinct from elapsed `Duration`.                                                                                                    |
 
 For date types that need an import, emit the import only when the current class actually has date fields or properties:
 
@@ -871,23 +874,23 @@ For lossless high-precision values, the API must serialize the decimal as a JSON
 
 ### 🌱 Environment variables
 
-| Variable                              | Overrides                                      |
-| ------------------------------------- | ---------------------------------------------- |
-| `TYPEWRITER_INPUT_EXTENSIONS`         | `inputExtensions` (comma/semicolon/space list) |
-| `TYPEWRITER_DEFAULT_TARGET_FRAMEWORK` | `defaultTargetFramework`                       |
-| `TYPEWRITER_OUTPUT_NEWLINE`           | `output.newline`                               |
-| `TYPEWRITER_OUTPUT_DATE_LIBRARY`      | `output.dateLibrary`                           |
-| `TYPEWRITER_OUTPUT_DATE_TYPE`         | `output.dateType`                              |
-| `TYPEWRITER_OUTPUT_DATE_INITIALIZER`  | `output.dateInitializer`                       |
-| `TYPEWRITER_OUTPUT_DATE_ONLY_TYPE`    | `output.dateOnlyType`                          |
-| `TYPEWRITER_OUTPUT_DATE_ONLY_INITIALIZER` | `output.dateOnlyInitializer`               |
-| `TYPEWRITER_OUTPUT_TIME_ONLY_TYPE`    | `output.timeOnlyType`                          |
-| `TYPEWRITER_OUTPUT_TIME_ONLY_INITIALIZER` | `output.timeOnlyInitializer`               |
-| `TYPEWRITER_OUTPUT_GUID_TYPE`         | `output.guidType`                              |
-| `TYPEWRITER_OUTPUT_GUID_INITIALIZER`  | `output.guidInitializer`                       |
-| `TYPEWRITER_OUTPUT_DECIMAL_TYPE`      | `output.decimalType`                           |
-| `TYPEWRITER_OUTPUT_DECIMAL_INITIALIZER` | `output.decimalInitializer`                   |
-| `TYPEWRITER_FAIL_ON_WARNING`          | `diagnostics.failOnWarning` (`true`/`1`/`yes`) |
+| Variable                                  | Overrides                                      |
+| ----------------------------------------- | ---------------------------------------------- |
+| `TYPEWRITER_INPUT_EXTENSIONS`             | `inputExtensions` (comma/semicolon/space list) |
+| `TYPEWRITER_DEFAULT_TARGET_FRAMEWORK`     | `defaultTargetFramework`                       |
+| `TYPEWRITER_OUTPUT_NEWLINE`               | `output.newline`                               |
+| `TYPEWRITER_OUTPUT_DATE_LIBRARY`          | `output.dateLibrary`                           |
+| `TYPEWRITER_OUTPUT_DATE_TYPE`             | `output.dateType`                              |
+| `TYPEWRITER_OUTPUT_DATE_INITIALIZER`      | `output.dateInitializer`                       |
+| `TYPEWRITER_OUTPUT_DATE_ONLY_TYPE`        | `output.dateOnlyType`                          |
+| `TYPEWRITER_OUTPUT_DATE_ONLY_INITIALIZER` | `output.dateOnlyInitializer`                   |
+| `TYPEWRITER_OUTPUT_TIME_ONLY_TYPE`        | `output.timeOnlyType`                          |
+| `TYPEWRITER_OUTPUT_TIME_ONLY_INITIALIZER` | `output.timeOnlyInitializer`                   |
+| `TYPEWRITER_OUTPUT_GUID_TYPE`             | `output.guidType`                              |
+| `TYPEWRITER_OUTPUT_GUID_INITIALIZER`      | `output.guidInitializer`                       |
+| `TYPEWRITER_OUTPUT_DECIMAL_TYPE`          | `output.decimalType`                           |
+| `TYPEWRITER_OUTPUT_DECIMAL_INITIALIZER`   | `output.decimalInitializer`                    |
+| `TYPEWRITER_FAIL_ON_WARNING`              | `diagnostics.failOnWarning` (`true`/`1`/`yes`) |
 
 ---
 
@@ -1158,33 +1161,33 @@ The built-in Web API helpers parse `Route` and `RoutePrefix` attribute values, i
 
 The `Settings` object passed to the template constructor keeps the original API so old templates compile unchanged. Current wiring status:
 
-| Setting                                                                                                     | Status | Notes                                                                                                           |
-| ----------------------------------------------------------------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------- |
-| `OutputExtension`                                                                                           |   ✅    | Default `.ts`                                                                                                   |
-| `OutputFilenameFactory`                                                                                     |   ✅    | Per-source fan-out and no-match suppression supported                                                           |
-| `OutputDirectory`                                                                                           |   ✅    | Relative paths resolve against the template location                                                            |
-| `SingleFileMode("name.ts")`                                                                                 |   ✅    | Renders the whole template into one file                                                                        |
-| `UseStringLiteralCharacter('\'')`                                                                           |   ✅    | Affects generated string literals and defaults; defaults from `output.quoteStyle` in `typewriter.json`          |
-| `UseDateLibrary(DateLibrary.Temporal)`                                                                      |   ✅    | Selects one coherent semantic type, initializer, and import profile; inspect `DateLibraryImportsGeneration` for imports |
-| `UseDateType("Date")`                                                                                       |   ✅    | Overrides date-time types such as `DateTime`, `DateTimeOffset`, and NodaTime `Instant`                          |
-| `UseDateInitializer("new Date()")`                                                                          |   ✅    | Overrides the generated TypeScript initializer for non-null date-time defaults                                   |
-| `UseDateOnlyType("Date")`                                                                                   |   ✅    | Overrides date-only types such as `DateOnly` and NodaTime `LocalDate`                                           |
-| `UseDateOnlyInitializer("new Date()")`                                                                      |   ✅    | Overrides the generated TypeScript initializer for non-null date-only defaults                                   |
-| `UseTimeOnlyType("string")`                                                                                 |   ✅    | Overrides time-only types such as `TimeOnly` and NodaTime `LocalTime`                                           |
-| `UseTimeOnlyInitializer("\"00:00:00\"")`                                                                    |   ✅    | Overrides the generated TypeScript initializer for non-null time-only defaults                                   |
-| `UseGuidType("string")`                                                                                     |   ✅    | Overrides the generated TypeScript type for C# `Guid`, for example `uuid` or `UUID`                             |
-| `UseGuidInitializer("auto")`                                                                                |   ✅    | Overrides non-null `Guid` defaults; `auto` understands string and `Uint8Array` mappings                          |
-| `UseDecimalType("number")`                                                                                  |   ✅    | Overrides the generated TypeScript type for C# `decimal`, for example `Decimal` from `decimal.js`               |
-| `UseDecimalInitializer("auto")`                                                                             |   ✅    | Overrides non-null decimal defaults; `auto` emits `0` or constructs the configured decimal type                 |
-| `TemplatePath`                                                                                              |   ✅    | Full path of the executing template                                                                             |
-| `Log` (`ILog`)                                                                                              |   ✅    | Messages surface as `TW0007` diagnostics in CLI output and editors                                              |
-| `IncludeProject(name)`                                                                                      |   ✅    | Merges the named workspace project (and its references) into the template's code model, in addition to the current project; unknown names raise `TW0009` |
-| `IncludeCurrentProject()` / `IncludeReferencedProjects()` / `IncludeAllProjects()`                          |   ♻️    | Accepted for compatibility; the current project and its references are always included, `--all-projects` controls full workspace scope |
-| `DisableStrictNullGeneration()`                                                                             |   ✅    | Defaults from `output.strictNull` in `typewriter.json`; calling this in the template overrides it               |
-| `DisableUtf8BomGeneration()` / `Utf8BomGeneration`                                                          |   ✅    | Defaults from `output.encoding` in `typewriter.json`; the template override wins per file                       |
-| `PartialRenderingMode`                                                                                      |   🚧    | Accepted but not wired yet                                                                                      |
-| `SolutionFullName`                                                                                          |   ✅    | Populated from the resolved workspace (solution or folder path)                                                 |
-| `SkipAddingGeneratedFilesToProject`                                                                         |   ➖    | Obsolete — SDK-style projects include files automatically                                                       |
+| Setting                                                                            | Status | Notes                                                                                                                                                    |
+| ---------------------------------------------------------------------------------- | :----: | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OutputExtension`                                                                  |   ✅    | Default `.ts`                                                                                                                                            |
+| `OutputFilenameFactory`                                                            |   ✅    | Per-source fan-out and no-match suppression supported                                                                                                    |
+| `OutputDirectory`                                                                  |   ✅    | Relative paths resolve against the template location                                                                                                     |
+| `SingleFileMode("name.ts")`                                                        |   ✅    | Renders the whole template into one file                                                                                                                 |
+| `UseStringLiteralCharacter('\'')`                                                  |   ✅    | Affects generated string literals and defaults; defaults from `output.quoteStyle` in `typewriter.json`                                                   |
+| `UseDateLibrary(DateLibrary.Temporal)`                                             |   ✅    | Selects one coherent semantic type, initializer, and import profile; inspect `DateLibraryImportsGeneration` for imports                                  |
+| `UseDateType("Date")`                                                              |   ✅    | Overrides date-time types such as `DateTime`, `DateTimeOffset`, and NodaTime `Instant`                                                                   |
+| `UseDateInitializer("new Date()")`                                                 |   ✅    | Overrides the generated TypeScript initializer for non-null date-time defaults                                                                           |
+| `UseDateOnlyType("Date")`                                                          |   ✅    | Overrides date-only types such as `DateOnly` and NodaTime `LocalDate`                                                                                    |
+| `UseDateOnlyInitializer("new Date()")`                                             |   ✅    | Overrides the generated TypeScript initializer for non-null date-only defaults                                                                           |
+| `UseTimeOnlyType("string")`                                                        |   ✅    | Overrides time-only types such as `TimeOnly` and NodaTime `LocalTime`                                                                                    |
+| `UseTimeOnlyInitializer("\"00:00:00\"")`                                           |   ✅    | Overrides the generated TypeScript initializer for non-null time-only defaults                                                                           |
+| `UseGuidType("string")`                                                            |   ✅    | Overrides the generated TypeScript type for C# `Guid`, for example `uuid` or `UUID`                                                                      |
+| `UseGuidInitializer("auto")`                                                       |   ✅    | Overrides non-null `Guid` defaults; `auto` understands string and `Uint8Array` mappings                                                                  |
+| `UseDecimalType("number")`                                                         |   ✅    | Overrides the generated TypeScript type for C# `decimal`, for example `Decimal` from `decimal.js`                                                        |
+| `UseDecimalInitializer("auto")`                                                    |   ✅    | Overrides non-null decimal defaults; `auto` emits `0` or constructs the configured decimal type                                                          |
+| `TemplatePath`                                                                     |   ✅    | Full path of the executing template                                                                                                                      |
+| `Log` (`ILog`)                                                                     |   ✅    | Messages surface as `TW0007` diagnostics in CLI output and editors                                                                                       |
+| `IncludeProject(name)`                                                             |   ✅    | Merges the named workspace project (and its references) into the template's code model, in addition to the current project; unknown names raise `TW0009` |
+| `IncludeCurrentProject()` / `IncludeReferencedProjects()` / `IncludeAllProjects()` |   ♻️    | Accepted for compatibility; the current project and its references are always included, `--all-projects` controls full workspace scope                   |
+| `DisableStrictNullGeneration()`                                                    |   ✅    | Defaults from `output.strictNull` in `typewriter.json`; calling this in the template overrides it                                                        |
+| `DisableUtf8BomGeneration()` / `Utf8BomGeneration`                                 |   ✅    | Defaults from `output.encoding` in `typewriter.json`; the template override wins per file                                                                |
+| `PartialRenderingMode`                                                             |   🚧    | Accepted but not wired yet                                                                                                                               |
+| `SolutionFullName`                                                                 |   ✅    | Populated from the resolved workspace (solution or folder path)                                                                                          |
+| `SkipAddingGeneratedFilesToProject`                                                |   ➖    | Obsolete — SDK-style projects include files automatically                                                                                                |
 
 Legend: ✅ working · ♻️ superseded by CLI/config · 🚧 accepted no-op (tracked) · ➖ intentionally dropped
 
@@ -1270,18 +1273,18 @@ Feature samples and issue regressions in [`samples/`](samples) ship with checked
 
 Issue regression samples:
 
-| Sample                                   | Regression covered                                                       |
-| ---------------------------------------- | ------------------------------------------------------------------------ |
-| [`issue66`](samples/issue66)             | Conflicting versions of the same referenced package                      |
-| [`issue67`](samples/issue67)             | Projects that use source generators                                      |
-| [`issue68`](samples/issue68)             | Implicit-using isolation across referenced projects                      |
-| [`issue69`](samples/issue69)             | Old-style non-SDK .NET Framework project loading                          |
-| [`issue69v2`](samples/issue69v2)         | Legacy imported project shapes and captured design-time build failures   |
-| [`issue74`](samples/issue74)             | Types from transitively referenced projects                              |
-| [`issue75`](samples/issue75)             | Localized resources and satellite assemblies                             |
-| [`issue81`](samples/issue81)             | Cyclic metadata graphs without stack overflow                            |
-| [`issue90`](samples/issue90)             | Closed generic arguments in properties and collections                   |
-| [`issue96`](samples/issue96)             | Cross-file record inheritance                                            |
+| Sample                           | Regression covered                                                     |
+| -------------------------------- | ---------------------------------------------------------------------- |
+| [`issue66`](samples/issue66)     | Conflicting versions of the same referenced package                    |
+| [`issue67`](samples/issue67)     | Projects that use source generators                                    |
+| [`issue68`](samples/issue68)     | Implicit-using isolation across referenced projects                    |
+| [`issue69`](samples/issue69)     | Old-style non-SDK .NET Framework project loading                       |
+| [`issue69v2`](samples/issue69v2) | Legacy imported project shapes and captured design-time build failures |
+| [`issue74`](samples/issue74)     | Types from transitively referenced projects                            |
+| [`issue75`](samples/issue75)     | Localized resources and satellite assemblies                           |
+| [`issue81`](samples/issue81)     | Cyclic metadata graphs without stack overflow                          |
+| [`issue90`](samples/issue90)     | Closed generic arguments in properties and collections                 |
+| [`issue96`](samples/issue96)     | Cross-file record inheritance                                          |
 
 ---
 
@@ -1394,9 +1397,9 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 | Visual Studio 2026 VSIX (AMD64 + ARM64)                              |     ✅     |
 | JetBrains Rider frontend plugin                                      |     ✅     |
 | Old-template compatibility hardening                                 | 🚧 ongoing |
-| NuGet publishing for CLI and language-server tools                    |     ✅     |
-| GitHub release assets for VS Code, Visual Studio, and Rider           |     ✅     |
-| Visual Studio / VS Code / JetBrains Marketplace publishing            | 📋 planned |
+| NuGet publishing for CLI and language-server tools                   |     ✅     |
+| GitHub release assets for VS Code, Visual Studio, and Rider          |     ✅     |
+| Visual Studio / VS Code / JetBrains Marketplace publishing           | 📋 planned |
 
 - 📗 [`implemented.md`](implemented.md) — everything that is done, in detail
 - 📙 [`to_implement.md`](to_implement.md) — roadmap and backlog
@@ -1405,6 +1408,10 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.9.0
+
+- additional release to fix publish error
 
 ### 4.8.0
 
