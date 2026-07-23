@@ -95,6 +95,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             EnumValueMetadata enumValue => CreateEnumValue(enumValue: enumValue, parent: null),
             AttributeMetadata attribute => CreateAttribute(attribute: attribute, parent: null),
             AttributeArgumentMetadata argument => CreateAttributeArgument(argument: argument),
+            TypeMappingContext typeContext => CreateType(type: typeContext.Reference, runtimeType: typeContext.RuntimeType),
             _ => null,
         };
 
@@ -512,33 +513,38 @@ internal sealed class TemplateCodeModelAdapterFactory
             Properties = new Typewriter.CodeModel.PropertyCollection(items: type.Properties.Select(selector: property => CreateProperty(property: property, parent: null))),
             StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
                 items: type.StaticReadOnlyFields.Select(selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: CreateType)),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
             DefaultValue = GetDefaultValue(type: type),
             Settings = _settings,
         };
     }
 
-    private CodeType CreateType(TypeMetadataReference type)
+    private CodeType CreateType(
+        TypeMetadataReference type,
+        FrontendRuntimeTypeKind runtimeType = FrontendRuntimeTypeKind.Auto)
     {
-        var typeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: CreateType));
+        var typeArguments = new Typewriter.CodeModel.TypeCollection(
+            items: type.TypeArguments.Select(selector: argument => CreateType(type: argument, runtimeType: runtimeType)));
+        _typesByFullName.TryGetValue(key: type.FullName, value: out var typeMetadata);
         var mappedName = _typeMapper.Map(
             type: type,
             strictNull: _settings.StrictNullGeneration,
-            dateType: _settings.DateTypeGeneration,
+            dateMapping: _settings.GetDateMapping(),
             decimalType: _settings.DecimalTypeGeneration,
             guidType: _settings.GuidTypeGeneration,
-            dateOnlyType: _settings.DateOnlyTypeGeneration,
-            timeOnlyType: _settings.TimeOnlyTypeGeneration);
-        var isStruct = _typesByFullName.TryGetValue(key: type.FullName, value: out var metadata)
-                       && metadata.Kind == TypeMetadataKind.Struct;
-        return new CodeType
+            runtimeType: runtimeType);
+        var isStruct = typeMetadata?.Kind == TypeMetadataKind.Struct;
+        return new MappedCodeType
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = GetLegacyTypeName(mappedName: mappedName),
             FullName = type.FullName,
             Namespace = type.Namespace,
-            ElementType = type.ElementType is null ? null : CreateType(type: type.ElementType),
+            Attributes = typeMetadata is null
+                ? new Typewriter.CodeModel.AttributeCollection()
+                : CreateTypeReferenceAttributes(attributes: typeMetadata.Attributes),
+            ElementType = type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType),
             IsDate = type.IsDateLike,
             IsDictionary = type.IsDictionary,
             IsDynamic = IsDynamic(type: type),
@@ -555,8 +561,10 @@ internal sealed class TemplateCodeModelAdapterFactory
             OriginalName = type.Name,
             TupleElements = new Typewriter.CodeModel.FieldCollection(items: type.TupleElements.Select(selector: field => CreateField(field: field, parent: null))),
             TypeArguments = typeArguments,
-            DefaultValue = GetDefaultValue(type: type),
+            DefaultValue = GetDefaultValue(type: type, runtimeType: runtimeType),
             Settings = _settings,
+            UseResolvedDefault = _settings.DateLibraryGeneration != Typewriter.Configuration.DateLibrary.Legacy
+                                 || runtimeType != FrontendRuntimeTypeKind.Auto,
         };
     }
 
@@ -589,7 +597,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             Parameters = includeParameters
                 ? new Typewriter.CodeModel.ParameterCollection(items: property.Parameters.Select(selector: parameter => CreateParameter(parameter: parameter, parent: null)))
                 : new Typewriter.CodeModel.ParameterCollection(),
-            Type = CreateType(type: property.Type),
+            Type = CreateType(type: property.Type, runtimeType: FrontendRuntimeTypeResolver.Resolve(attributes: property.Attributes)),
             Value = property.Value ?? string.Empty,
         };
     }
@@ -639,7 +647,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             Attributes = CreateAttributes(attributes: parameter.Attributes, parent: null),
             DefaultValue = parameter.DefaultValue ?? string.Empty,
             HasDefaultValue = parameter.HasDefaultValue,
-            Type = CreateType(type: parameter.Type),
+            Type = CreateType(type: parameter.Type, runtimeType: FrontendRuntimeTypeResolver.Resolve(attributes: parameter.Attributes)),
         };
     }
 
@@ -672,7 +680,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             Parent = parent ?? CreateParentTypeItem(fullName: field.ParentTypeFullName),
             Attributes = CreateAttributes(attributes: field.Attributes, parent: null),
             DocComment = CreateDocComment(docComment: field.DocComment, parent: null),
-            Type = CreateType(type: field.Type),
+            Type = CreateType(type: field.Type, runtimeType: FrontendRuntimeTypeResolver.Resolve(attributes: field.Attributes)),
             Value = field.Value ?? string.Empty,
         };
     }
@@ -755,6 +763,28 @@ internal sealed class TemplateCodeModelAdapterFactory
             TypeValue = argument.TypeValue is null ? null : CreateType(type: argument.TypeValue),
             Value = argument.Value ?? string.Empty,
         };
+    }
+
+    private Typewriter.CodeModel.AttributeCollection CreateTypeReferenceAttributes(
+        IEnumerable<AttributeMetadata> attributes)
+    {
+        return new Typewriter.CodeModel.AttributeCollection(
+            items: attributes.Select(
+                selector: attribute => new CodeAttribute
+                {
+                    AssemblyName = ResolveAssemblyName(assemblyName: attribute.AssemblyName),
+                    Name = attribute.Name,
+                    FullName = attribute.FullName,
+                    Arguments = new Typewriter.CodeModel.AttributeArgumentCollection(
+                        items: attribute.Arguments.Select(
+                            selector: argument => new Typewriter.CodeModel.AttributeArgument
+                            {
+                                AssemblyName = ResolveAssemblyName(assemblyName: argument.AssemblyName),
+                                Name = argument.Name ?? string.Empty,
+                                Value = argument.Value ?? string.Empty,
+                            })),
+                    Value = TemplateAttributeValueFormatter.Format(attribute: attribute),
+                }));
     }
 
     private Typewriter.CodeModel.EnumValue CreateEnumValue(
@@ -908,7 +938,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
             IsStatic = type.IsStatic,
             Type = CreateTypeShell(type: type),
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: CreateType)),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
     }
@@ -925,7 +955,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsAbstract = type.IsAbstract,
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
             Type = CreateTypeShell(type: type),
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: CreateType)),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
     }
@@ -942,7 +972,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
             IsStatic = type.IsStatic,
             Type = CreateTypeShell(type: type),
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: CreateType)),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
     }
@@ -958,7 +988,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
             Type = CreateTypeShell(type: type),
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: CreateType)),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
     }
@@ -993,7 +1023,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsStruct = type.Kind == TypeMetadataKind.Struct,
             DefaultValue = GetDefaultValue(type: type),
             Settings = _settings,
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: CreateType)),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
     }
@@ -1017,7 +1047,7 @@ internal sealed class TemplateCodeModelAdapterFactory
                     Namespace = baseType.Namespace,
                     IsGeneric = baseType.TypeArguments.Count > 0,
                     Type = CreateType(type: baseType),
-                    TypeArguments = new Typewriter.CodeModel.TypeCollection(items: baseType.TypeArguments.Select(selector: CreateType)),
+                    TypeArguments = new Typewriter.CodeModel.TypeCollection(items: baseType.TypeArguments.Select(selector: argument => CreateType(type: argument))),
                 };
     }
 
@@ -1040,7 +1070,7 @@ internal sealed class TemplateCodeModelAdapterFactory
                     Namespace = baseType.Namespace,
                     IsGeneric = baseType.TypeArguments.Count > 0,
                     Type = CreateType(type: baseType),
-                    TypeArguments = new Typewriter.CodeModel.TypeCollection(items: baseType.TypeArguments.Select(selector: CreateType)),
+                    TypeArguments = new Typewriter.CodeModel.TypeCollection(items: baseType.TypeArguments.Select(selector: argument => CreateType(type: argument))),
                 };
     }
 
@@ -1077,7 +1107,9 @@ internal sealed class TemplateCodeModelAdapterFactory
             : assemblyName;
     }
 
-    private string GetDefaultValue(TypeMetadataReference type)
+    private string GetDefaultValue(
+        TypeMetadataReference type,
+        FrontendRuntimeTypeKind runtimeType = FrontendRuntimeTypeKind.Auto)
     {
         if (type.IsNullable)
         {
@@ -1095,6 +1127,19 @@ internal sealed class TemplateCodeModelAdapterFactory
         }
 
         var stringLiteralCharacter = _settings.StringLiteralCharacter;
+        var overriddenDefault = GetRuntimeOverrideDefault(runtimeType: runtimeType, stringLiteralCharacter: stringLiteralCharacter);
+        if (overriddenDefault is not null)
+        {
+            return overriddenDefault;
+        }
+
+        if ((_settings.DateLibraryGeneration != Typewriter.Configuration.DateLibrary.Legacy
+             || runtimeType != FrontendRuntimeTypeKind.Auto)
+            && DateSemanticTypeResolver.Resolve(type: type, runtimeType: runtimeType) is { } semanticKind)
+        {
+            return _settings.GetDateInitializer(kind: semanticKind);
+        }
+
         if (TryGetSpecialDefault(type: type, stringLiteralCharacter: stringLiteralCharacter, value: out var specialDefault))
         {
             return specialDefault;
@@ -1125,6 +1170,22 @@ internal sealed class TemplateCodeModelAdapterFactory
                 : "null";
     }
 
+    private string? GetRuntimeOverrideDefault(
+        FrontendRuntimeTypeKind runtimeType,
+        char stringLiteralCharacter) =>
+        runtimeType switch
+        {
+            FrontendRuntimeTypeKind.Decimal => ScalarInitializer.ResolveDecimal(
+                decimalType: _settings.DecimalTypeGeneration,
+                decimalInitializer: _settings.DecimalInitializerGeneration),
+            FrontendRuntimeTypeKind.Uuid => ScalarInitializer.ResolveGuid(
+                guidType: _settings.GuidTypeGeneration,
+                guidInitializer: _settings.GuidInitializerGeneration,
+                stringLiteralCharacter: stringLiteralCharacter),
+            FrontendRuntimeTypeKind.String => $"{stringLiteralCharacter}{stringLiteralCharacter}",
+            _ => null,
+        };
+
     private bool TryGetSpecialDefault(
         TypeMetadataReference type,
         char stringLiteralCharacter,
@@ -1132,7 +1193,10 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         if (type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal))
         {
-            value = $"{stringLiteralCharacter}{Guid.Empty.ToString(format: "D", provider: CultureInfo.InvariantCulture)}{stringLiteralCharacter}";
+            value = ScalarInitializer.ResolveGuid(
+                guidType: _settings.GuidTypeGeneration,
+                guidInitializer: _settings.GuidInitializerGeneration,
+                stringLiteralCharacter: stringLiteralCharacter);
             return true;
         }
 
@@ -1162,10 +1226,11 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     private string? GetConfiguredNonStringDefault(TypeMetadataReference type)
     {
-        if (type.FullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal)
-            && !_settings.DecimalTypeGeneration.Equals(value: TypeScriptTypeMapper.DefaultDecimalType, comparisonType: StringComparison.Ordinal))
+        if (type.FullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal))
         {
-            return $"new {_settings.DecimalTypeGeneration}(0)";
+            return ScalarInitializer.ResolveDecimal(
+                decimalType: _settings.DecimalTypeGeneration,
+                decimalInitializer: _settings.DecimalInitializerGeneration);
         }
 
         return type.IsDateLike || TypeScriptTemporalTypes.IsDateTime(fullName: type.FullName)

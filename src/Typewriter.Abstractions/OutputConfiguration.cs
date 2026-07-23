@@ -1,3 +1,5 @@
+using Typewriter.Configuration;
+
 namespace Typewriter.Abstractions;
 
 public sealed record OutputConfiguration(
@@ -19,7 +21,9 @@ public sealed record OutputConfiguration(
     string TimeOnlyType,
     string TimeOnlyInitializer,
     string GuidType,
-    string DecimalType)
+    string GuidInitializer,
+    string DecimalType,
+    string DecimalInitializer)
 {
     public const string DefaultDateType = "Date";
     public const string DefaultDateInitializer = "new Date()";
@@ -28,7 +32,9 @@ public sealed record OutputConfiguration(
     public const string DefaultTimeOnlyType = "string";
     public const string DefaultTimeOnlyInitializer = "\"00:00:00\"";
     public const string DefaultGuidType = "string";
+    public const string DefaultGuidInitializer = "auto";
     public const string DefaultDecimalType = "number";
+    public const string DefaultDecimalInitializer = "auto";
 
 #pragma warning disable SA1313
     public OutputConfiguration(
@@ -64,10 +70,14 @@ public sealed record OutputConfiguration(
             TimeOnlyType: DefaultTimeOnlyType,
             TimeOnlyInitializer: DefaultTimeOnlyInitializer,
             GuidType: DefaultGuidType,
-            DecimalType: DecimalType)
+            GuidInitializer: DefaultGuidInitializer,
+            DecimalType: DecimalType,
+            DecimalInitializer: DefaultDecimalInitializer)
     {
     }
 #pragma warning restore SA1313
+
+    public DateLibrary DateLibrary { get; init; } = DateLibrary.Legacy;
 
     public static OutputConfiguration Default { get; } = new(
         Newline: "lf",
@@ -88,7 +98,9 @@ public sealed record OutputConfiguration(
         TimeOnlyType: DefaultTimeOnlyType,
         TimeOnlyInitializer: DefaultTimeOnlyInitializer,
         GuidType: DefaultGuidType,
-        DecimalType: DefaultDecimalType);
+        GuidInitializer: DefaultGuidInitializer,
+        DecimalType: DefaultDecimalType,
+        DecimalInitializer: DefaultDecimalInitializer);
 
     public void Deconstruct(
         out string newline,

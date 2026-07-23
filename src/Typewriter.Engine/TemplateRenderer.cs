@@ -629,6 +629,9 @@ public sealed class TemplateRenderer
             case TypeTemplateValue typeTemplateValue:
                 type = typeTemplateValue.Reference;
                 return true;
+            case TypeMappingContext typeMappingContext:
+                type = typeMappingContext.Reference;
+                return true;
             case PropertyMetadata property:
                 type = property.Type;
                 return true;
@@ -822,45 +825,110 @@ public sealed class TemplateRenderer
         RenderState? state) =>
         settings?.StrictNullGeneration ?? state?.StrictNullGeneration ?? true;
 
-    private static string ResolveDateType(
-        Typewriter.Configuration.Settings? settings,
-        RenderState? state) =>
-        settings?.DateTypeGeneration ?? state?.DateTypeGeneration ?? TypeScriptTypeMapper.DefaultDateType;
-
     private static string ResolveDateInitializer(
         Typewriter.Configuration.Settings? settings,
         RenderState? state) =>
         settings?.DateInitializerGeneration ?? state?.DateInitializerGeneration ?? TypeScriptTypeMapper.DefaultDateInitializer;
-
-    private static string ResolveDateOnlyType(
-        Typewriter.Configuration.Settings? settings,
-        RenderState? state) =>
-        settings?.DateOnlyTypeGeneration ?? state?.DateOnlyTypeGeneration ?? TypeScriptTypeMapper.DefaultDateOnlyType;
 
     private static string ResolveDateOnlyInitializer(
         Typewriter.Configuration.Settings? settings,
         RenderState? state) =>
         settings?.DateOnlyInitializerGeneration ?? state?.DateOnlyInitializerGeneration ?? TypeScriptTypeMapper.DefaultDateOnlyInitializer;
 
-    private static string ResolveTimeOnlyType(
-        Typewriter.Configuration.Settings? settings,
-        RenderState? state) =>
-        settings?.TimeOnlyTypeGeneration ?? state?.TimeOnlyTypeGeneration ?? TypeScriptTypeMapper.DefaultTimeOnlyType;
-
     private static string ResolveTimeOnlyInitializer(
         Typewriter.Configuration.Settings? settings,
         RenderState? state) =>
         settings?.TimeOnlyInitializerGeneration ?? state?.TimeOnlyInitializerGeneration ?? TypeScriptTypeMapper.DefaultTimeOnlyInitializer;
+
+    private static TypeScriptDateMapping ResolveDateMapping(
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state) =>
+        settings?.GetDateMapping()
+        ?? state?.DateMapping
+        ?? TypeScriptDateMapping.Legacy(
+            dateType: TypeScriptTypeMapper.DefaultDateType,
+            dateOnlyType: TypeScriptTypeMapper.DefaultDateOnlyType,
+            timeOnlyType: TypeScriptTypeMapper.DefaultTimeOnlyType);
+
+    private static string ResolveSemanticDateInitializer(
+        DateSemanticKind kind,
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state)
+    {
+        if (settings is not null)
+        {
+            return settings.GetDateInitializer(kind: kind);
+        }
+
+        return state?.GetDateInitializer(kind: kind)
+               ?? kind switch
+               {
+                   DateSemanticKind.PlainDate => TypeScriptTypeMapper.DefaultDateOnlyInitializer,
+                   DateSemanticKind.PlainTime => TypeScriptTypeMapper.DefaultTimeOnlyInitializer,
+                   DateSemanticKind.Duration => "\"00:00:00\"",
+                   DateSemanticKind.Period => "\"P0D\"",
+                   DateSemanticKind.PlainYearMonth or DateSemanticKind.PlainMonthDay => "\"\"",
+                   _ => TypeScriptTypeMapper.DefaultDateInitializer,
+               };
+    }
+
+    private static string? GetRuntimeOverrideDefault(
+        FrontendRuntimeTypeKind runtimeType,
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state,
+        char stringLiteralCharacter)
+    {
+        var guidType = ResolveGuidType(settings: settings, state: state);
+        var guidInitializer = ResolveGuidInitializer(settings: settings, state: state);
+        var decimalType = ResolveDecimalType(settings: settings, state: state);
+        var decimalInitializer = ResolveDecimalInitializer(settings: settings, state: state);
+        return runtimeType switch
+        {
+            FrontendRuntimeTypeKind.Decimal => ScalarInitializer.ResolveDecimal(
+                decimalType: decimalType,
+                decimalInitializer: decimalInitializer),
+            FrontendRuntimeTypeKind.Uuid => ScalarInitializer.ResolveGuid(
+                guidType: guidType,
+                guidInitializer: guidInitializer,
+                stringLiteralCharacter: stringLiteralCharacter),
+            FrontendRuntimeTypeKind.String => $"{stringLiteralCharacter}{stringLiteralCharacter}",
+            _ => null,
+        };
+    }
+
+    private static string? GetSemanticDateDefault(
+        TypeMetadataReference type,
+        FrontendRuntimeTypeKind runtimeType,
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state)
+    {
+        var dateMapping = ResolveDateMapping(settings: settings, state: state);
+        return (dateMapping.Library != Typewriter.Configuration.DateLibrary.Legacy
+                || runtimeType != FrontendRuntimeTypeKind.Auto)
+               && DateSemanticTypeResolver.Resolve(type: type, runtimeType: runtimeType) is { } semanticKind
+            ? ResolveSemanticDateInitializer(kind: semanticKind, settings: settings, state: state)
+            : null;
+    }
 
     private static string ResolveGuidType(
         Typewriter.Configuration.Settings? settings,
         RenderState? state) =>
         settings?.GuidTypeGeneration ?? state?.GuidTypeGeneration ?? TypeScriptTypeMapper.DefaultGuidType;
 
+    private static string ResolveGuidInitializer(
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state) =>
+        settings?.GuidInitializerGeneration ?? state?.GuidInitializerGeneration ?? TypeScriptTypeMapper.DefaultGuidInitializer;
+
     private static string ResolveDecimalType(
         Typewriter.Configuration.Settings? settings,
         RenderState? state) =>
         settings?.DecimalTypeGeneration ?? state?.DecimalTypeGeneration ?? TypeScriptTypeMapper.DefaultDecimalType;
+
+    private static string ResolveDecimalInitializer(
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state) =>
+        settings?.DecimalInitializerGeneration ?? state?.DecimalInitializerGeneration ?? TypeScriptTypeMapper.DefaultDecimalInitializer;
 
     private static object ResolveDocComment(
         DocCommentMetadata docComment,
@@ -2263,15 +2331,39 @@ public sealed class TemplateRenderer
 
     private string MapType(
         TypeMetadataReference type,
-        RenderState? state) =>
-        _typeMapper.Map(
+        RenderState? state,
+        FrontendRuntimeTypeKind runtimeType = FrontendRuntimeTypeKind.Auto)
+    {
+        var dateMapping = state?.DateMapping
+                          ?? TypeScriptDateMapping.Legacy(
+                              dateType: TypeScriptTypeMapper.DefaultDateType,
+                              dateOnlyType: TypeScriptTypeMapper.DefaultDateOnlyType,
+                              timeOnlyType: TypeScriptTypeMapper.DefaultTimeOnlyType);
+        return _typeMapper.Map(
             type: type,
             strictNull: state?.StrictNullGeneration ?? true,
-            dateType: state?.DateTypeGeneration,
+            dateMapping: dateMapping,
             decimalType: state?.DecimalTypeGeneration,
             guidType: state?.GuidTypeGeneration,
-            dateOnlyType: state?.DateOnlyTypeGeneration,
-            timeOnlyType: state?.TimeOnlyTypeGeneration);
+            runtimeType: runtimeType);
+    }
+
+    private string GetLegacyTypeName(
+        TypeMetadataReference type,
+        bool strictNull,
+        TypeScriptDateMapping dateMapping,
+        string? guidType,
+        string? decimalType,
+        FrontendRuntimeTypeKind runtimeType)
+    {
+        return _typeMapper.Map(
+            type: type,
+            strictNull: strictNull,
+            dateMapping: dateMapping,
+            decimalType: decimalType,
+            guidType: guidType,
+            runtimeType: runtimeType);
+    }
 
     private string GetLegacyTypeName(
         TypeMetadataReference type,
@@ -2304,6 +2396,31 @@ public sealed class TemplateRenderer
             .TrimEnd('[', ']');
     }
 
+    private string GetClassName(
+        TypeMetadataReference type,
+        bool strictNull,
+        TypeScriptDateMapping dateMapping,
+        string? guidType,
+        string? decimalType,
+        FrontendRuntimeTypeKind runtimeType)
+    {
+        var effectiveType = type.IsCollection && type.ElementType is not null
+            ? type.ElementType
+            : type;
+        var className = _typeMapper.Map(
+            type: effectiveType,
+            strictNull: strictNull,
+            dateMapping: dateMapping,
+            decimalType: decimalType,
+            guidType: guidType,
+            runtimeType: runtimeType);
+        return className
+            .Replace(oldValue: " | null", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
+            .Replace(oldValue: "(", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
+            .Replace(oldValue: ")", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
+            .TrimEnd('[', ']');
+    }
+
     private string GetDefaultValue(
         TypeMetadataReference type,
         RenderState? state = null)
@@ -2315,7 +2432,8 @@ public sealed class TemplateRenderer
     private string GetDefaultValue(
         TypeMetadataReference type,
         RenderState? state,
-        Typewriter.Configuration.Settings? settings)
+        Typewriter.Configuration.Settings? settings,
+        FrontendRuntimeTypeKind runtimeType = FrontendRuntimeTypeKind.Auto)
 #pragma warning restore CC0091,S2325
     {
         var containerDefault = GetContainerDefault(type: type);
@@ -2325,9 +2443,25 @@ public sealed class TemplateRenderer
         }
 
         var stringLiteralCharacter = settings?.StringLiteralCharacter ?? state?.StringLiteralCharacter ?? '"';
+        var overriddenDefault = GetRuntimeOverrideDefault(
+            runtimeType: runtimeType,
+            settings: settings,
+            state: state,
+            stringLiteralCharacter: stringLiteralCharacter);
+        if (overriddenDefault is not null)
+        {
+            return overriddenDefault;
+        }
+
+        var semanticDefault = GetSemanticDateDefault(type: type, runtimeType: runtimeType, settings: settings, state: state);
+        if (semanticDefault is not null)
+        {
+            return semanticDefault;
+        }
+
         if (type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal))
         {
-            return $"{stringLiteralCharacter}{Guid.Empty.ToString(format: "D", provider: CultureInfo.InvariantCulture)}{stringLiteralCharacter}";
+            return GetGuidDefault(settings: settings, state: state, stringLiteralCharacter: stringLiteralCharacter);
         }
 
         if (TryGetSpecialDefault(type: type, state: state, settings: settings, stringLiteralCharacter: stringLiteralCharacter, value: out var specialDefault))
@@ -2362,6 +2496,17 @@ public sealed class TemplateRenderer
 
         return $"new {GetClassNameForDefault(type: type)}()";
     }
+
+#pragma warning disable SA1204
+    private static string GetGuidDefault(
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state,
+        char stringLiteralCharacter) =>
+        ScalarInitializer.ResolveGuid(
+            guidType: ResolveGuidType(settings: settings, state: state),
+            guidInitializer: ResolveGuidInitializer(settings: settings, state: state),
+            stringLiteralCharacter: stringLiteralCharacter);
+#pragma warning restore SA1204
 
 #pragma warning disable CC0091,S2325
     private string? GetContainerDefault(TypeMetadataReference type)
@@ -2436,10 +2581,9 @@ public sealed class TemplateRenderer
             return null;
         }
 
-        var decimalType = settings?.DecimalTypeGeneration ?? state?.DecimalTypeGeneration ?? TypeScriptTypeMapper.DefaultDecimalType;
-        return decimalType.Equals(value: TypeScriptTypeMapper.DefaultDecimalType, comparisonType: StringComparison.Ordinal)
-            ? null
-            : $"new {decimalType}(0)";
+        return ScalarInitializer.ResolveDecimal(
+            decimalType: ResolveDecimalType(settings: settings, state: state),
+            decimalInitializer: ResolveDecimalInitializer(settings: settings, state: state));
     }
 
 #pragma warning restore CC0091,S2325
@@ -2490,8 +2634,8 @@ public sealed class TemplateRenderer
             CodeModelType codeType => ResolveCodeModelType(type: codeType, identifier: identifier),
             CodeModelAttribute codeAttribute => ResolveCodeModelAttribute(attribute: codeAttribute, identifier: identifier),
             CodeModelAttributeArgument codeArgument => ResolveCodeModelAttributeArgument(argument: codeArgument, identifier: identifier),
-            TypeTemplateValue typeValue => ResolveTypeReference(type: typeValue.Reference, identifier: identifier, settings: typeValue.Settings, state: state),
-            TypeMetadataReference typeReference => ResolveTypeReference(type: typeReference, identifier: identifier, settings: null, state: state),
+            TypeTemplateValue typeValue => ResolveTypeTemplateValue(typeValue: typeValue, identifier: identifier, state: state),
+            TypeMetadataReference typeReference => ResolveTypeMetadataReference(typeReference: typeReference, identifier: identifier, state: state),
             EnumValueMetadata enumValue => ResolveEnumValue(enumValue: enumValue, identifier: identifier, state: state),
             AttributeMetadata attribute => ResolveAttribute(attribute: attribute, identifier: identifier),
             AttributeArgumentMetadata argument => ResolveAttributeArgument(argument: argument, identifier: identifier),
@@ -2501,6 +2645,28 @@ public sealed class TemplateRenderer
 
         return value is not Unresolved;
     }
+
+    private object? ResolveTypeTemplateValue(
+        TypeTemplateValue typeValue,
+        string identifier,
+        RenderState? state) =>
+        ResolveTypeReference(
+            type: typeValue.Reference,
+            identifier: identifier,
+            settings: typeValue.Settings,
+            state: state,
+            runtimeType: typeValue.RuntimeType);
+
+    private object? ResolveTypeMetadataReference(
+        TypeMetadataReference typeReference,
+        string identifier,
+        RenderState? state) =>
+        ResolveTypeReference(
+            type: typeReference,
+            identifier: identifier,
+            settings: null,
+            state: state,
+            runtimeType: FrontendRuntimeTypeKind.Auto);
 
 #pragma warning disable CC0091,S2325
     private object ResolveProject(
@@ -2583,15 +2749,16 @@ public sealed class TemplateRenderer
         string identifier,
         RenderState? state)
     {
+        var runtimeType = FrontendRuntimeTypeResolver.Resolve(attributes: property.Attributes);
         return identifier switch
         {
             "Name" => property.Name,
             "name" => ToCamelCase(value: property.Name),
             "FullName" => property.FullName,
             "Parent" => state?.ResolveParentType(fullName: property.ParentTypeFullName) ?? Unresolved.Value,
-            "Type" => CreateTypeTemplateValue(type: property.Type, state: state),
+            "Type" => CreateTypeTemplateValue(type: property.Type, state: state, runtimeType: runtimeType),
             "CSharpType" => property.Type.Name,
-            "TypeScriptType" => MapType(type: property.Type, state: state),
+            "TypeScriptType" => MapType(type: property.Type, state: state, runtimeType: runtimeType),
             "IsNullable" => property.Type.IsNullable,
             "IsEnumerable" => property.Type.IsCollection,
             "IsPrimitive" => IsPrimitiveType(type: property.Type),
@@ -2642,6 +2809,7 @@ public sealed class TemplateRenderer
         string identifier,
         RenderState? state)
     {
+        var runtimeType = FrontendRuntimeTypeResolver.Resolve(attributes: parameter.Attributes);
         return identifier switch
         {
             "Name" => parameter.Name,
@@ -2650,9 +2818,9 @@ public sealed class TemplateRenderer
             "Parent" => !string.IsNullOrWhiteSpace(value: parameter.ParentMethodFullName)
                 ? state?.ResolveParentMethod(fullName: parameter.ParentMethodFullName) ?? Unresolved.Value
                 : state?.ResolveParentProperty(fullName: parameter.ParentPropertyFullName) ?? state?.CurrentParentContext ?? Unresolved.Value,
-            "Type" => CreateTypeTemplateValue(type: parameter.Type, state: state),
+            "Type" => CreateTypeTemplateValue(type: parameter.Type, state: state, runtimeType: runtimeType),
             "CSharpType" => parameter.Type.Name,
-            "TypeScriptType" => MapType(type: parameter.Type, state: state),
+            "TypeScriptType" => MapType(type: parameter.Type, state: state, runtimeType: runtimeType),
             "HasDefaultValue" => parameter.HasDefaultValue,
             "DefaultValue" => parameter.DefaultValue ?? string.Empty,
             "DocComment" => parameter.DocComment,
@@ -2690,6 +2858,7 @@ public sealed class TemplateRenderer
         string identifier,
         RenderState? state)
     {
+        var runtimeType = FrontendRuntimeTypeResolver.Resolve(attributes: field.Attributes);
         return identifier switch
         {
             "Name" => field.Name,
@@ -2697,9 +2866,9 @@ public sealed class TemplateRenderer
             "FullName" => field.FullName,
             "AssemblyName" => field.AssemblyName,
             "Parent" => state?.ResolveParentType(fullName: field.ParentTypeFullName) ?? Unresolved.Value,
-            "Type" => CreateTypeTemplateValue(type: field.Type, state: state),
+            "Type" => CreateTypeTemplateValue(type: field.Type, state: state, runtimeType: runtimeType),
             "CSharpType" => field.Type.Name,
-            "TypeScriptType" => MapType(type: field.Type, state: state),
+            "TypeScriptType" => MapType(type: field.Type, state: state, runtimeType: runtimeType),
             "DocComment" => field.DocComment,
             "Attributes" => field.Attributes,
             "ParentTypeFullName" => field.ParentTypeFullName,
@@ -2781,38 +2950,88 @@ public sealed class TemplateRenderer
 
     private TypeTemplateValue CreateTypeTemplateValue(
         TypeMetadataReference type,
-        RenderState? state) =>
-        new(Reference: type, Text: MapType(type: type, state: state), Settings: state?.TemplateSettings);
+        RenderState? state,
+        FrontendRuntimeTypeKind runtimeType = FrontendRuntimeTypeKind.Auto) =>
+        new(
+            Reference: type,
+            Text: MapType(type: type, state: state, runtimeType: runtimeType),
+            Settings: state?.TemplateSettings,
+            RuntimeType: runtimeType);
 
+#pragma warning disable MA0051
     private object? ResolveTypeReference(
         TypeMetadataReference type,
         string identifier,
         Typewriter.Configuration.Settings? settings,
-        RenderState? state)
+        RenderState? state,
+        FrontendRuntimeTypeKind runtimeType)
     {
         var strictNull = ResolveStrictNull(settings: settings, state: state);
-        var dateType = ResolveDateType(settings: settings, state: state);
-        var dateOnlyType = ResolveDateOnlyType(settings: settings, state: state);
-        var timeOnlyType = ResolveTimeOnlyType(settings: settings, state: state);
         var guidType = ResolveGuidType(settings: settings, state: state);
         var decimalType = ResolveDecimalType(settings: settings, state: state);
         return identifier switch
         {
-            "Name" => GetLegacyTypeName(type: type, strictNull: strictNull, dateType: dateType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType, decimalType: decimalType),
-            "name" => GetLegacyTypeName(type: type, strictNull: strictNull, dateType: dateType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType, decimalType: decimalType),
+            "Name" => GetLegacyTypeName(
+                type: type,
+                strictNull: strictNull,
+                dateMapping: ResolveDateMapping(settings: settings, state: state),
+                guidType: guidType,
+                decimalType: decimalType,
+                runtimeType: runtimeType),
+            "name" => GetLegacyTypeName(
+                type: type,
+                strictNull: strictNull,
+                dateMapping: ResolveDateMapping(settings: settings, state: state),
+                guidType: guidType,
+                decimalType: decimalType,
+                runtimeType: runtimeType),
             "FullName" => type.FullName,
             "AssemblyName" => type.AssemblyName,
             "Namespace" => type.Namespace,
             "OriginalName" => type.Name,
-            "Type" => new TypeTemplateValue(Reference: type, Text: _typeMapper.Map(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType), Settings: settings),
-            "TypeScriptType" => _typeMapper.Map(type: type, strictNull: strictNull, dateType: dateType, decimalType: decimalType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType),
-            "Class" => GetClassName(type: type, strictNull: strictNull, dateType: dateType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType, decimalType: decimalType),
-            "ClassName" => GetClassName(type: type, strictNull: strictNull, dateType: dateType, guidType: guidType, dateOnlyType: dateOnlyType, timeOnlyType: timeOnlyType, decimalType: decimalType),
-            "Default" => GetDefaultValue(type: type, state: state, settings: settings),
-            "DefaultValue" => GetDefaultValue(type: type, state: state, settings: settings),
-            "ElementType" => type.ElementType,
-            "Unwrap" => type.ElementType ?? type.TypeArguments.FirstOrDefault() ?? type,
-            "TypeArguments" => type.TypeArguments,
+            "Type" => new TypeTemplateValue(
+                Reference: type,
+                Text: _typeMapper.Map(
+                    type: type,
+                    strictNull: strictNull,
+                    dateMapping: ResolveDateMapping(settings: settings, state: state),
+                    decimalType: decimalType,
+                    guidType: guidType,
+                    runtimeType: runtimeType),
+                Settings: settings,
+                RuntimeType: runtimeType),
+            "TypeScriptType" => _typeMapper.Map(
+                type: type,
+                strictNull: strictNull,
+                dateMapping: ResolveDateMapping(settings: settings, state: state),
+                decimalType: decimalType,
+                guidType: guidType,
+                runtimeType: runtimeType),
+            "Class" => GetClassName(
+                type: type,
+                strictNull: strictNull,
+                dateMapping: ResolveDateMapping(settings: settings, state: state),
+                guidType: guidType,
+                decimalType: decimalType,
+                runtimeType: runtimeType),
+            "ClassName" => GetClassName(
+                type: type,
+                strictNull: strictNull,
+                dateMapping: ResolveDateMapping(settings: settings, state: state),
+                guidType: guidType,
+                decimalType: decimalType,
+                runtimeType: runtimeType),
+            "Default" => GetDefaultValue(type: type, state: state, settings: settings, runtimeType: runtimeType),
+            "DefaultValue" => GetDefaultValue(type: type, state: state, settings: settings, runtimeType: runtimeType),
+            "ElementType" => type.ElementType is null
+                ? null
+                : CreateTypeTemplateValue(type: type.ElementType, state: state, runtimeType: runtimeType),
+            "Unwrap" => CreateTypeTemplateValue(
+                type: type.ElementType ?? type.TypeArguments.FirstOrDefault() ?? type,
+                state: state,
+                runtimeType: runtimeType),
+            "TypeArguments" => type.TypeArguments.Select(
+                selector: argument => CreateTypeTemplateValue(type: argument, state: state, runtimeType: runtimeType)).ToArray(),
             "TupleElements" => type.TupleElements,
             "IsGeneric" => type.TypeArguments.Count > 0,
             "IsNullable" => type.IsNullable,
@@ -2832,6 +3051,7 @@ public sealed class TemplateRenderer
             _ => Unresolved.Value,
         };
     }
+#pragma warning restore MA0051
 
     private bool TryResolveNameCase(
         object context,
@@ -2938,21 +3158,27 @@ public sealed class TemplateRenderer
 
         public bool StrictNullGeneration => TemplateSettings?.StrictNullGeneration ?? _defaults.StrictNullGeneration;
 
-        public string DateTypeGeneration => TemplateSettings?.DateTypeGeneration ?? _defaults.DateTypeGeneration;
-
         public string DateInitializerGeneration => TemplateSettings?.DateInitializerGeneration ?? _defaults.DateInitializerGeneration;
-
-        public string DateOnlyTypeGeneration => TemplateSettings?.DateOnlyTypeGeneration ?? _defaults.DateOnlyTypeGeneration;
 
         public string DateOnlyInitializerGeneration => TemplateSettings?.DateOnlyInitializerGeneration ?? _defaults.DateOnlyInitializerGeneration;
 
-        public string TimeOnlyTypeGeneration => TemplateSettings?.TimeOnlyTypeGeneration ?? _defaults.TimeOnlyTypeGeneration;
-
         public string TimeOnlyInitializerGeneration => TemplateSettings?.TimeOnlyInitializerGeneration ?? _defaults.TimeOnlyInitializerGeneration;
+
+        public TypeScriptDateMapping DateMapping =>
+            TemplateSettings?.GetDateMapping()
+            ?? DateLibraryProfiles.GetMapping(
+                library: _defaults.DateLibraryGeneration,
+                dateType: _defaults.DateTypeGeneration,
+                dateOnlyType: _defaults.DateOnlyTypeGeneration,
+                timeOnlyType: _defaults.TimeOnlyTypeGeneration);
 
         public string GuidTypeGeneration => TemplateSettings?.GuidTypeGeneration ?? _defaults.GuidTypeGeneration;
 
+        public string GuidInitializerGeneration => TemplateSettings?.GuidInitializerGeneration ?? _defaults.GuidInitializerGeneration;
+
         public string DecimalTypeGeneration => TemplateSettings?.DecimalTypeGeneration ?? _defaults.DecimalTypeGeneration;
+
+        public string DecimalInitializerGeneration => TemplateSettings?.DecimalInitializerGeneration ?? _defaults.DecimalInitializerGeneration;
 
         public char StringLiteralCharacter => TemplateSettings?.StringLiteralCharacter ?? _defaults.StringLiteralCharacter;
 
@@ -2961,6 +3187,42 @@ public sealed class TemplateRenderer
         public int RootItemCount { get; private set; }
 
         public object? CurrentParentContext => _parentContexts.Count > 0 ? _parentContexts.Peek() : null;
+
+        public string GetDateInitializer(DateSemanticKind kind)
+        {
+            if (TemplateSettings is not null)
+            {
+                return TemplateSettings.GetDateInitializer(kind: kind);
+            }
+
+            if (_defaults.DateLibraryGeneration != Typewriter.Configuration.DateLibrary.Legacy)
+            {
+                var profile = DateLibraryProfiles.Get(library: _defaults.DateLibraryGeneration);
+                return kind switch
+                {
+                    DateSemanticKind.Instant => profile.InstantInitializer,
+                    DateSemanticKind.PlainDate => profile.PlainDateInitializer,
+                    DateSemanticKind.PlainTime => profile.PlainTimeInitializer,
+                    DateSemanticKind.PlainDateTime => profile.PlainDateTimeInitializer,
+                    DateSemanticKind.ZonedDateTime => profile.ZonedDateTimeInitializer,
+                    DateSemanticKind.Duration => profile.DurationInitializer,
+                    DateSemanticKind.Period => profile.PeriodInitializer,
+                    DateSemanticKind.PlainYearMonth => profile.PlainYearMonthInitializer,
+                    DateSemanticKind.PlainMonthDay => profile.PlainMonthDayInitializer,
+                    _ => throw new ArgumentOutOfRangeException(paramName: nameof(kind), actualValue: kind, message: null),
+                };
+            }
+
+            return kind switch
+            {
+                DateSemanticKind.PlainDate => _defaults.DateOnlyInitializerGeneration,
+                DateSemanticKind.PlainTime => _defaults.TimeOnlyInitializerGeneration,
+                DateSemanticKind.Duration => "\"00:00:00\"",
+                DateSemanticKind.Period => "\"P0D\"",
+                DateSemanticKind.PlainYearMonth or DateSemanticKind.PlainMonthDay => "\"\"",
+                _ => _defaults.DateInitializerGeneration,
+            };
+        }
 
         public void AddRootItemCount(int count)
         {
@@ -3188,7 +3450,9 @@ public sealed class TemplateRenderer
 
         private static object NormalizeCompiledContext(object context) =>
             context is TypeTemplateValue typeTemplateValue
-                ? typeTemplateValue.Reference
+                ? new TypeMappingContext(
+                    Reference: typeTemplateValue.Reference,
+                    RuntimeType: typeTemplateValue.RuntimeType)
                 : context;
 
         private static int? ReadTemplateLine(string message)
@@ -3261,7 +3525,8 @@ public sealed class TemplateRenderer
     private sealed record TypeTemplateValue(
         TypeMetadataReference Reference,
         string Text,
-        Typewriter.Configuration.Settings? Settings)
+        Typewriter.Configuration.Settings? Settings,
+        FrontendRuntimeTypeKind RuntimeType)
     {
         public override string ToString() => Text;
     }

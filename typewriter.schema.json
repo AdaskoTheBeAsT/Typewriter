@@ -105,6 +105,12 @@
           "description": "Default string literal character for generated defaults. settings.UseStringLiteralCharacter(...) in a template wins.",
           "default": "double"
         },
+        "dateLibrary": {
+          "type": "string",
+          "enum": ["legacy", "nativeDate", "temporal", "moment", "luxon", "dateFns", "dayJs", "jsJoda"],
+          "description": "Coherent semantic date type, initializer, and import profile. Existing date type settings remain available as low-level overrides.",
+          "default": "legacy"
+        },
         "dateType": {
           "type": "string",
           "description": "TypeScript type used for DateTime, DateTimeOffset, and date-time-like NodaTime values. settings.UseDateType(...) wins.",
@@ -140,10 +146,20 @@
           "description": "TypeScript type used for C# Guid. Set to 'uuid', 'UUID', or a branded alias with settings.UseGuidType(...) or config.",
           "default": "string"
         },
+        "guidInitializer": {
+          "type": "string",
+          "description": "TypeScript expression used for non-null Guid defaults. 'auto' emits the empty GUID string, or new Uint8Array(16) when guidType is Uint8Array. settings.UseGuidInitializer(...) wins.",
+          "default": "auto"
+        },
         "decimalType": {
           "type": "string",
           "description": "TypeScript type used for C# decimal. settings.UseDecimalType(...) in a template wins.",
           "default": "number"
+        },
+        "decimalInitializer": {
+          "type": "string",
+          "description": "TypeScript expression used for non-null decimal defaults. 'auto' emits 0 for number or new <decimalType>(0) for a custom type. settings.UseDecimalInitializer(...) wins.",
+          "default": "auto"
         }
       }
     },

@@ -1,4 +1,5 @@
 using Typewriter.Abstractions;
+using Typewriter.Configuration;
 using Typewriter.Engine;
 using Xunit;
 
@@ -74,6 +75,7 @@ public sealed class TypewriterConfigurationLoaderTests
                               "insertFinalNewline": true,
                               "trimTrailingWhitespace": true,
                               "quoteStyle": "backtick",
+                              "dateLibrary": "jsJoda",
                               "dateType": "Dayjs",
                               "dateInitializer": "dayjs()",
                               "dateOnlyType": "LocalDate",
@@ -81,7 +83,9 @@ public sealed class TypewriterConfigurationLoaderTests
                               "timeOnlyType": "LocalTime",
                               "timeOnlyInitializer": "LocalTime.now()",
                               "guidType": "uuid",
-                              "decimalType": "Decimal"
+                              "guidInitializer": "Uuid.nil()",
+                              "decimalType": "Decimal",
+                              "decimalInitializer": "Decimal.zero()"
                             }
                           }
                           """);
@@ -96,6 +100,7 @@ public sealed class TypewriterConfigurationLoaderTests
             configuration.Output.InsertFinalNewline.Should().BeTrue();
             configuration.Output.TrimTrailingWhitespace.Should().BeTrue();
             configuration.Output.QuoteStyle.Should().Be(QuoteStyle.Backtick);
+            configuration.Output.DateLibrary.Should().Be(DateLibrary.JsJoda);
             configuration.Output.DateType.Should().Be("Dayjs");
             configuration.Output.DateInitializer.Should().Be("dayjs()");
             configuration.Output.DateOnlyType.Should().Be("LocalDate");
@@ -103,7 +108,9 @@ public sealed class TypewriterConfigurationLoaderTests
             configuration.Output.TimeOnlyType.Should().Be("LocalTime");
             configuration.Output.TimeOnlyInitializer.Should().Be("LocalTime.now()");
             configuration.Output.GuidType.Should().Be("uuid");
+            configuration.Output.GuidInitializer.Should().Be("Uuid.nil()");
             configuration.Output.DecimalType.Should().Be("Decimal");
+            configuration.Output.DecimalInitializer.Should().Be("Decimal.zero()");
         }
         finally
         {

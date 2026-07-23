@@ -1,4 +1,3 @@
-using System.Globalization;
 using Typewriter.Engine;
 using Type = Typewriter.CodeModel.Type;
 
@@ -43,6 +42,11 @@ public static class TypeExtensions
             return "[]";
         }
 
+        if (type is MappedCodeType { UseResolvedDefault: true })
+        {
+            return type.DefaultValue;
+        }
+
         if (type.Name.Equals(value: "boolean", comparisonType: StringComparison.OrdinalIgnoreCase)
             || type.Name.Equals(value: "bool", comparisonType: StringComparison.OrdinalIgnoreCase)
             || type.FullName.Equals(value: "System.Boolean", comparisonType: StringComparison.OrdinalIgnoreCase))
@@ -50,17 +54,20 @@ public static class TypeExtensions
             return "false";
         }
 
-        if (type.FullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal)
-            && type.Settings?.DecimalTypeGeneration is { } decimalType
-            && !decimalType.Equals(value: TypeScriptTypeMapper.DefaultDecimalType, comparisonType: StringComparison.Ordinal))
+        if (type.FullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal))
         {
-            return $"new {decimalType}(0)";
+            return ScalarInitializer.ResolveDecimal(
+                decimalType: type.Settings?.DecimalTypeGeneration ?? TypeScriptTypeMapper.DefaultDecimalType,
+                decimalInitializer: type.Settings?.DecimalInitializerGeneration ?? TypeScriptTypeMapper.DefaultDecimalInitializer);
         }
 
         var stringLiteralCharacter = type.Settings?.StringLiteralCharacter ?? '"';
         if (type.IsGuid)
         {
-            return $"{stringLiteralCharacter}{Guid.Empty.ToString(format: "D", provider: CultureInfo.InvariantCulture)}{stringLiteralCharacter}";
+            return ScalarInitializer.ResolveGuid(
+                guidType: type.Settings?.GuidTypeGeneration ?? TypeScriptTypeMapper.DefaultGuidType,
+                guidInitializer: type.Settings?.GuidInitializerGeneration ?? TypeScriptTypeMapper.DefaultGuidInitializer,
+                stringLiteralCharacter: stringLiteralCharacter);
         }
 
         if (type.IsTimeSpan)

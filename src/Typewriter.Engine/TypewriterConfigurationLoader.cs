@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Typewriter.Abstractions;
+using Typewriter.Configuration;
 
 namespace Typewriter.Engine;
 
@@ -83,6 +84,7 @@ public static class TypewriterConfigurationLoader
         options.Converters.Add(item: new JsonStringEnumConverter<FileNameConvention>(namingPolicy: JsonNamingPolicy.CamelCase));
         options.Converters.Add(item: new JsonStringEnumConverter<IndentStyle>(namingPolicy: JsonNamingPolicy.CamelCase));
         options.Converters.Add(item: new JsonStringEnumConverter<QuoteStyle>(namingPolicy: JsonNamingPolicy.CamelCase));
+        options.Converters.Add(item: new JsonStringEnumConverter<DateLibrary>(namingPolicy: JsonNamingPolicy.CamelCase));
 
         return await JsonSerializer.DeserializeAsync<ConfigurationFile>(
                 utf8Json: stream,
@@ -114,6 +116,7 @@ public static class TypewriterConfigurationLoader
                 InsertFinalNewline = loaded.Output?.InsertFinalNewline ?? current.Output.InsertFinalNewline,
                 TrimTrailingWhitespace = loaded.Output?.TrimTrailingWhitespace ?? current.Output.TrimTrailingWhitespace,
                 QuoteStyle = loaded.Output?.QuoteStyle ?? current.Output.QuoteStyle,
+                DateLibrary = loaded.Output?.DateLibrary ?? current.Output.DateLibrary,
                 DateType = loaded.Output?.DateType ?? current.Output.DateType,
                 DateInitializer = loaded.Output?.DateInitializer ?? current.Output.DateInitializer,
                 DateOnlyType = loaded.Output?.DateOnlyType ?? current.Output.DateOnlyType,
@@ -121,7 +124,9 @@ public static class TypewriterConfigurationLoader
                 TimeOnlyType = loaded.Output?.TimeOnlyType ?? current.Output.TimeOnlyType,
                 TimeOnlyInitializer = loaded.Output?.TimeOnlyInitializer ?? current.Output.TimeOnlyInitializer,
                 GuidType = loaded.Output?.GuidType ?? current.Output.GuidType,
+                GuidInitializer = loaded.Output?.GuidInitializer ?? current.Output.GuidInitializer,
                 DecimalType = loaded.Output?.DecimalType ?? current.Output.DecimalType,
+                DecimalInitializer = loaded.Output?.DecimalInitializer ?? current.Output.DecimalInitializer,
             },
             Diagnostics = current.Diagnostics with
             {
@@ -163,6 +168,8 @@ public static class TypewriterConfigurationLoader
             {
                 Newline = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_NEWLINE")
                     ?? configuration.Output.Newline,
+                DateLibrary = ReadEnumEnvironment<DateLibrary>(name: "TYPEWRITER_OUTPUT_DATE_LIBRARY")
+                    ?? configuration.Output.DateLibrary,
                 DateType = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DATE_TYPE")
                     ?? configuration.Output.DateType,
                 DateInitializer = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DATE_INITIALIZER")
@@ -177,8 +184,12 @@ public static class TypewriterConfigurationLoader
                     ?? configuration.Output.TimeOnlyInitializer,
                 GuidType = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_GUID_TYPE")
                     ?? configuration.Output.GuidType,
+                GuidInitializer = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_GUID_INITIALIZER")
+                    ?? configuration.Output.GuidInitializer,
                 DecimalType = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DECIMAL_TYPE")
                     ?? configuration.Output.DecimalType,
+                DecimalInitializer = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DECIMAL_INITIALIZER")
+                    ?? configuration.Output.DecimalInitializer,
             },
             Diagnostics = configuration.Diagnostics with
             {
@@ -199,6 +210,15 @@ public static class TypewriterConfigurationLoader
         return value.Equals(value: "true", comparisonType: StringComparison.OrdinalIgnoreCase)
             || value.Equals(value: "1", comparisonType: StringComparison.OrdinalIgnoreCase)
             || value.Equals(value: "yes", comparisonType: StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static TEnum? ReadEnumEnvironment<TEnum>(string name)
+        where TEnum : struct, Enum
+    {
+        var value = Environment.GetEnvironmentVariable(variable: name);
+        return Enum.TryParse<TEnum>(value: value, ignoreCase: true, result: out var parsed)
+            ? parsed
+            : null;
     }
 
     private static IReadOnlyList<string>? ReadStringListEnvironment(string name)
@@ -272,6 +292,8 @@ public static class TypewriterConfigurationLoader
 
         public QuoteStyle? QuoteStyle { get; init; }
 
+        public DateLibrary? DateLibrary { get; init; }
+
         public string? DateType { get; init; }
 
         public string? DateInitializer { get; init; }
@@ -286,7 +308,11 @@ public static class TypewriterConfigurationLoader
 
         public string? GuidType { get; init; }
 
+        public string? GuidInitializer { get; init; }
+
         public string? DecimalType { get; init; }
+
+        public string? DecimalInitializer { get; init; }
     }
 
     internal sealed record DiagnosticsConfigurationFile
