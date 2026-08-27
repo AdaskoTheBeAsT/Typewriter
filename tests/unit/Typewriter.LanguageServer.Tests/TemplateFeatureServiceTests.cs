@@ -188,7 +188,7 @@ public sealed class TemplateFeatureServiceTests
                 cancellationToken: CancellationToken.None);
 
             hover.Should().NotBeNull();
-            hover!.Contents.Value.Should().Contain("Sample.Customer");
+            hover.Contents.Value.Should().Contain("Sample.Customer");
             hover.Contents.Value.Should().Contain("Customer docs.");
         }
         finally
@@ -225,7 +225,7 @@ public sealed class TemplateFeatureServiceTests
                 cancellationToken: CancellationToken.None);
 
             hover.Should().NotBeNull();
-            hover!.Contents.Value.Should().NotContain("Record=Record");
+            hover.Contents.Value.Should().NotContain("Record=Record");
             hover.Contents.Value.Should().Contain("A C# record made available to templates");
             hover.Contents.Value.Should().Contain("$Records[...]");
         }
@@ -309,7 +309,7 @@ public sealed class TemplateFeatureServiceTests
 
         // The "string" keyword in the helper block should be mappable
         var stringIndex = Template.IndexOf(value: "string", comparisonType: StringComparison.Ordinal);
-        virtualDoc!.TryMapToVirtual(templateOffset: stringIndex, virtualOffset: out var virtualOffset).Should().BeTrue();
+        virtualDoc.TryMapToVirtual(templateOffset: stringIndex, virtualOffset: out var virtualOffset).Should().BeTrue();
         virtualOffset.Should().BeGreaterThanOrEqualTo(0);
         virtualDoc.TryMapToTemplate(virtualOffset: virtualOffset, templateOffset: out var roundTripped).Should().BeTrue();
         roundTripped.Should().Be(stringIndex);
@@ -334,7 +334,7 @@ public sealed class TemplateFeatureServiceTests
             """;
         var virtualDoc = EmbeddedCSharpDocument.Create(templateText: Template);
         virtualDoc.Should().NotBeNull();
-        virtualDoc!.Source.Should().Contain("string s");
+        virtualDoc.Source.Should().Contain("string s");
     }
 
     [Fact]
@@ -359,7 +359,7 @@ public sealed class TemplateFeatureServiceTests
                 cancellationToken: CancellationToken.None);
 
             hover.Should().NotBeNull();
-            hover!.Contents.Value.Should().Contain("FormatName");
+            hover.Contents.Value.Should().Contain("FormatName");
         }
         finally
         {
@@ -389,7 +389,7 @@ public sealed class TemplateFeatureServiceTests
                 cancellationToken: CancellationToken.None);
 
             hover.Should().NotBeNull();
-            hover!.Contents.Value.Should().Contain("BaseClass");
+            hover.Contents.Value.Should().Contain("BaseClass");
             hover.Contents.Value.Should().Contain("direct base class");
         }
         finally
@@ -420,7 +420,7 @@ public sealed class TemplateFeatureServiceTests
                 cancellationToken: CancellationToken.None);
 
             hover.Should().NotBeNull();
-            hover!.Contents.Value.Should().NotContain("Record=Record");
+            hover.Contents.Value.Should().NotContain("Record=Record");
             hover.Contents.Value.Should().Contain("$Records[...]");
         }
         finally

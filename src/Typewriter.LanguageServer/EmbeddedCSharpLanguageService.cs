@@ -23,11 +23,13 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
     private DocumentCacheEntry? _cache;
     private bool _isDisposed;
 
+#pragma warning disable S3776
     public async Task<EmbeddedCSharpCompletions?> GetCompletionsAsync(
         TextDocumentState document,
         int templateOffset,
         IReadOnlyList<Compilation>? projectCompilations = null,
         CancellationToken cancellationToken = default)
+#pragma warning restore S3776
     {
         try
         {
@@ -553,7 +555,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
                 return fallback;
             }
 
-            return await action!(arg1: entry, arg2: virtualOffset, arg3: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            return await action(arg1: entry, arg2: virtualOffset, arg3: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         }
         finally
         {

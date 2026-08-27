@@ -2669,6 +2669,7 @@ public sealed class TemplateRendererTests
         nullableListResult.Should().Be("(string | null)[] | null");
     }
 
+#pragma warning disable S107
     private static TypeMetadataReference TypeReference(
         string name,
         string fullName,
@@ -2681,6 +2682,7 @@ public sealed class TemplateRendererTests
         TypeMetadataReference? elementType = null,
         IReadOnlyList<TypeMetadataReference>? typeArguments = null,
         IReadOnlyList<EnumValueMetadata>? enumValues = null)
+#pragma warning restore S107
     {
         return new TypeMetadataReference(
             Name: name,
@@ -2768,7 +2770,7 @@ public sealed class TemplateRendererTests
         diagnostics.Should().BeEmpty();
         helper.Should().NotBeNull();
 
-        return helper!.AssemblyLoadContextReference;
+        return helper.AssemblyLoadContextReference;
     }
 
     private static void ForceCollectibleContextCollection(WeakReference contextReference)
@@ -3086,7 +3088,7 @@ public sealed class TemplateRendererTests
             _listener.Start();
             var endPoint = (System.Net.IPEndPoint)_listener.LocalEndpoint;
             BaseUrl = $"http://127.0.0.1:{endPoint.Port.ToString(provider: System.Globalization.CultureInfo.InvariantCulture)}/";
-            _listenTask = Task.Run(function: ListenAsync);
+            _listenTask = Task.Run(function: ListenAsync, _cancellation.Token);
         }
 
         private string BaseUrl { get; }

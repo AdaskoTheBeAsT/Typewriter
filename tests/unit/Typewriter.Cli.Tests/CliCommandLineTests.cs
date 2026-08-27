@@ -34,7 +34,7 @@ public sealed class CliCommandLineTests
 
         exitCode.Should().Be(42);
         capturedOptions.Should().NotBeNull();
-        capturedOptions!.Command.Should().Be(CliCommand.Generate);
+        capturedOptions.Command.Should().Be(CliCommand.Generate);
         capturedOptions.ProjectPath.Should().Be("sample.csproj");
         capturedOptions.TemplatePath.Should().Be("models.tst");
         capturedOptions.Framework.Should().Be("net10.0");
@@ -68,7 +68,7 @@ public sealed class CliCommandLineTests
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
         capturedOptions.Should().NotBeNull();
-        capturedOptions!.ChangedPaths.Should().Equal("Models/UserDto.cs", "Models/OrderDto.cs");
+        capturedOptions.ChangedPaths.Should().Equal("Models/UserDto.cs", "Models/OrderDto.cs");
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class CliCommandLineTests
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
         capturedOptions.Should().NotBeNull();
-        capturedOptions!.ChangedPaths.Should().BeEmpty();
+        capturedOptions.ChangedPaths.Should().BeEmpty();
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public sealed class CliCommandLineTests
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
         capturedOptions.Should().NotBeNull();
-        capturedOptions!.Command.Should().Be(CliCommand.Generate);
+        capturedOptions.Command.Should().Be(CliCommand.Generate);
         capturedOptions.ProjectPath.Should().Be("sample.csproj");
         capturedOptions.TemplatePath.Should().Be("models.tst");
     }
@@ -141,7 +141,7 @@ public sealed class CliCommandLineTests
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
         capturedOptions.Should().NotBeNull();
-        capturedOptions!.Command.Should().Be(CliCommand.Init);
+        capturedOptions.Command.Should().Be(CliCommand.Init);
         capturedOptions.WorkspacePath.Should().Be("src");
         capturedOptions.Force.Should().BeTrue();
     }
@@ -168,7 +168,7 @@ public sealed class CliCommandLineTests
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
         capturedOptions.Should().NotBeNull();
-        capturedOptions!.Command.Should().Be(CliCommand.ListTemplates);
+        capturedOptions.Command.Should().Be(CliCommand.ListTemplates);
         capturedOptions.WorkspacePath.Should().Be("src");
         capturedOptions.Output.Should().Be("text");
     }
@@ -194,7 +194,7 @@ public sealed class CliCommandLineTests
             ]).InvokeAsync(configuration: null, cancellationToken: CancellationToken.None);
 
         capturedOptions.Should().NotBeNull();
-        capturedOptions!.Command.Should().Be(CliCommand.Watch);
+        capturedOptions.Command.Should().Be(CliCommand.Watch);
         capturedOptions.WorkspacePath.Should().Be("src");
         capturedOptions.AllProjects.Should().BeTrue();
     }

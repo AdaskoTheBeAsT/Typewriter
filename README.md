@@ -70,6 +70,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.10.0](#4100)
     - [4.9.0](#490)
     - [4.8.0](#480)
     - [4.7.0](#470)
@@ -1337,7 +1338,7 @@ tests/                          # ✅ Unit, CLI integration, and snapshot tests
 
 **Prerequisites:**
 
-- 🟪 .NET SDK **10.0.301** or a compatible latest .NET 10 SDK (pinned in [`global.json`](global.json))
+- 🟪 .NET SDK **10.0.400** or a compatible latest .NET 10 SDK (pinned in [`global.json`](global.json))
 - 🟩 Latest stable Node.js managed with Volta (VS Code extension)
 - 🟦 Visual Studio 2026 (only for working on the VSIX)
 - ☕ Eclipse Temurin JDK **21** (`EclipseAdoptium.Temurin.21.JDK`; the Rider plugin uses the checked-in Gradle wrapper)
@@ -1408,6 +1409,13 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.10.0
+
+- Updated the build and compiler toolchain to .NET SDK 10.0.400 and Roslyn 5.9.0 across the engine, CLI, language server, and tests.
+- Updated the bundled Buildalyzer fork to ignore MSBuild restore-pass evaluations, preventing spurious successful project results with an empty target framework.
+- Refreshed runtime, command-line, analyzer, and test dependencies, including System.CommandLine 2.0.11, System.Text.Json 10.0.11, Roslynator 5.0.0, xUnit.net 4.0.0, and Microsoft.NET.Test.Sdk 18.9.0.
+- Updated version metadata and release artifact names for the CLI, language server, Visual Studio extension, VS Code extension, and Rider plugin.
 
 ### 4.9.0
 

@@ -51,7 +51,7 @@ public sealed class TypewriterGeneratorWorkspaceTests
 
             result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
             metadataProvider.Project.Should().NotBeNull();
-            metadataProvider.Project!.ProjectPath.Should().Be(projectPath);
+            metadataProvider.Project.ProjectPath.Should().Be(projectPath);
             metadataProvider.Project.WorkspacePath.Should().Be(solutionPath);
             result.GeneratedFiles.Should().ContainSingle();
         }
@@ -148,7 +148,7 @@ public sealed class TypewriterGeneratorWorkspaceTests
 
             result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
             metadataProvider.Project.Should().NotBeNull();
-            metadataProvider.Project!.ProjectPath.Should().Be(secondProjectPath);
+            metadataProvider.Project.ProjectPath.Should().Be(secondProjectPath);
             result.GeneratedFiles.Should().ContainSingle();
         }
         finally
@@ -250,7 +250,7 @@ public sealed class TypewriterGeneratorWorkspaceTests
             result.GeneratedFiles.Should().ContainSingle()
                 .Which.Path.Should().Be(Path.Combine(path1: projectDirectory, path2: "app.ts"));
             metadataProvider.Project.Should().NotBeNull();
-            metadataProvider.Project!.ProjectPath.Should().Be(projectPath);
+            metadataProvider.Project.ProjectPath.Should().Be(projectPath);
             metadataProvider.Project.WorkspacePath.Should().Be(directory);
         }
         finally

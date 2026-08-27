@@ -1097,7 +1097,7 @@ public sealed class CliIntegrationTests
         string[] args,
         CancellationToken cancellationToken)
     {
-        await ConsoleLock.WaitAsync().ConfigureAwait(continueOnCapturedContext: false);
+        await ConsoleLock.WaitAsync(cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         try
         {
             var originalOut = Console.Out;
