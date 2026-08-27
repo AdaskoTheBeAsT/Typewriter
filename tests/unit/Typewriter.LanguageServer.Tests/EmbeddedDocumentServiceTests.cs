@@ -20,7 +20,7 @@ public sealed class EmbeddedDocumentServiceTests
         var snapshot = EmbeddedDocumentService.GetSnapshot(document: document, kind: "typescript");
 
         snapshot.Should().NotBeNull();
-        snapshot!.LanguageId.Should().Be("typescript");
+        snapshot.LanguageId.Should().Be("typescript");
         snapshot.Content.Should().HaveLength(Template.Length);
         snapshot.Content.Should().NotContain("Suffix");
         snapshot.Content.Should().Contain("`${environment.apiBaseUrl}/api`");
@@ -36,7 +36,7 @@ public sealed class EmbeddedDocumentServiceTests
         var snapshot = EmbeddedDocumentService.GetSnapshot(document: document, kind: "csharp");
 
         snapshot.Should().NotBeNull();
-        snapshot!.LanguageId.Should().Be("csharp");
+        snapshot.LanguageId.Should().Be("csharp");
         snapshot.Content.Should().Contain("string Suffix(Typewriter.CodeModel.Class c) => c.Name;");
         snapshot.Content.Should().Contain("class TypewriterTemplateHost");
         snapshot.Content.Should().NotContain("export const url");
@@ -73,7 +73,7 @@ public sealed class EmbeddedDocumentServiceTests
         info.Kind.Should().Be("csharp");
         info.VirtualPosition.Should().NotBeNull();
         var virtualSource = EmbeddedDocumentService.GetSnapshot(document: document, kind: "csharp")!.Content;
-        var virtualOffset = TextPositions.GetOffset(text: virtualSource, position: info.VirtualPosition!);
+        var virtualOffset = TextPositions.GetOffset(text: virtualSource, position: info.VirtualPosition);
         virtualSource.Substring(startIndex: virtualOffset, length: 6).Should().Be("Suffix");
     }
 
@@ -117,7 +117,7 @@ public sealed class EmbeddedDocumentServiceTests
             range: new LspRange(Start: virtualStart, End: virtualEnd));
 
         mapped.Should().NotBeNull();
-        mapped!.Start.Should().Be(templateStart);
+        mapped.Start.Should().Be(templateStart);
         mapped.End.Should().Be(templateEnd);
     }
 

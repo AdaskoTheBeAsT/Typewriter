@@ -155,11 +155,11 @@ public sealed class CSharpProjectMetadataProviderTests
             var orders = user.Properties.Should().ContainSingle(property => property.Name == "Orders").Which;
             orders.Type.IsCollection.Should().BeTrue();
             orders.Type.ElementType.Should().NotBeNull();
-            orders.Type.ElementType!.Name.Should().Be("Order");
+            orders.Type.ElementType.Name.Should().Be("Order");
             var aliases = user.Properties.Should().ContainSingle(property => property.Name == "Aliases").Which;
             aliases.Type.IsCollection.Should().BeTrue();
             aliases.Type.ElementType.Should().NotBeNull();
-            aliases.Type.ElementType!.IsNullable.Should().BeTrue();
+            aliases.Type.ElementType.IsNullable.Should().BeTrue();
             var relatedUsers = user.Properties.Should().ContainSingle(property => property.Name == "RelatedUsers").Which;
             relatedUsers.Type.IsDictionary.Should().BeTrue();
             relatedUsers.Type.TypeArguments[index: 0].Name.Should().Be("String");
@@ -329,7 +329,7 @@ public sealed class CSharpProjectMetadataProviderTests
             enabled.Properties.Should().ContainSingle(property => property.Name == "OptionalName").Which.Type.IsNullable.Should().BeTrue();
             var optionalAliases = enabled.Properties.Should().ContainSingle(property => property.Name == "OptionalAliases").Which;
             optionalAliases.Type.ElementType.Should().NotBeNull();
-            optionalAliases.Type.ElementType!.IsNullable.Should().BeTrue();
+            optionalAliases.Type.ElementType.IsNullable.Should().BeTrue();
             var relatedItems = enabled.Properties.Should().ContainSingle(property => property.Name == "RelatedItems").Which;
             relatedItems.Type.IsDictionary.Should().BeTrue();
             relatedItems.Type.TypeArguments[index: 1].IsNullable.Should().BeTrue();
@@ -544,7 +544,7 @@ public sealed class CSharpProjectMetadataProviderTests
 
             var outer = metadata.Types.Should().ContainSingle(type => type.FullName == "Sample.Outer").Which;
             outer.DocComment.Should().NotBeNull();
-            outer.DocComment!.Summary.Should().Be("Outer model summary.");
+            outer.DocComment.Summary.Should().Be("Outer model summary.");
             outer.FileLocations.Should().ContainSingle().Which.Should().Be(Path.GetFullPath(path: sourcePath));
             outer.TypeParameters.Should().ContainSingle().Which.Name.Should().Be("T");
             outer.BaseTypes.Should().Contain(type => type.Name == "BaseModel");
@@ -552,14 +552,14 @@ public sealed class CSharpProjectMetadataProviderTests
 
             var field = outer.Fields.Should().ContainSingle(item => item.Name == "InstanceField").Which;
             field.DocComment.Should().NotBeNull();
-            field.DocComment!.Summary.Should().Be("Instance field summary.");
+            field.DocComment.Summary.Should().Be("Instance field summary.");
             var staticField = outer.StaticReadOnlyFields.Should().ContainSingle(item => item.Name == "StaticLabel").Which;
             staticField.Value.Should().Be("ready");
             staticField.DocComment.Should().NotBeNull();
-            staticField.DocComment!.Summary.Should().Be("Static label summary.");
+            staticField.DocComment.Summary.Should().Be("Static label summary.");
             var changed = outer.Events.Should().ContainSingle(item => item.Name == "Changed").Which;
             changed.DocComment.Should().NotBeNull();
-            changed.DocComment!.Summary.Should().Be("Changed event summary.");
+            changed.DocComment.Summary.Should().Be("Changed event summary.");
 
             var mapper = outer.Delegates.Should().ContainSingle(item => item.Name == "Mapper").Which;
             mapper.IsGeneric.Should().BeTrue();
@@ -580,7 +580,7 @@ public sealed class CSharpProjectMetadataProviderTests
             echo.IsGeneric.Should().BeTrue();
             echo.TypeParameters.Should().ContainSingle().Which.Name.Should().Be("TMethod");
             echo.DocComment.Should().NotBeNull();
-            echo.DocComment!.Summary.Should().Be("Echoes a value.");
+            echo.DocComment.Summary.Should().Be("Echoes a value.");
             echo.DocComment.Returns.Should().Be("Return description.");
             var valueComment = echo.DocComment.Parameters.Should().ContainSingle().Which;
             valueComment.Name.Should().Be("value");
@@ -643,13 +643,13 @@ public sealed class CSharpProjectMetadataProviderTests
             metadata.Diagnostics.Should().BeEmpty();
             var holder = metadata.Types.Should().ContainSingle(type => type.Name == "GeometryHolder").Which;
             holder.DocComment.Should().NotBeNull();
-            holder.DocComment!.Summary.Should().Contain("Defines the types of a");
+            holder.DocComment.Summary.Should().Contain("Defines the types of a");
             holder.DocComment.Summary.Should().Contain("<see cref=\"T:");
             holder.DocComment.Summary.Should().Contain("GeometryFieldType");
 
             var get = holder.Methods.Should().ContainSingle(method => method.Name == "Get").Which;
             get.DocComment.Should().NotBeNull();
-            get.DocComment!.Returns.Should().Contain("<see cref=\"T:");
+            get.DocComment.Returns.Should().Contain("<see cref=\"T:");
             get.DocComment.Returns.Should().Contain("GeometryFieldType");
 
             var indexParam = get.DocComment.Parameters.Should().ContainSingle().Which;
@@ -1101,7 +1101,7 @@ public sealed class CSharpProjectMetadataProviderTests
             type.Name.Should().Be("SelfEnumerable");
             type.IsCollection.Should().BeTrue();
             type.ElementType.Should().NotBeNull();
-            type.ElementType!.Name.Should().Be("SelfEnumerable");
+            type.ElementType.Name.Should().Be("SelfEnumerable");
             type.ElementType.IsCollection.Should().BeFalse();
             type.ElementType.ElementType.Should().BeNull();
         }
@@ -1350,7 +1350,7 @@ public sealed class CSharpProjectMetadataProviderTests
     {
         var trustedAssemblies = (string?)AppContext.GetData(name: "TRUSTED_PLATFORM_ASSEMBLIES");
         trustedAssemblies.Should().NotBeNullOrWhiteSpace();
-        return trustedAssemblies!
+        return trustedAssemblies
             .Split(separator: Path.PathSeparator, options: StringSplitOptions.RemoveEmptyEntries)
             .Append(element: typeof(ISourceGenerator).Assembly.Location)
             .Distinct(comparer: StringComparer.OrdinalIgnoreCase)

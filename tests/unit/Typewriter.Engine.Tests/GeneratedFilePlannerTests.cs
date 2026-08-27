@@ -73,7 +73,7 @@ public sealed class GeneratedFilePlannerTests
             planned.Should().BeTrue(because: diagnostic?.Message);
             diagnostic.Should().BeNull();
             generatedFile.Should().NotBeNull();
-            generatedFile!.Path.Should().Be(expectedOutputPath);
+            generatedFile.Path.Should().Be(expectedOutputPath);
         }
         finally
         {

@@ -120,7 +120,7 @@ public sealed class WorkspaceGenerationServiceTests
             second.GeneratedFiles.Should().ContainSingle().Which.Changed.Should().BeTrue();
             var dirtyPaths = MetadataCacheInvalidation.GetDirtySince(sinceVersion: versionBeforeSecondGeneration);
             dirtyPaths.Should().NotBeNull();
-            dirtyPaths!.Should().Contain(Path.GetFullPath(path: sourcePath));
+            dirtyPaths.Should().Contain(Path.GetFullPath(path: sourcePath));
             var output = await File.ReadAllTextAsync(path: outputPath);
             output.Should().Contain("  name: string;");
             output.Should().Contain("  age: number;");

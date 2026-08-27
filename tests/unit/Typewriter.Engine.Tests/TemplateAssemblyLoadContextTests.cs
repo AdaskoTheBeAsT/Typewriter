@@ -66,7 +66,7 @@ public sealed class TemplateAssemblyLoadContextTests
     {
         var trustedAssemblies = (string?)AppContext.GetData(name: "TRUSTED_PLATFORM_ASSEMBLIES");
         trustedAssemblies.Should().NotBeNullOrWhiteSpace();
-        return trustedAssemblies!
+        return trustedAssemblies
             .Split(separator: Path.PathSeparator, options: StringSplitOptions.RemoveEmptyEntries)
             .Select(selector: path => MetadataReference.CreateFromFile(path: path))
             .ToArray();
