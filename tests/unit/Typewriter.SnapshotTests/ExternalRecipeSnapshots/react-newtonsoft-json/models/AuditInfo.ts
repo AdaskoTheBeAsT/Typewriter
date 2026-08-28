@@ -7,28 +7,28 @@
 
 
 
-
+import { Temporal } from '@js-temporal/polyfill';
 
 export interface IAuditInfo {
   $type?: string;
   createdBy?: string;
-  createdAt?: Date;
+  createdAt?: Temporal.PlainDateTime;
 }
 
 export class AuditInfo implements IAuditInfo {
   public $type: string;
   public createdBy: string;
-  public createdAt: Date;
+  public createdAt: Temporal.PlainDateTime;
 
   constructor(initObj?: IAuditInfo) {
     this.$type = 'ReactWebApiSample.Models.AuditInfo,'
             + 'ReactWebApiSample.Models';
     if (initObj) {
       this.createdBy = initObj.createdBy ?? '';
-      this.createdAt = initObj.createdAt ?? new Date();
+      this.createdAt = initObj.createdAt ?? Temporal.Now.plainDateTimeISO();
     } else {
       this.createdBy = '';
-      this.createdAt = new Date();
+      this.createdAt = Temporal.Now.plainDateTimeISO();
     }
   }
 }

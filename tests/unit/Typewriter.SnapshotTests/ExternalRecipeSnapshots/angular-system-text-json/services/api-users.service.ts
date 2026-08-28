@@ -6,16 +6,24 @@
 // Do not modify it.
 import { Inject, Injectable, Optional } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import {
+  withTypewriterRequestSchema,
+  withTypewriterResponseSchema
+} from '@adaskothebeast/typewriter-http-angular';
+
 
 import { Observable } from 'rxjs';
 
 import { API_BASE_URL } from '../../app/app-config.module';
+import { apiTypeRegistry } from '../models/typewriter-registry';
 
 
 import { HttpParamsProcessorService } from '@adaskothebeast/http-params-processor';
 import { UserDto } from '../models/UserDto';
 import { CreateUserRequest } from '../models/CreateUserRequest';
 
+import { CreateUserRequestSchema } from '../models/CreateUserRequest.schema';
+import { UserDtoSchema } from '../models/UserDto.schema';
 
 
 interface Object {
@@ -62,6 +70,7 @@ export class ApiUsersService implements IApiUsersService {
         return this.http.get<UserDto>(
             this.usersServiceUrl + '/items/{id}',
             {
+                context: withTypewriterResponseSchema(UserDtoSchema, { registry: apiTypeRegistry }),
                 headers,
                 params
             });
@@ -85,6 +94,7 @@ export class ApiUsersService implements IApiUsersService {
             this.usersServiceUrl + '/items',
             request,
             {
+                context: withTypewriterResponseSchema(UserDtoSchema, { context: withTypewriterRequestSchema(CreateUserRequestSchema, { registry: apiTypeRegistry }), registry: apiTypeRegistry }),
                 headers
             });
     }

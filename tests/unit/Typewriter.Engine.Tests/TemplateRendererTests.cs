@@ -1866,7 +1866,7 @@ public sealed class TemplateRendererTests
     public void RenderRestoresNuGetReferenceFromConfiguredPackageSource()
     {
         const string PackageId = "xunit.v3.extensibility.core";
-        const string PackageVersion = "3.2.2";
+        const string PackageVersion = "4.0.0";
         var sourcePackageRoot = GetCurrentNuGetPackageRoot();
         Directory.Exists(path: Path.Combine(path1: sourcePackageRoot, path2: PackageId, path3: PackageVersion))
             .Should()
@@ -1926,7 +1926,7 @@ public sealed class TemplateRendererTests
                 Diagnostics: []);
             const string template = """
                 ${
-                    #r "nuget: xunit.v3.extensibility.core, 3.2.2"
+                    #r "nuget: xunit.v3.extensibility.core, 4.0.0"
                     using Xunit;
 
                     string FactName(Property property) => typeof(FactAttribute).Name + property.Name;
