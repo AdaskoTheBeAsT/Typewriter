@@ -2,7 +2,6 @@
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
   <PropertyGroup>
     <IsTestProject>true</IsTestProject>
-    <OutputType>exe</OutputType>
     <NoWarn>$(NoWarn);CC0022;CC0057;CC0061;CC0091;FAA0002;MA0003;MA0004;MA0006;MA0040;MA0051;SA1118;SCS0018;xUnit1051;xUnit2031</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0' OR '$(TargetFramework)' == 'net9.0' OR '$(TargetFramework)' == 'net8.0'">
