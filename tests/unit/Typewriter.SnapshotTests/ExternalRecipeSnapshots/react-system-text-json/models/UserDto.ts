@@ -16,7 +16,7 @@ export interface IUserDto extends INamedEntity {
   status?: UserStatus;
   address?: AddressDto | null;
   tags?: string[];
-  externalId?: string;
+  externalId?: Uint8Array;
 }
 
 export class UserDto extends NamedEntity implements IUserDto {
@@ -25,7 +25,7 @@ export class UserDto extends NamedEntity implements IUserDto {
   public status: UserStatus;
   public address?: AddressDto | null;
   public tags: string[];
-  public externalId: string;
+  public externalId: Uint8Array;
 
   constructor(initObj?: IUserDto) {
     super(initObj);
@@ -36,14 +36,14 @@ export class UserDto extends NamedEntity implements IUserDto {
       this.status = initObj.status ?? UserStatus.Active;
       this.address = initObj.address ?? null;
       this.tags = initObj.tags ?? [];
-      this.externalId = initObj.externalId ?? '00000000-0000-0000-0000-000000000000';
+      this.externalId = initObj.externalId ?? new Uint8Array(16);
     } else {
       this.id = '';
       this.displayName = '';
       this.status = UserStatus.Active;
       this.address = null;
       this.tags = [];
-      this.externalId = '00000000-0000-0000-0000-000000000000';
+      this.externalId = new Uint8Array(16);
     }
   }
 }
