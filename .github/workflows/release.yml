@@ -108,7 +108,7 @@ jobs:
         run: dotnet build AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-restore -m:1
 
       - name: Test .NET
-        run: dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build -m:1
+        run: dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build
 
       - name: Prepare package output
         shell: pwsh
