@@ -54,7 +54,7 @@ jobs:
         run: dotnet build AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-restore -m:1
 
       - name: Test .NET
-        run: dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build
+        run: dotnet test --solution AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build --max-parallel-test-modules 1
 
       - name: Install VS Code dependencies
         run: npm ci --prefix vscode
