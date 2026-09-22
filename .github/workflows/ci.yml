@@ -47,11 +47,14 @@ jobs:
       - name: Restore .NET
         run: dotnet restore AdaskoTheBeAsT.Typewriter.slnx
 
+      - name: Restore Buildalyzer logger targets
+        run: dotnet restore Buildalyzer/src/Buildalyzer.Logger/Buildalyzer.Logger.csproj --force
+
       - name: Build .NET
         run: dotnet build AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-restore -m:1
 
       - name: Test .NET
-        run: dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build -m:1
+        run: dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build
 
       - name: Install VS Code dependencies
         run: npm ci --prefix vscode
@@ -94,8 +97,8 @@ jobs:
       - name: Collect editor packages
         shell: pwsh
         run: |
-          Copy-Item src/Typewriter.VisualStudio/bin/Release/net472/Typewriter.VisualStudio.vsix artifacts/packages/Typewriter.VisualStudio-4.10.0.vsix
-          Copy-Item rider/build/distributions/typewriter-rider-4.10.0.zip artifacts/packages/Typewriter-Rider-4.10.0.zip
+          Copy-Item src/Typewriter.VisualStudio/bin/Release/net472/Typewriter.VisualStudio.vsix artifacts/packages/Typewriter.VisualStudio-4.11.0.vsix
+          Copy-Item rider/build/distributions/typewriter-rider-4.11.0.zip artifacts/packages/Typewriter-Rider-4.11.0.zip
 
       - name: Upload packages
         uses: actions/upload-artifact@v4

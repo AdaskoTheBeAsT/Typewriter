@@ -66,10 +66,16 @@
     - [🌐 Language Server (any LSP client)](#-language-server-any-lsp-client)
   - [🧪 Samples](#-samples)
   - [🔄 Migrating from the Original Typewriter](#-migrating-from-the-original-typewriter)
+  - [Migrating from 4.10.x to 4.11.0](#migrating-from-410x-to-4110)
+    - [Upgrade tools and editor packages](#upgrade-tools-and-editor-packages)
+    - [Preserve date and GUID mappings](#preserve-date-and-guid-mappings)
+    - [Review recipe changes before adopting them](#review-recipe-changes-before-adopting-them)
+    - [Update contributor and CI test commands](#update-contributor-and-ci-test-commands)
   - [🏗️ Architecture](#️-architecture)
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.11.0](#4110)
     - [4.10.0](#4100)
     - [4.9.0](#490)
     - [4.8.0](#480)
@@ -1307,6 +1313,101 @@ Coming from the [original VS extension](https://github.com/AdaskoTheBeAsT/Typewr
 
 ---
 
+## Migrating from 4.10.x to 4.11.0
+
+Existing `.tst` templates and `typewriter.json` files do not need a mandatory rewrite.
+The engine still defaults to the `legacy` date profile (`DateTime` maps to TypeScript
+`Date`) and maps `Guid` to `string`. The recipe changes below apply only if you adopt
+the updated templates, not merely because you upgrade Typewriter.
+
+### Upgrade tools and editor packages
+
+Update the CLI and language server together if you installed them as global tools:
+
+```bash
+dotnet tool update --global AdaskoTheBeAsT.Typewriter.Cli --version 4.11.0
+dotnet tool update --global AdaskoTheBeAsT.Typewriter.LanguageServer --version 4.11.0
+```
+
+For local tool manifests, use `--local` instead of `--global`. Editor users should
+install the matching 4.11.0 extension/plugin package and restart the editor; those
+packages include the CLI and language server. If you configured custom CLI or
+language-server paths, update those installations too.
+
+The Visual Studio VSIX now includes its required in-process runtime dependencies.
+If 4.10.0 failed with a `FileNotFoundException` for a dependency such as
+`System.Text.Json` or `MessagePack`, replace it with the updated VSIX rather than
+manually copying DLLs into the extension directory.
+
+### Preserve date and GUID mappings
+
+No configuration change is needed to retain the defaults. To make them explicit,
+merge these settings into your existing `output` section:
+
+```json
+{
+  "output": {
+    "dateLibrary": "legacy",
+    "dateType": "Date",
+    "dateInitializer": "new Date()",
+    "guidType": "string",
+    "guidInitializer": "auto"
+  }
+}
+```
+
+Template settings take precedence over configuration. If a copied recipe calls
+`.UseDateLibrary(DateLibrary.Temporal)` or `.UseGuidType("Uint8Array")`, remove those
+overrides or change them to `.UseDateLibrary(DateLibrary.Legacy)` and
+`.UseGuidType("string")`. The checked-in model fixtures use these legacy settings.
+Temporal and binary GUID mappings remain available as explicit opt-ins.
+
+### Review recipe changes before adopting them
+
+The compatibility tests now use versioned templates in
+[`tests/fixtures/ExternalRecipes`](tests/fixtures/ExternalRecipes), with their source
+revision and license recorded there. They no longer read a sibling
+`NetCoreTypewriterRecipes` checkout. These are test fixtures, not templates that an
+upgrade automatically installs into your application.
+
+If you copy the updated recipes into an application, review these differences:
+
+| Recipe | Change to review |
+| --- | --- |
+| Angular / Newtonsoft.Json models | Root interfaces only declare a discriminator when the source type has `[JsonDerivedType]`. For example, `IAuditInfo` no longer declares `$type?: string`, while its generated class still initializes `$type`. If your code needs the previous interface contract, retain that declaration in the class and record interface-generation helpers before regenerating. |
+| Angular / Newtonsoft.Json models | Discriminator names honor `JsonPolymorphic` metadata, and generated type identifiers use the actual C# assembly name rather than assuming it matches the namespace. Verify compatibility with your serializer configuration. |
+| Angular / System.Text.Json services | Generated requests use `@adaskothebeast/typewriter-http-angular` schema helpers and import model schemas plus `typewriter-registry`. Provide the matching runtime package and generated schema/registry files if adopting this service recipe. |
+
+Preview changes before replacing application output:
+
+```bash
+typewriter generate --workspace . --dry-run --diff
+```
+
+Then review the diff, regenerate, and run your frontend type checks and tests.
+
+### Update contributor and CI test commands
+
+Building this repository requires the .NET SDK **10.0.401** pinned in `global.json`.
+Tests now use xUnit v3 **4.0.1** and **Microsoft.Testing.Platform**, including the
+.NET Framework Visual Studio test project. The SDK requirement is for building
+Typewriter itself; it does not require retargeting the projects you generate from.
+
+Use the [build commands below](#-building-from-source). Keep `-m:1` on
+`dotnet build`, not `dotnet test`, and use `--solution` or `--project` to select
+tests. For example, run only the local recipe snapshots with:
+
+```bash
+dotnet test --project tests/unit/Typewriter.SnapshotTests/Typewriter.SnapshotTests.csproj --configuration Release --no-build --filter-class '*ExternalRecipeSnapshotTests'
+```
+
+No sibling recipe checkout is needed. Missing checked-in fixtures now fail tests
+instead of silently skipping their coverage. Follow the
+[fixture update instructions](tests/fixtures/ExternalRecipes/README.md#updating-fixtures-and-snapshots)
+when intentionally updating recipes and snapshots.
+
+---
+
 ## 🏗️ Architecture
 
 ```text
@@ -1329,7 +1430,7 @@ tests/                          # ✅ Unit, CLI integration, and snapshot tests
 - 🧱 **Editor-independent core** — the engine never references an IDE; editors shell out to the CLI or talk LSP
 - 🛡️ **Safe writes** — output is planned first: paths outside the workspace and overwrites of non-generated files are refused
 - 🧭 **Duplicate-output visibility** — duplicate planned output paths are reported as `TW0008` warnings before the last render wins
-- 📸 **Snapshot-driven compatibility** — real recipes from `NetCoreTypewriterRecipes` are the source of truth
+- 📸 **Snapshot-driven compatibility** — versioned copies of real recipes live in [`tests/fixtures/ExternalRecipes`](tests/fixtures/ExternalRecipes); tests do not depend on a sibling checkout
 - ♻️ **Collectible helper assemblies** — compiled template helpers load into unloadable `AssemblyLoadContext`s so watch mode stays lean
 
 ---
@@ -1338,7 +1439,7 @@ tests/                          # ✅ Unit, CLI integration, and snapshot tests
 
 **Prerequisites:**
 
-- 🟪 .NET SDK **10.0.400** or a compatible latest .NET 10 SDK (pinned in [`global.json`](global.json))
+- 🟪 .NET SDK **10.0.401** (pinned in [`global.json`](global.json))
 - 🟩 Latest stable Node.js managed with Volta (VS Code extension)
 - 🟦 Visual Studio 2026 (only for working on the VSIX)
 - ☕ Eclipse Temurin JDK **21** (`EclipseAdoptium.Temurin.21.JDK`; the Rider plugin uses the checked-in Gradle wrapper)
@@ -1359,8 +1460,9 @@ cd Typewriter
 
 # Restore, build, test
 dotnet restore AdaskoTheBeAsT.Typewriter.slnx
+dotnet restore Buildalyzer/src/Buildalyzer.Logger/Buildalyzer.Logger.csproj --force
 dotnet build AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-restore -m:1
-dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build -m:1
+dotnet test --solution AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build
 
 # VS Code extension
 npm ci --prefix vscode
@@ -1381,7 +1483,8 @@ dotnet pack src/Typewriter.LanguageServer/Typewriter.LanguageServer.csproj --con
 dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --configuration Release -m:1
 ```
 
-> ⚠️ Keep `-m:1` — parallel MSBuild is intentionally disabled for this solution.
+> Keep `-m:1` on `dotnet build`: parallel MSBuild is intentionally disabled for
+> this solution. Do not pass it to the Microsoft.Testing.Platform test command.
 >
 > Packaging commands only create local artifacts. They do not publish to NuGet,
 > Visual Studio Marketplace, or JetBrains Marketplace.
@@ -1409,6 +1512,16 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.11.0
+
+- Fixed Visual Studio VSIX packaging to include required in-process runtime dependencies, addressing startup `FileNotFoundException` failures after installation (#108).
+- Updated Buildalyzer integration for analyzer-config paths and added a `TW0003` diagnostic when a project analyzer cannot be created.
+- Updated the source-build SDK to 10.0.401 and migrated all test projects to xUnit v3 4.0.1 with Microsoft.Testing.Platform, including the Visual Studio .NET Framework tests.
+- Added nine licensed, versioned recipe fixtures under `tests/fixtures/ExternalRecipes`; compatibility and snapshot tests now run without a sibling recipe checkout and fail when a fixture is missing.
+- Refreshed Angular recipe snapshots while retaining `Date` and `string` GUID mappings. Recipe-specific discriminator and runtime-schema changes are documented in the [4.11.0 migration guide](#migrating-from-410x-to-4110).
+- Fixed the NuGet-reference restore test to use the same package version in its template and assertions.
+- Synchronized tool, editor-package, and release-artifact versions to 4.11.0.
 
 ### 4.10.0
 
@@ -1538,7 +1651,7 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 
 1. 🍴 Fork and create a feature branch: `git checkout -b feature/amazing-feature`
 2. 🧹 Match the existing style — analyzers are wired through [`Directory.Build.props`](Directory.Build.props), `.editorconfig`, and StyleCop
-3. ✅ Add tests (unit, CLI integration, or snapshot) and make `dotnet test ... -m:1` pass
+3. ✅ Add tests (unit, CLI integration, or snapshot) and make `dotnet test --solution AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build` pass after building
 4. 📸 For template-compatibility work, prefer **real recipe fixtures** over synthetic cases
 5. 🚀 Open a pull request with a clear description
 

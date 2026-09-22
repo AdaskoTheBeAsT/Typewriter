@@ -1,4 +1,5 @@
 using System.Reflection;
+using AwesomeAssertions;
 using Typewriter.CodeModel;
 using Xunit;
 using Attribute = Typewriter.CodeModel.Attribute;

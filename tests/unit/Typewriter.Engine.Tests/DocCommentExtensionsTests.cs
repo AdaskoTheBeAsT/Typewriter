@@ -1,3 +1,4 @@
+using AwesomeAssertions;
 using Typewriter.CodeModel;
 using Typewriter.Extensions.Documentation;
 using Xunit;

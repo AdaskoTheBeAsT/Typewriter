@@ -1,3 +1,4 @@
+using AwesomeAssertions;
 using Typewriter.Abstractions;
 using Typewriter.Configuration;
 using Typewriter.Engine;

@@ -1,4 +1,5 @@
 using System.Globalization;
+using AwesomeAssertions;
 using Typewriter.Abstractions;
 using Typewriter.Engine;
 using Typewriter.Roslyn;
@@ -30,10 +31,7 @@ public sealed class ExternalRecipeSnapshotTests
     {
         var repositoryRoot = FindRepositoryRoot();
         var recipePath = ResolveExternalRecipePath(repositoryRoot: repositoryRoot, relativePath: recipeRelativePath);
-        if (!File.Exists(path: recipePath))
-        {
-            return;
-        }
+        File.Exists(path: recipePath).Should().BeTrue(because: $"recipe fixture '{recipePath}' must be checked into this repository.");
 
         var workspace = CreateWorkspaceDirectory();
         try
@@ -418,9 +416,8 @@ public sealed class ExternalRecipeSnapshotTests
         string repositoryRoot,
         string relativePath)
     {
-        var gitHubRoot = Directory.GetParent(path: repositoryRoot)?.FullName ?? repositoryRoot;
         return Path.Combine(
-            paths: [gitHubRoot, "NetCoreTypewriterRecipes", .. relativePath.Split(separator: '/')]);
+            paths: [repositoryRoot, "tests", "fixtures", "ExternalRecipes", .. relativePath.Split(separator: '/')]);
     }
 
     private static string FindRepositoryRoot()
