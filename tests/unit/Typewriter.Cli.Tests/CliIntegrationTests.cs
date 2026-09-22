@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using AwesomeAssertions;
@@ -10,6 +11,7 @@ public sealed class CliIntegrationTests
     private const string DiagnosticsPropertyName = "diagnostics";
     private const string GeneratedFilesPropertyName = "generatedFiles";
     private const string ConfigurationFileName = "typewriter.json";
+    private static readonly TimeSpan WatchTestTimeout = TimeSpan.FromMinutes(minutes: 2);
     private static readonly SemaphoreSlim ConsoleLock = new(initialCount: 1, maxCount: 1);
 
     [Fact]
@@ -497,9 +499,7 @@ public sealed class CliIntegrationTests
         {
             var project = await CreateSimpleProjectAsync(directory: directory);
             var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
-            using var cancellation = new CancellationTokenSource();
-
-            var runTask = RunCliAsync(
+            var result = await RunWatchScenarioAsync(
                 args: [
                 "watch",
                 "--workspace",
@@ -513,17 +513,16 @@ public sealed class CliIntegrationTests
                 "--output",
                 "json"
                 ],
-                cancellationToken: cancellation.Token);
-
-            await WaitForFileAsync(path: generatedPath, cancellationToken: cancellation.Token);
-            await Task.Delay(millisecondsDelay: 250, cancellationToken: CancellationToken.None);
-            await cancellation.CancelAsync();
-
-            var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
+                scenario: cancellationToken => WaitForFileContentAsync(
+                    path: generatedPath,
+                    expectedContent: "name: string;",
+                    cancellationToken: cancellationToken));
 
             result.ExitCode.Should().Be(0);
-            result.Success.Should().BeTrue(because: result.StandardError);
-            result.GeneratedFiles.Should().Contain(file => file.Path.Equals(value: generatedPath, comparisonType: StringComparison.OrdinalIgnoreCase));
+            using var json = JsonDocument.Parse(json: result.StandardOutput);
+            json.RootElement.GetProperty(propertyName: "success").GetBoolean().Should().BeTrue(because: result.StandardError);
+            ReadGeneratedFiles(root: json.RootElement)
+                .Should().Contain(file => file.Path.Equals(value: generatedPath, comparisonType: StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -539,9 +538,7 @@ public sealed class CliIntegrationTests
         {
             var project = await CreateSimpleProjectAsync(directory: directory);
             var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
-            using var cancellation = new CancellationTokenSource();
-
-            var runTask = RunCliRawAsync(
+            var result = await RunWatchScenarioAsync(
                 args: [
                 "watch",
                 "--workspace",
@@ -553,28 +550,71 @@ public sealed class CliIntegrationTests
                 "--framework",
                 "net10.0"
                 ],
-                cancellationToken: cancellation.Token);
+                scenario: async cancellationToken =>
+                {
+                    await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellationToken);
+                    await File.WriteAllTextAsync(
+                        path: project.SourcePath,
+                        contents: """
+                                  namespace Sample.Models;
 
-            await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
-            await File.WriteAllTextAsync(
-                path: project.SourcePath,
-                contents: """
-                          namespace Sample.Models;
+                                  public sealed class Customer
+                                  {
+                                      public required string Name { get; init; }
 
-                          public sealed class Customer
-                          {
-                              public required string Name { get; init; }
-
-                              public required string Email { get; init; }
-                          }
-                          """);
-            await WaitForFileContentAsync(path: generatedPath, expectedContent: "email: string;", cancellationToken: cancellation.Token);
-            await cancellation.CancelAsync();
-
-            var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
+                                      public required string Email { get; init; }
+                                  }
+                                  """,
+                        cancellationToken: cancellationToken);
+                    await WaitForFileContentAsync(path: generatedPath, expectedContent: "email: string;", cancellationToken: cancellationToken);
+                });
 
             result.ExitCode.Should().Be(0);
             result.StandardOutput.Should().Contain("updated:");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncWatchReleasesConsoleAfterScenarioFailure()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
+            const string FailureMessage = "Watch scenario failed.";
+            Func<Task> action = async () =>
+            {
+                await RunWatchScenarioAsync(
+                    args:
+                    [
+                        "watch",
+                        "--workspace",
+                        directory,
+                        "--project",
+                        project.ProjectPath,
+                        "--template",
+                        project.TemplatePath,
+                        "--framework",
+                        "net10.0",
+                    ],
+                    scenario: async cancellationToken =>
+                    {
+                        await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellationToken);
+                        throw new InvalidOperationException(message: FailureMessage);
+                    });
+            };
+
+            await action.Should().ThrowAsync<InvalidOperationException>().WithMessage(expectedWildcardPattern: FailureMessage);
+
+            using var cancellation = new CancellationTokenSource(delay: WatchTestTimeout);
+            var result = await RunCliRawAsync(args: ["--help"], cancellationToken: cancellation.Token);
+
+            result.ExitCode.Should().Be(0);
         }
         finally
         {
@@ -603,9 +643,7 @@ public sealed class CliIntegrationTests
                                }
                                """);
             var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
-            using var cancellation = new CancellationTokenSource();
-
-            var runTask = RunCliRawAsync(
+            var result = await RunWatchScenarioAsync(
                 args: [
                 "watch",
                 "--workspace",
@@ -617,27 +655,26 @@ public sealed class CliIntegrationTests
                 "--framework",
                 "net10.0"
                 ],
-                cancellationToken: cancellation.Token);
-
-            await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
-            (await File.ReadAllTextAsync(path: generatedPath, cancellationToken: cancellation.Token))
-                .Should().NotContain("email: string;");
-            await File.WriteAllTextAsync(
-                path: project.ProjectPath,
-                contents: """
-                          <Project Sdk="Microsoft.NET.Sdk">
-                            <PropertyGroup>
-                              <TargetFramework>net10.0</TargetFramework>
-                              <ImplicitUsings>enable</ImplicitUsings>
-                              <Nullable>enable</Nullable>
-                              <DefineConstants>$(DefineConstants);INCLUDE_EMAIL</DefineConstants>
-                            </PropertyGroup>
-                          </Project>
-                          """);
-            await WaitForFileContentAsync(path: generatedPath, expectedContent: "email: string;", cancellationToken: cancellation.Token);
-            await cancellation.CancelAsync();
-
-            var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
+                scenario: async cancellationToken =>
+                {
+                    await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellationToken);
+                    (await File.ReadAllTextAsync(path: generatedPath, cancellationToken: cancellationToken))
+                        .Should().NotContain("email: string;");
+                    await File.WriteAllTextAsync(
+                        path: project.ProjectPath,
+                        contents: """
+                                  <Project Sdk="Microsoft.NET.Sdk">
+                                    <PropertyGroup>
+                                      <TargetFramework>net10.0</TargetFramework>
+                                      <ImplicitUsings>enable</ImplicitUsings>
+                                      <Nullable>enable</Nullable>
+                                      <DefineConstants>$(DefineConstants);INCLUDE_EMAIL</DefineConstants>
+                                    </PropertyGroup>
+                                  </Project>
+                                  """,
+                        cancellationToken: cancellationToken);
+                    await WaitForFileContentAsync(path: generatedPath, expectedContent: "email: string;", cancellationToken: cancellationToken);
+                });
 
             result.ExitCode.Should().Be(0);
             result.StandardOutput.Should().Contain("updated:");
@@ -677,9 +714,7 @@ public sealed class CliIntegrationTests
                           </Project>
                           """);
             var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
-            using var cancellation = new CancellationTokenSource();
-
-            var runTask = RunCliRawAsync(
+            var result = await RunWatchScenarioAsync(
                 args: [
                 "watch",
                 "--workspace",
@@ -691,24 +726,23 @@ public sealed class CliIntegrationTests
                 "--framework",
                 "net10.0"
                 ],
-                cancellationToken: cancellation.Token);
-
-            await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
-            (await File.ReadAllTextAsync(path: generatedPath, cancellationToken: cancellation.Token))
-                .Should().NotContain("email: string;");
-            await File.WriteAllTextAsync(
-                path: propsPath,
-                contents: """
-                          <Project>
-                            <PropertyGroup>
-                              <DefineConstants>$(DefineConstants);INCLUDE_EMAIL</DefineConstants>
-                            </PropertyGroup>
-                          </Project>
-                          """);
-            await WaitForFileContentAsync(path: generatedPath, expectedContent: "email: string;", cancellationToken: cancellation.Token);
-            await cancellation.CancelAsync();
-
-            var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
+                scenario: async cancellationToken =>
+                {
+                    await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellationToken);
+                    (await File.ReadAllTextAsync(path: generatedPath, cancellationToken: cancellationToken))
+                        .Should().NotContain("email: string;");
+                    await File.WriteAllTextAsync(
+                        path: propsPath,
+                        contents: """
+                                  <Project>
+                                    <PropertyGroup>
+                                      <DefineConstants>$(DefineConstants);INCLUDE_EMAIL</DefineConstants>
+                                    </PropertyGroup>
+                                  </Project>
+                                  """,
+                        cancellationToken: cancellationToken);
+                    await WaitForFileContentAsync(path: generatedPath, expectedContent: "email: string;", cancellationToken: cancellationToken);
+                });
 
             result.ExitCode.Should().Be(0);
             result.StandardOutput.Should().Contain("updated:");
@@ -735,9 +769,7 @@ public sealed class CliIntegrationTests
                           }
                           """);
             var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
-            using var cancellation = new CancellationTokenSource();
-
-            var runTask = RunCliRawAsync(
+            var result = await RunWatchScenarioAsync(
                 args: [
                 "watch",
                 "--workspace",
@@ -749,26 +781,25 @@ public sealed class CliIntegrationTests
                 "--framework",
                 "net10.0"
                 ],
-                cancellationToken: cancellation.Token);
+                scenario: async cancellationToken =>
+                {
+                    await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellationToken);
+                    await File.WriteAllTextAsync(
+                        path: project.SourcePath,
+                        contents: """
+                                  namespace Sample.Models;
 
-            await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
-            await File.WriteAllTextAsync(
-                path: project.SourcePath,
-                contents: """
-                          namespace Sample.Models;
+                                  public sealed class Customer
+                                  {
+                                      public required string Name { get; init; }
 
-                          public sealed class Customer
-                          {
-                              public required string Name { get; init; }
-
-                              public required string Email { get; init; }
-                          }
-                          """);
-            await File.WriteAllTextAsync(path: triggerPath, contents: "refresh");
-            await WaitForFileContentAsync(path: generatedPath, expectedContent: "email: string;", cancellationToken: cancellation.Token);
-            await cancellation.CancelAsync();
-
-            var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
+                                      public required string Email { get; init; }
+                                  }
+                                  """,
+                        cancellationToken: cancellationToken);
+                    await File.WriteAllTextAsync(path: triggerPath, contents: "refresh", cancellationToken: cancellationToken);
+                    await WaitForFileContentAsync(path: generatedPath, expectedContent: "email: string;", cancellationToken: cancellationToken);
+                });
 
             result.ExitCode.Should().Be(0);
             result.StandardOutput.Should().Contain("updated:");
@@ -799,9 +830,7 @@ public sealed class CliIntegrationTests
         {
             var project = await CreateSimpleProjectAsync(directory: directory);
             var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
-            using var cancellation = new CancellationTokenSource();
-
-            var runTask = RunCliRawAsync(
+            var result = await RunWatchScenarioAsync(
                 args: [
                 "watch",
                 "--workspace",
@@ -813,22 +842,21 @@ public sealed class CliIntegrationTests
                 "--framework",
                 "net10.0"
                 ],
-                cancellationToken: cancellation.Token);
+                scenario: async cancellationToken =>
+                {
+                    await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellationToken);
+                    await Task.Delay(millisecondsDelay: 500, cancellationToken: cancellationToken);
+                    for (var index = 0; index < 10; index++)
+                    {
+                        await File.WriteAllTextAsync(
+                            path: project.SourcePath,
+                            contents: CreateSource(propertyName: "Value" + index.ToString(provider: CultureInfo.InvariantCulture)),
+                            cancellationToken: cancellationToken);
+                    }
 
-            await WaitForFileContentAsync(path: generatedPath, expectedContent: "name: string;", cancellationToken: cancellation.Token);
-            await Task.Delay(millisecondsDelay: 500, cancellationToken: CancellationToken.None);
-            for (var index = 0; index < 10; index++)
-            {
-                await File.WriteAllTextAsync(
-                    path: project.SourcePath,
-                    contents: CreateSource(propertyName: "Value" + index.ToString(provider: CultureInfo.InvariantCulture)));
-            }
-
-            await WaitForFileContentAsync(path: generatedPath, expectedContent: "value9: string;", cancellationToken: cancellation.Token);
-            await Task.Delay(millisecondsDelay: 750, cancellationToken: CancellationToken.None);
-            await cancellation.CancelAsync();
-
-            var result = await runTask.WaitAsync(timeout: TimeSpan.FromSeconds(seconds: 30));
+                    await WaitForFileContentAsync(path: generatedPath, expectedContent: "value9: string;", cancellationToken: cancellationToken);
+                    await Task.Delay(millisecondsDelay: 750, cancellationToken: cancellationToken);
+                });
 
             result.ExitCode.Should().Be(0);
             CountOccurrences(text: result.StandardOutput, value: "updated:").Should().BeLessThanOrEqualTo(expected: 2);
@@ -1056,6 +1084,31 @@ public sealed class CliIntegrationTests
         }
     }
 
+    private static async Task<CliRawRunResult> RunWatchScenarioAsync(
+        string[] args,
+        Func<CancellationToken, Task> scenario)
+    {
+        ArgumentNullException.ThrowIfNull(argument: scenario);
+
+        using var cancellation = new CancellationTokenSource();
+        var runTask = RunCliRawAsync(args: args, cancellationToken: cancellation.Token);
+        CliRawRunResult result;
+        try
+        {
+            await scenario(cancellation.Token).ConfigureAwait(continueOnCapturedContext: false);
+        }
+        finally
+        {
+            await cancellation.CancelAsync().ConfigureAwait(continueOnCapturedContext: false);
+            result = await runTask.WaitAsync(timeout: WatchTestTimeout).ConfigureAwait(continueOnCapturedContext: false);
+            TestContext.Current.TestOutputHelper?.WriteLine($"Watch exit code: {result.ExitCode.ToString(provider: CultureInfo.InvariantCulture)}");
+            TestContext.Current.TestOutputHelper?.WriteLine($"Watch standard output:{Environment.NewLine}{result.StandardOutput}");
+            TestContext.Current.TestOutputHelper?.WriteLine($"Watch standard error:{Environment.NewLine}{result.StandardError}");
+        }
+
+        return result;
+    }
+
     private static async Task<CliRawRunResult> RunCliRawAsync(
         string[] args,
         CancellationToken cancellationToken)
@@ -1213,28 +1266,12 @@ public sealed class CliIntegrationTests
         return count;
     }
 
-    private static async Task WaitForFileAsync(
-        string path,
-        CancellationToken cancellationToken)
-    {
-        var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(seconds: 30);
-        while (!File.Exists(path: path))
-        {
-            if (DateTimeOffset.UtcNow >= timeoutAt)
-            {
-                throw new TimeoutException(message: $"File was not generated: {path}");
-            }
-
-            await Task.Delay(millisecondsDelay: 100, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
-        }
-    }
-
     private static async Task WaitForFileContentAsync(
         string path,
         string expectedContent,
         CancellationToken cancellationToken)
     {
-        var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(seconds: 30);
+        var stopwatch = Stopwatch.StartNew();
         string? lastContent = null;
         while (true)
         {
@@ -1249,13 +1286,13 @@ public sealed class CliIntegrationTests
                         return;
                     }
                 }
-                catch (IOException) when (DateTimeOffset.UtcNow < timeoutAt)
+                catch (IOException) when (stopwatch.Elapsed < WatchTestTimeout)
                 {
                     await Task.Delay(millisecondsDelay: 100, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
                 }
             }
 
-            if (DateTimeOffset.UtcNow >= timeoutAt)
+            if (stopwatch.Elapsed >= WatchTestTimeout)
             {
                 var message = $"Expected content was not generated in {path}: {expectedContent}";
                 if (lastContent is not null)
