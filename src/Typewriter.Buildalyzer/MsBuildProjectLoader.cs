@@ -92,7 +92,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             return;
         }
 
-        var analyzer = manager.GetProject(projectFilePath: global::Buildalyzer.IO.IOPath.Parse(projectPath));
+        var analyzer = manager.GetProject(projectFilePath: projectPath);
         if (analyzer is null)
         {
             state.Diagnostics.Add(
@@ -312,7 +312,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         var solutionPath = ResolveSolutionPath(workspacePath: workspacePath);
         return solutionPath is not null
                && solutionPath.EndsWith(value: ".sln", comparisonType: StringComparison.OrdinalIgnoreCase)
-            ? new global::Buildalyzer.AnalyzerManager(solutionFilePath: global::Buildalyzer.IO.IOPath.Parse(solutionPath))
+            ? new global::Buildalyzer.AnalyzerManager(solutionFilePath: solutionPath)
             : new global::Buildalyzer.AnalyzerManager();
     }
 
