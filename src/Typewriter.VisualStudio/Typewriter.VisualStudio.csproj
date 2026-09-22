@@ -77,14 +77,29 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Typewriter.Cli\Typewriter.Cli.csproj" ReferenceOutputAssembly="false" BuildReference="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" />
-    <ProjectReference Include="..\Typewriter.LanguageServer\Typewriter.LanguageServer.csproj" ReferenceOutputAssembly="false" BuildReference="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" />
+    <ProjectReference Include="..\Typewriter.Cli\Typewriter.Cli.csproj" ReferenceOutputAssembly="false" BuildReference="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" Private="false" />
+    <ProjectReference Include="..\Typewriter.LanguageServer\Typewriter.LanguageServer.csproj" ReferenceOutputAssembly="false" BuildReference="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" Private="false" />
   </ItemGroup>
+
+  <Target Name="IncludeRuntimeDependenciesInVsix" BeforeTargets="GetVsixSourceItems" DependsOnTargets="ResolveReferences">
+    <ItemGroup>
+      <!--
+        IncludeAssemblyFromOutputFolderInVSIXContainer only packages this project's own
+        primary output. NuGet-resolved runtime dependencies actually used in-process
+        (e.g. System.Text.Json, MessagePack) are not deployed automatically and must be
+        added explicitly, or devenv.exe fails to load them at runtime with a FileNotFoundException.
+      -->
+      <Content Include="@(ReferenceCopyLocalPaths)" Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll' and '%(ReferenceCopyLocalPaths.Filename)%(ReferenceCopyLocalPaths.Extension)' != 'System.Text.Encodings.Web.dll'">
+        <IncludeInVSIX>true</IncludeInVSIX>
+        <Link>%(Filename)%(Extension)</Link>
+      </Content>
+    </ItemGroup>
+  </Target>
 
   <Target Name="PublishTypewriterCliForVsix" BeforeTargets="GetVsixSourceItems">
     <RemoveDir Directories="$(TypewriterPackagedCliPublishDir)" />
     <RemoveDir Directories="$(TypewriterPackagedCliBuildOutputDir)" />
-    <MSBuild Projects="..\Typewriter.Cli\Typewriter.Cli.csproj" Targets="Restore;Publish" Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(TypewriterPackagedCliPublishDir);BaseOutputPath=$(TypewriterPackagedCliBuildOutputDir);SelfContained=false;UseAppHost=false;SatelliteResourceLanguages=en;RunAnalyzers=false;BuildingInsideVisualStudio=false;BuildProjectReferences=true" BuildInParallel="false" />
+    <MSBuild Projects="..\Typewriter.Cli\Typewriter.Cli.csproj" Targets="Publish" Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(TypewriterPackagedCliPublishDir);BaseOutputPath=$(TypewriterPackagedCliBuildOutputDir);SelfContained=false;UseAppHost=false;SatelliteResourceLanguages=en;RunAnalyzers=false;BuildingInsideVisualStudio=false;BuildProjectReferences=true" BuildInParallel="false" />
     <ItemGroup>
       <TypewriterPackagedCliFile Include="$(TypewriterPackagedCliPublishDir)**\*.*" Exclude="$(TypewriterPackagedCliPublishDir)**\*.pdb;$(TypewriterPackagedCliPublishDir)**\*.xml" />
       <Content Include="@(TypewriterPackagedCliFile)">
@@ -97,7 +112,7 @@
   <Target Name="PublishTypewriterLanguageServerForVsix" BeforeTargets="GetVsixSourceItems">
     <RemoveDir Directories="$(TypewriterPackagedLanguageServerPublishDir)" />
     <RemoveDir Directories="$(TypewriterPackagedLanguageServerBuildOutputDir)" />
-    <MSBuild Projects="..\Typewriter.LanguageServer\Typewriter.LanguageServer.csproj" Targets="Restore;Publish" Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(TypewriterPackagedLanguageServerPublishDir);BaseOutputPath=$(TypewriterPackagedLanguageServerBuildOutputDir);SelfContained=false;UseAppHost=false;SatelliteResourceLanguages=en;RunAnalyzers=false;BuildingInsideVisualStudio=false;BuildProjectReferences=true" BuildInParallel="false" />
+    <MSBuild Projects="..\Typewriter.LanguageServer\Typewriter.LanguageServer.csproj" Targets="Publish" Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(TypewriterPackagedLanguageServerPublishDir);BaseOutputPath=$(TypewriterPackagedLanguageServerBuildOutputDir);SelfContained=false;UseAppHost=false;SatelliteResourceLanguages=en;RunAnalyzers=false;BuildingInsideVisualStudio=false;BuildProjectReferences=true" BuildInParallel="false" />
     <ItemGroup>
       <TypewriterPackagedLanguageServerFile Include="$(TypewriterPackagedLanguageServerPublishDir)**\*.*" Exclude="$(TypewriterPackagedLanguageServerPublishDir)**\*.pdb;$(TypewriterPackagedLanguageServerPublishDir)**\*.xml" />
       <!-- Typewriter XML doc files must ship next to the DLLs so Roslyn hover in .tst C# blocks can show doc comments. -->

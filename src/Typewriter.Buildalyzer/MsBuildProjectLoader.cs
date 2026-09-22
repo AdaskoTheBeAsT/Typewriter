@@ -92,7 +92,20 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             return;
         }
 
-        var analyzer = manager.GetProject(projectFilePath: projectPath);
+        var analyzer = manager.GetProject(projectFilePath: global::Buildalyzer.IO.IOPath.Parse(projectPath));
+        if (analyzer is null)
+        {
+            state.Diagnostics.Add(
+                item: new GenerationDiagnostic(
+                    File: projectPath,
+                    Line: null,
+                    Column: null,
+                    Severity: DiagnosticSeverity.Error,
+                    Message: $"Buildalyzer could not create a project analyzer for: {projectPath}.",
+                    Code: "TW0003"));
+            return;
+        }
+
         ApplyGlobalProperties(analyzer: analyzer, properties: solutionProperties);
 
         var environmentOptions = CreateEnvironmentOptions();
@@ -182,10 +195,12 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
                 .Where(predicate: File.Exists)
                 .Select(selector: Path.GetFullPath));
         state.AnalyzerConfigFiles.UnionWith(
-            other: result.AnalyzerConfigFiles
+            other: (result as global::Buildalyzer.AnalyzerResult)?.CompilerCommand?.AnalyzerConfigPaths
+                .Select(selector: path => path.ToString(format: null, formatProvider: System.Globalization.CultureInfo.InvariantCulture))
                 .Select(selector: path => ResolveProjectRelativePath(projectPath: result.ProjectFilePath, path: path))
                 .Where(predicate: File.Exists)
-                .Select(selector: Path.GetFullPath));
+                .Select(selector: Path.GetFullPath)
+                ?? []);
 
         foreach (var projectReference in projectReferences)
         {
@@ -297,7 +312,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         var solutionPath = ResolveSolutionPath(workspacePath: workspacePath);
         return solutionPath is not null
                && solutionPath.EndsWith(value: ".sln", comparisonType: StringComparison.OrdinalIgnoreCase)
-            ? new global::Buildalyzer.AnalyzerManager(solutionFilePath: solutionPath)
+            ? new global::Buildalyzer.AnalyzerManager(solutionFilePath: global::Buildalyzer.IO.IOPath.Parse(solutionPath))
             : new global::Buildalyzer.AnalyzerManager();
     }
 
