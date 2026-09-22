@@ -47,11 +47,14 @@ jobs:
       - name: Restore .NET
         run: dotnet restore AdaskoTheBeAsT.Typewriter.slnx
 
+      - name: Restore Buildalyzer logger targets
+        run: dotnet restore Buildalyzer/src/Buildalyzer.Logger/Buildalyzer.Logger.csproj --force
+
       - name: Build .NET
         run: dotnet build AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-restore -m:1
 
       - name: Test .NET
-        run: dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build -m:1
+        run: dotnet test AdaskoTheBeAsT.Typewriter.slnx --configuration Release --no-build
 
       - name: Install VS Code dependencies
         run: npm ci --prefix vscode

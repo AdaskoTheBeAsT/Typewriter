@@ -1,3 +1,4 @@
+using AwesomeAssertions;
 using Typewriter.Engine;
 using Xunit;
 

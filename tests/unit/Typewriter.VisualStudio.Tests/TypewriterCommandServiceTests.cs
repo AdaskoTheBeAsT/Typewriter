@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using AwesomeAssertions;
 using Xunit;
 
 namespace Typewriter.VisualStudio.Tests;
