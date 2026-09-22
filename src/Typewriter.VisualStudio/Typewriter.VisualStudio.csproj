@@ -91,7 +91,7 @@
       -->
       <Content Include="@(ReferenceCopyLocalPaths)" Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll' and '%(ReferenceCopyLocalPaths.Filename)%(ReferenceCopyLocalPaths.Extension)' != 'System.Text.Encodings.Web.dll'">
         <IncludeInVSIX>true</IncludeInVSIX>
-        <VSIXSubPath>%(Filename)%(Extension)</VSIXSubPath>
+        <Link>%(Filename)%(Extension)</Link>
       </Content>
     </ItemGroup>
   </Target>
