@@ -112,7 +112,8 @@ public sealed class LanguageServerHostTests
                                 uri = templateUri,
                             },
                         }),
-                    CreateRequest(id: 6, method: "shutdown", parameters: new { }), CreateNotification(method: "exit", parameters: new { })
+                    CreateRequest(id: 6, method: "shutdown", parameters: new { }),
+                    CreateNotification(method: "exit", parameters: new { }),
                 ]);
             await using var output = new MemoryStream();
             using var connection = new JsonRpcConnection(input: input, output: output);
@@ -306,7 +307,8 @@ public sealed class LanguageServerHostTests
                                 },
                             },
                         }),
-                    CreateRequest(id: 6, method: "shutdown", parameters: new { }), CreateNotification(method: "exit", parameters: new { })
+                    CreateRequest(id: 6, method: "shutdown", parameters: new { }),
+                    CreateNotification(method: "exit", parameters: new { }),
                 ]);
             await using var output = new MemoryStream();
             using var connection = new JsonRpcConnection(input: input, output: output);

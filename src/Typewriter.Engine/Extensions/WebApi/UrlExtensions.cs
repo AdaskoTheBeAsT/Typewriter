@@ -86,8 +86,8 @@ public static class UrlExtensions
             // Nullable values are not assignable to encodeURIComponent (issue 53).
             return parameter.Type.IsNullable
                 || parameter.Type.Name.Equals(value: "string | null", comparisonType: StringComparison.OrdinalIgnoreCase)
-                ? $"encodeURIComponent({name} ?? '')"
-                : $"encodeURIComponent({name})";
+                    ? $"encodeURIComponent({name} ?? '')"
+                    : $"encodeURIComponent({name})";
         }
 
         return name;

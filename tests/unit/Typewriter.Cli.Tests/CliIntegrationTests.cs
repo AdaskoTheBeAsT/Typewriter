@@ -26,7 +26,7 @@ public sealed class CliIntegrationTests
                 args: [
                 "init",
                 "--workspace",
-                directory
+                directory,
                 ],
                 cancellationToken: CancellationToken.None);
 
@@ -81,7 +81,7 @@ public sealed class CliIntegrationTests
                 args: [
                 "init",
                 "--workspace",
-                directory
+                directory,
                 ],
                 cancellationToken: CancellationToken.None);
 
@@ -121,7 +121,7 @@ public sealed class CliIntegrationTests
                 args: [
                 "init",
                 "--workspace",
-                directory
+                directory,
                 ],
                 cancellationToken: CancellationToken.None);
 
@@ -149,7 +149,7 @@ public sealed class CliIntegrationTests
                 "init",
                 "--workspace",
                 directory,
-                "--force"
+                "--force",
                 ],
                 cancellationToken: CancellationToken.None);
 
@@ -292,7 +292,7 @@ public sealed class CliIntegrationTests
                 "--framework",
                 "net10.0",
                 "--output",
-                "text"
+                "text",
                 ],
                 cancellationToken: CancellationToken.None);
 
@@ -323,7 +323,7 @@ public sealed class CliIntegrationTests
                 "net10.0",
                 "--output",
                 "text",
-                "--diff"
+                "--diff",
                 ],
                 cancellationToken: CancellationToken.None);
 
@@ -511,7 +511,7 @@ public sealed class CliIntegrationTests
                 "--framework",
                 "net10.0",
                 "--output",
-                "json"
+                "json",
                 ],
                 scenario: cancellationToken => WaitForFileContentAsync(
                     path: generatedPath,
@@ -548,7 +548,7 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0"
+                "net10.0",
                 ],
                 scenario: async cancellationToken =>
                 {
@@ -653,7 +653,7 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0"
+                "net10.0",
                 ],
                 scenario: async cancellationToken =>
                 {
@@ -724,7 +724,7 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0"
+                "net10.0",
                 ],
                 scenario: async cancellationToken =>
                 {
@@ -779,7 +779,7 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0"
+                "net10.0",
                 ],
                 scenario: async cancellationToken =>
                 {
@@ -840,7 +840,7 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0"
+                "net10.0",
                 ],
                 scenario: async cancellationToken =>
                 {
@@ -1027,7 +1027,7 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0"
+                "net10.0",
                 ],
                 cancellationToken: CancellationToken.None);
 
@@ -1070,7 +1070,7 @@ public sealed class CliIntegrationTests
                 "--template",
                 project.TemplatePath,
                 "--framework",
-                "net10.0"
+                "net10.0",
                 ],
                 cancellationToken: CancellationToken.None);
 

@@ -17,21 +17,6 @@ internal sealed record TypeScriptDateMapping(
     string PlainYearMonthType,
     string PlainMonthDayType)
 {
-    public string GetType(DateSemanticKind kind) =>
-        kind switch
-        {
-            DateSemanticKind.Instant => InstantType,
-            DateSemanticKind.PlainDate => PlainDateType,
-            DateSemanticKind.PlainTime => PlainTimeType,
-            DateSemanticKind.PlainDateTime => PlainDateTimeType,
-            DateSemanticKind.ZonedDateTime => ZonedDateTimeType,
-            DateSemanticKind.Duration => DurationType,
-            DateSemanticKind.Period => PeriodType,
-            DateSemanticKind.PlainYearMonth => PlainYearMonthType,
-            DateSemanticKind.PlainMonthDay => PlainMonthDayType,
-            _ => throw new ArgumentOutOfRangeException(paramName: nameof(kind), actualValue: kind, message: null),
-        };
-
     public static TypeScriptDateMapping Legacy(
         string dateType,
         string dateOnlyType,
@@ -50,4 +35,19 @@ internal sealed record TypeScriptDateMapping(
             PeriodType: "string",
             PlainYearMonthType: "string",
             PlainMonthDayType: "string");
+
+    public string GetType(DateSemanticKind kind) =>
+        kind switch
+        {
+            DateSemanticKind.Instant => InstantType,
+            DateSemanticKind.PlainDate => PlainDateType,
+            DateSemanticKind.PlainTime => PlainTimeType,
+            DateSemanticKind.PlainDateTime => PlainDateTimeType,
+            DateSemanticKind.ZonedDateTime => ZonedDateTimeType,
+            DateSemanticKind.Duration => DurationType,
+            DateSemanticKind.Period => PeriodType,
+            DateSemanticKind.PlainYearMonth => PlainYearMonthType,
+            DateSemanticKind.PlainMonthDay => PlainMonthDayType,
+            _ => throw new ArgumentOutOfRangeException(paramName: nameof(kind), actualValue: kind, message: null),
+        };
 }

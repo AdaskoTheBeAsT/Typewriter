@@ -19,13 +19,13 @@ public sealed record TemplateRenderDefaults(
     string DecimalTypeGeneration = TypeScriptTypeMapper.DefaultDecimalType,
     string DecimalInitializerGeneration = TypeScriptTypeMapper.DefaultDecimalInitializer)
 {
-    public DateLibrary DateLibraryGeneration { get; init; } = DateLibrary.Legacy;
-
     // Matches the original Typewriter defaults: strict null unions and a UTF-8 BOM.
     public static TemplateRenderDefaults Default { get; } = new(
         StrictNullGeneration: true,
         Utf8BomGeneration: true,
         SolutionFullName: string.Empty);
+
+    public DateLibrary DateLibraryGeneration { get; init; } = DateLibrary.Legacy;
 
     public static TemplateRenderDefaults FromConfiguration(
         TypewriterConfiguration configuration,

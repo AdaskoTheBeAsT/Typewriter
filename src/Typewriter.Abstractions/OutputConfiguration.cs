@@ -77,8 +77,6 @@ public sealed record OutputConfiguration(
     }
 #pragma warning restore SA1313
 
-    public DateLibrary DateLibrary { get; init; } = DateLibrary.Legacy;
-
     public static OutputConfiguration Default { get; } = new(
         Newline: "lf",
         Encoding: "utf-8",
@@ -101,6 +99,8 @@ public sealed record OutputConfiguration(
         GuidInitializer: DefaultGuidInitializer,
         DecimalType: DefaultDecimalType,
         DecimalInitializer: DefaultDecimalInitializer);
+
+    public DateLibrary DateLibrary { get; init; } = DateLibrary.Legacy;
 
     public void Deconstruct(
         out string newline,

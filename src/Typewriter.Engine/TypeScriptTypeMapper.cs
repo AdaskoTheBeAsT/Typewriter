@@ -405,8 +405,8 @@ public sealed class TypeScriptTypeMapper
         return keyTypeName is "string" or "number"
             || (keyType is not null && IsGuid(fullName: keyType.FullName))
             || keyType?.IsEnum == true
-            ? $"Record<{keyTypeName}, {valueType}>"
-            : $"Map<{keyTypeName}, {valueType}>";
+                ? $"Record<{keyTypeName}, {valueType}>"
+                : $"Map<{keyTypeName}, {valueType}>";
     }
 
     private string MapDictionaryKeyType(
@@ -640,8 +640,8 @@ public sealed class TypeScriptTypeMapper
         return keyTypeName is "string" or "number"
             || (keyType is not null && IsGuid(fullName: keyType.FullName))
             || keyType?.IsEnum == true
-            ? $"Record<{keyTypeName}, {valueType}>"
-            : $"Map<{keyTypeName}, {valueType}>";
+                ? $"Record<{keyTypeName}, {valueType}>"
+                : $"Map<{keyTypeName}, {valueType}>";
     }
 
     private sealed record MapCacheKey(
