@@ -205,6 +205,79 @@ public sealed class CliIntegrationTests
     }
 
     [Fact]
+    public async Task RunAsyncGeneratePreservesGenericSelfEnumerableElementMetadata()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                templateContent: """
+                                 // output: generated/models.ts
+                                 ${
+                                     string DescribeElement(Property property)
+                                     {
+                                         var element = property.Type.ElementType;
+                                         return $"{element.IsStruct}|{element.IsGeneric}|{element.Attributes.Any(a => a.Name == "Marker")}";
+                                     }
+                                 }
+                                 $Classes[$Properties[$DescribeElement]]
+                                 """,
+                sourceContent: """
+                               using System.Collections;
+                               using System.Collections.Generic;
+
+                               namespace Sample.Models;
+
+                               public sealed class Node
+                               {
+                               }
+
+                               public sealed class MarkerAttribute : System.Attribute
+                               {
+                               }
+
+                               [Marker]
+                               public struct Node<T> : IEnumerable<Node<T>>
+                               {
+                                   public IEnumerator<Node<T>> GetEnumerator() => throw new System.NotImplementedException();
+
+                                   IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+                               }
+
+                               public sealed class Customer
+                               {
+                                   public Node<int> Value { get; init; }
+                               }
+                               """);
+
+            var result = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+
+            result.ExitCode.Should().Be(0);
+            result.Success.Should().BeTrue(because: result.StandardError);
+            result.Diagnostics.Should().BeEmpty();
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            var generatedContent = await File.ReadAllTextAsync(path: generatedFile.Path);
+            generatedContent.Should().Contain("True|True|True");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task RunAsyncGenerateWithDiffIncludesUnifiedDiffInJsonOutput()
     {
         var directory = CreateProjectDirectory();

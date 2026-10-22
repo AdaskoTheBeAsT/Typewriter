@@ -1522,6 +1522,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             ElementType: elementType,
             TypeArguments: typeArguments)
         {
+            Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
             AssemblyName = GetAssemblyName(symbol: symbol),
             IsValueTuple = IsValueTuple(symbol: symbol),
             TupleElements = GetTupleElements(symbol: symbol, visitedSymbols: visitedSymbols).ToArray(),
@@ -1547,6 +1548,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             ElementType: null,
             TypeArguments: [])
         {
+            Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
             AssemblyName = GetAssemblyName(symbol: symbol),
             IsValueTuple = IsValueTuple(symbol: symbol),
             EnumValues = symbol is INamedTypeSymbol enumType

@@ -528,7 +528,7 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         var typeArguments = new Typewriter.CodeModel.TypeCollection(
             items: type.TypeArguments.Select(selector: argument => CreateType(type: argument, runtimeType: runtimeType)));
-        _typesByFullNameAndArity.TryGetValue(key: (type.FullName, type.TypeArguments.Count), value: out var typeMetadata);
+        _typesByFullNameAndArity.TryGetValue(key: (type.FullName, type.Arity), value: out var typeMetadata);
         var mappedName = _typeMapper.Map(
             type: type,
             strictNull: _settings.StrictNullGeneration,
@@ -553,7 +553,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsEnum = type.IsEnum,
             IsEnumerable = type.IsCollection,
             IsGuid = type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal),
-            IsGeneric = typeArguments.Count > 0,
+            IsGeneric = type.Arity > 0,
             IsNullable = type.IsNullable,
             IsPrimitive = IsPrimitiveType(type: type),
             IsStruct = isStruct,
@@ -817,7 +817,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     private bool IsInterfaceReference(TypeMetadataReference reference)
     {
-        if (_typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.TypeArguments.Count), value: out var metadata))
+        if (_typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out var metadata))
         {
             return metadata.Kind == TypeMetadataKind.Interface;
         }
@@ -830,7 +830,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     private CodeInterface CreateInterfaceReference(TypeMetadataReference reference)
     {
-        if (_typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.TypeArguments.Count), value: out var metadata)
+        if (_typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out var metadata)
             && metadata.Kind == TypeMetadataKind.Interface)
         {
             return CreateInterface(type: metadata, reference: reference);
@@ -1038,7 +1038,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             return null;
         }
 
-        return _typesByFullNameAndArity.TryGetValue(key: (baseType.FullName, baseType.TypeArguments.Count), value: out var baseMetadata)
+        return _typesByFullNameAndArity.TryGetValue(key: (baseType.FullName, baseType.Arity), value: out var baseMetadata)
             && baseMetadata.Kind == TypeMetadataKind.Class
                 ? CreateClass(type: baseMetadata, reference: baseType)
                 : new CodeClass
@@ -1047,7 +1047,7 @@ internal sealed class TemplateCodeModelAdapterFactory
                     Name = baseType.Name,
                     FullName = baseType.FullName,
                     Namespace = baseType.Namespace,
-                    IsGeneric = baseType.TypeArguments.Count > 0,
+                    IsGeneric = baseType.Arity > 0,
                     Type = CreateType(type: baseType),
                     TypeArguments = new Typewriter.CodeModel.TypeCollection(items: baseType.TypeArguments.Select(selector: argument => CreateType(type: argument))),
                 };
@@ -1061,7 +1061,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             return null;
         }
 
-        return _typesByFullNameAndArity.TryGetValue(key: (baseType.FullName, baseType.TypeArguments.Count), value: out var baseMetadata)
+        return _typesByFullNameAndArity.TryGetValue(key: (baseType.FullName, baseType.Arity), value: out var baseMetadata)
             && baseMetadata.Kind == TypeMetadataKind.Record
                 ? CreateRecord(type: baseMetadata, reference: baseType)
                 : new CodeRecord
@@ -1070,7 +1070,7 @@ internal sealed class TemplateCodeModelAdapterFactory
                     Name = baseType.Name,
                     FullName = baseType.FullName,
                     Namespace = baseType.Namespace,
-                    IsGeneric = baseType.TypeArguments.Count > 0,
+                    IsGeneric = baseType.Arity > 0,
                     Type = CreateType(type: baseType),
                     TypeArguments = new Typewriter.CodeModel.TypeCollection(items: baseType.TypeArguments.Select(selector: argument => CreateType(type: argument))),
                 };
@@ -1078,7 +1078,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     private bool IsRecordBaseReference(TypeMetadataReference reference)
     {
-        if (_typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.TypeArguments.Count), value: out var metadata))
+        if (_typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out var metadata))
         {
             return metadata.Kind == TypeMetadataKind.Record;
         }
@@ -1247,7 +1247,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             return ResolveEnumDefault(enumName: type.Name, enumValues: type.EnumValues);
         }
 
-        return _typesByFullNameAndArity.TryGetValue(key: (type.FullName, type.TypeArguments.Count), value: out var enumMetadata)
+        return _typesByFullNameAndArity.TryGetValue(key: (type.FullName, type.Arity), value: out var enumMetadata)
             ? ResolveEnumDefault(enumName: type.Name, enumValues: enumMetadata.EnumValues)
             : null;
     }
