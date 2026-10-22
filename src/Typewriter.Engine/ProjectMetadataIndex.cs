@@ -9,10 +9,12 @@ internal sealed class ProjectMetadataIndex
     private ProjectMetadataIndex(
         ProjectMetadata metadata,
         IReadOnlyDictionary<string, TypeMetadata> typesByFullName,
+        IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> typesByFullNameAndArity,
         IReadOnlyDictionary<string, MethodMetadata> methodsByFullName,
         IReadOnlyDictionary<string, PropertyMetadata> propertiesByFullName)
     {
         TypesByFullName = typesByFullName;
+        TypesByFullNameAndArity = typesByFullNameAndArity;
         MethodsByFullName = methodsByFullName;
         PropertiesByFullName = propertiesByFullName;
         _dependencyIndex = new Lazy<SourceFileDependencyIndex>(
@@ -21,6 +23,8 @@ internal sealed class ProjectMetadataIndex
     }
 
     public IReadOnlyDictionary<string, TypeMetadata> TypesByFullName { get; }
+
+    public IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> TypesByFullNameAndArity { get; }
 
     public IReadOnlyDictionary<string, MethodMetadata> MethodsByFullName { get; }
 
@@ -35,6 +39,9 @@ internal sealed class ProjectMetadataIndex
             typesByFullName: metadata.Types
                 .GroupBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
                 .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal),
+            typesByFullNameAndArity: metadata.Types
+                .GroupBy(keySelector: type => (type.FullName, type.TypeParameters.Count))
+                .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First()),
             methodsByFullName: metadata.Types
                 .SelectMany(selector: type => type.Methods)
                 .GroupBy(keySelector: method => method.FullName, comparer: StringComparer.Ordinal)

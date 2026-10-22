@@ -1867,7 +1867,7 @@ public sealed class TemplateRendererTests
     public void RenderRestoresNuGetReferenceFromConfiguredPackageSource()
     {
         const string PackageId = "xunit.v3.extensibility.core";
-        const string PackageVersion = "4.0.1";
+        const string PackageVersion = "4.0.2";
         var sourcePackageRoot = GetCurrentNuGetPackageRoot();
         Directory.Exists(path: Path.Combine(path1: sourcePackageRoot, path2: PackageId, path3: PackageVersion))
             .Should()

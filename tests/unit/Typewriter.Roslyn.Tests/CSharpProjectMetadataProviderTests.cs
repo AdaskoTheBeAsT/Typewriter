@@ -1028,12 +1028,17 @@ public sealed class CSharpProjectMetadataProviderTests
         }
     }
 
-    [Fact]
-    public async Task GetMetadataTruncatesCircularEnumerableTypeReferences()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetMetadataTruncatesCircularEnumerableTypeReferences(bool generic)
     {
         var directory = CreateProjectDirectory();
         try
         {
+            var arity = generic ? 1 : 0;
+            var typeParameters = generic ? "<T>" : string.Empty;
+            var typeArguments = generic ? "<int>" : string.Empty;
             var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
             await File.WriteAllTextAsync(
                 path: projectPath,
@@ -1048,28 +1053,28 @@ public sealed class CSharpProjectMetadataProviderTests
                           """);
             await File.WriteAllTextAsync(
                 path: Path.Combine(path1: directory, path2: "Models.cs"),
-                contents: """
+                contents: $$"""
                           using System.Collections;
                           using System.Collections.Generic;
 
                           namespace Sample;
 
-                          public sealed class SelfEnumerable : IEnumerable<SelfEnumerable>
+                          public sealed class SelfEnumerable{{typeParameters}} : IEnumerable<SelfEnumerable{{typeParameters}}>
                           {
-                              public IEnumerator<SelfEnumerable> GetEnumerator() => throw new System.NotImplementedException();
+                              public IEnumerator<SelfEnumerable{{typeParameters}}> GetEnumerator() => throw new System.NotImplementedException();
 
                               IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
                           }
 
                           public sealed class Holder
                           {
-                              public SelfEnumerable Property { get; init; } = new();
+                              public SelfEnumerable{{typeArguments}} Property { get; init; } = new();
 
-                              public SelfEnumerable Field = new();
+                              public SelfEnumerable{{typeArguments}} Field = new();
 
-                              public SelfEnumerable Create() => new();
+                              public SelfEnumerable{{typeArguments}} Create() => new();
 
-                              public void Handle(SelfEnumerable parameter)
+                              public void Handle(SelfEnumerable{{typeArguments}} parameter)
                               {
                               }
                           }
@@ -1083,26 +1088,30 @@ public sealed class CSharpProjectMetadataProviderTests
             metadata.Diagnostics.Should().BeEmpty();
             var holder = metadata.Types.Should().ContainSingle(type => type.Name == "Holder").Which;
             var property = holder.Properties.Should().ContainSingle(item => item.Name == "Property").Which;
-            VerifyTruncatedSelfEnumerable(type: property.Type);
+            VerifyTruncatedSelfEnumerable(type: property.Type, arity: arity);
             var field = holder.Fields.Should().ContainSingle(item => item.Name == "Field").Which;
-            VerifyTruncatedSelfEnumerable(type: field.Type);
+            VerifyTruncatedSelfEnumerable(type: field.Type, arity: arity);
             var create = holder.Methods.Should().ContainSingle(item => item.Name == "Create").Which;
-            VerifyTruncatedSelfEnumerable(type: create.ReturnType);
+            VerifyTruncatedSelfEnumerable(type: create.ReturnType, arity: arity);
             var handle = holder.Methods.Should().ContainSingle(item => item.Name == "Handle").Which;
             var parameter = handle.Parameters.Should().ContainSingle(item => item.Name == "parameter").Which;
-            VerifyTruncatedSelfEnumerable(type: parameter.Type);
+            VerifyTruncatedSelfEnumerable(type: parameter.Type, arity: arity);
         }
         finally
         {
             await DeleteDirectoryWithRetryAsync(directory: directory);
         }
 
-        static void VerifyTruncatedSelfEnumerable(TypeMetadataReference type)
+        static void VerifyTruncatedSelfEnumerable(TypeMetadataReference type, int arity)
         {
             type.Name.Should().Be("SelfEnumerable");
+            type.Arity.Should().Be(arity);
+            type.TypeArguments.Should().HaveCount(arity);
             type.IsCollection.Should().BeTrue();
             type.ElementType.Should().NotBeNull();
             type.ElementType.Name.Should().Be("SelfEnumerable");
+            type.ElementType.Arity.Should().Be(arity);
+            type.ElementType.TypeArguments.Should().BeEmpty();
             type.ElementType.IsCollection.Should().BeFalse();
             type.ElementType.ElementType.Should().BeNull();
         }

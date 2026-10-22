@@ -13,6 +13,14 @@ public sealed record TypeMetadataReference(
     TypeMetadataReference? ElementType,
     IReadOnlyList<TypeMetadataReference> TypeArguments)
 {
+    private readonly int? _arity;
+
+    public int Arity
+    {
+        get => _arity ?? TypeArguments.Count;
+        init => _arity = value;
+    }
+
     public string AssemblyName { get; init; } = string.Empty;
 
     public bool IsValueTuple { get; init; }

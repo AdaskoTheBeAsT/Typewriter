@@ -15,8 +15,6 @@ internal sealed record CliOptions(
     bool Force,
     bool Help)
 {
-    public IReadOnlyList<string> ChangedPaths { get; init; } = [];
-
     public static CliOptions Default { get; } = new(
         Command: CliCommand.Generate,
         WorkspacePath: null,
@@ -31,4 +29,6 @@ internal sealed record CliOptions(
         Diff: false,
         Force: false,
         Help: false);
+
+    public IReadOnlyList<string> ChangedPaths { get; init; } = [];
 }

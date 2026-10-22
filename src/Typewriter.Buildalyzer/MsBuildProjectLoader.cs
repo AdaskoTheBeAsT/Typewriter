@@ -136,8 +136,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
                 state.Diagnostics.AddRange(
                     collection: capturedDiagnostics.Count > 0
                         ? capturedDiagnostics
-                        :
-                        [
+                        : [
                             new GenerationDiagnostic(
                                 File: projectPath,
                                 Line: null,
@@ -145,7 +144,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
                                 Severity: DiagnosticSeverity.Error,
                                 Message: $"Buildalyzer could not evaluate project: {projectPath}.",
                                 Code: "TW0003"),
-                        ]);
+                            ]);
                 return;
             }
         }
@@ -238,7 +237,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
                     Severity: DiagnosticSeverity.Error,
                     Message: fallbackMessage,
                     Code: "TW0003"),
-            ];
+                ];
     }
 
     private static IReadOnlyList<GenerationDiagnostic> GetCapturedBuildErrorDiagnostics(
@@ -312,8 +311,8 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         var solutionPath = ResolveSolutionPath(workspacePath: workspacePath);
         return solutionPath is not null
                && solutionPath.EndsWith(value: ".sln", comparisonType: StringComparison.OrdinalIgnoreCase)
-            ? new global::Buildalyzer.AnalyzerManager(solutionFilePath: solutionPath)
-            : new global::Buildalyzer.AnalyzerManager();
+                   ? new global::Buildalyzer.AnalyzerManager(solutionFilePath: solutionPath)
+                   : new global::Buildalyzer.AnalyzerManager();
     }
 
     private static IReadOnlyDictionary<string, string> CreateSolutionProperties(string workspacePath)

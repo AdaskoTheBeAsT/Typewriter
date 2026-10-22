@@ -906,8 +906,8 @@ public sealed class TemplateRenderer
         return (dateMapping.Library != Typewriter.Configuration.DateLibrary.Legacy
                 || runtimeType != FrontendRuntimeTypeKind.Auto)
                && DateSemanticTypeResolver.Resolve(type: type, runtimeType: runtimeType) is { } semanticKind
-            ? ResolveSemanticDateInitializer(kind: semanticKind, settings: settings, state: state)
-            : null;
+                   ? ResolveSemanticDateInitializer(kind: semanticKind, settings: settings, state: state)
+                   : null;
     }
 
     private static string ResolveGuidType(
@@ -3473,8 +3473,8 @@ public sealed class TemplateRenderer
 
             return end > start
                    && int.TryParse(s: message[start..end], style: NumberStyles.Integer, provider: CultureInfo.InvariantCulture, result: out var line)
-                ? line
-                : null;
+                       ? line
+                       : null;
         }
 
         private void AddCompiledInvocationError(
