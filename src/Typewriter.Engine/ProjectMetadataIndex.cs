@@ -280,6 +280,7 @@ internal sealed class ProjectMetadataIndex
                 return;
             }
 
+            var expandedInterfaces = new HashSet<(string AssemblyName, string FullName, int Arity)>();
             var pending = new Stack<TypeMetadataReference>();
             pending.Push(item: reference);
             while (pending.Count > 0)
@@ -301,9 +302,14 @@ internal sealed class ProjectMetadataIndex
                     pending.Push(item: typeArgument);
                 }
 
-                foreach (var interfaceType in current.Interfaces)
+                // Recursive contracts can keep constructing larger generic arguments.
+                // Expand each declaration once while still visiting every argument.
+                if (expandedInterfaces.Add(item: (current.AssemblyName, current.FullName, current.Arity)))
                 {
-                    pending.Push(item: interfaceType);
+                    foreach (var interfaceType in current.Interfaces)
+                    {
+                        pending.Push(item: interfaceType);
+                    }
                 }
 
                 foreach (var tupleElement in current.TupleElements)

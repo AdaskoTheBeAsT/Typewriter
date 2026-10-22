@@ -1119,6 +1119,15 @@ public sealed class CSharpProjectMetadataProviderTests
             type.ElementType.TypeArguments.Should().BeEmpty();
             type.ElementType.IsCollection.Should().BeFalse();
             type.ElementType.ElementType.Should().BeNull();
+            var recursiveElement = type.ElementType;
+            for (var depth = 0; depth < 5; depth++)
+            {
+                var recursiveEnumerable = recursiveElement.Interfaces.Should().ContainSingle(reference => reference.FullName == "System.Collections.Generic.IEnumerable").Which;
+                recursiveElement = recursiveEnumerable.TypeArguments.Should().ContainSingle().Which;
+                recursiveElement.Name.Should().Be("SelfEnumerable");
+                recursiveElement.Arity.Should().Be(arity);
+                recursiveElement.TypeArguments.Should().HaveCount(arity);
+            }
         }
     }
 

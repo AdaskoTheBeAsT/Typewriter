@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using Moq;
 using Typewriter.Abstractions;
 using Typewriter.Engine;
 using Xunit;
@@ -8,21 +9,33 @@ namespace Typewriter.Engine.Tests;
 public sealed class ProjectMetadataIndexTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void GetAffectedSourceFilesIncludesInterfacesAndTheirTypeArguments(bool changeTypeArgument)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void GetAffectedSourceFilesIncludesInterfacesAndTheirTypeArguments(bool changeTypeArgument, bool recursive)
     {
         var changedPath = Path.GetFullPath(path: "Changed.cs");
         var holderPath = Path.GetFullPath(path: "Holder.cs");
         var changedType = CreateType(
             name: changeTypeArgument ? "Payload" : "IContract",
             kind: changeTypeArgument ? TypeMetadataKind.Class : TypeMetadataKind.Interface);
+        var recursiveInterfaces = new Mock<IReadOnlyList<TypeMetadataReference>>(behavior: MockBehavior.Strict);
+        var payload = CreateReference(fullName: "Sample.Payload");
+        var typeArgument = recursive
+            ? CreateReference(fullName: "External.Container") with
+            {
+                TypeArguments = [payload],
+                Interfaces = recursiveInterfaces.Object,
+            }
+            : payload;
         var contract = CreateReference(fullName: "Sample.IContract") with
         {
-            TypeArguments = [CreateReference(fullName: "Sample.Payload")],
+            TypeArguments = [typeArgument],
         };
         var reference = CreateReference(fullName: "External.Container") with
         {
+            TypeArguments = [CreateReference(fullName: "System.Object")],
             Interfaces = [contract],
         };
         var holder = CreateType(name: "Holder", kind: TypeMetadataKind.Class) with
@@ -56,6 +69,7 @@ public sealed class ProjectMetadataIndexTests
         affected.Should().HaveCount(2);
         affected.Should().Contain(changedPath);
         affected.Should().Contain(holderPath);
+        recursiveInterfaces.VerifyNoOtherCalls();
     }
 
     private static TypeMetadata CreateType(string name, TypeMetadataKind kind) =>
