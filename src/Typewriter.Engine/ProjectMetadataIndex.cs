@@ -301,6 +301,11 @@ internal sealed class ProjectMetadataIndex
                     pending.Push(item: typeArgument);
                 }
 
+                foreach (var interfaceType in current.Interfaces)
+                {
+                    pending.Push(item: interfaceType);
+                }
+
                 foreach (var tupleElement in current.TupleElements)
                 {
                     pending.Push(item: tupleElement.Type);

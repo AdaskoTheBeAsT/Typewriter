@@ -1108,6 +1108,11 @@ public sealed class CSharpProjectMetadataProviderTests
             type.Arity.Should().Be(arity);
             type.TypeArguments.Should().HaveCount(arity);
             type.IsCollection.Should().BeTrue();
+            var enumerable = type.Interfaces.Should().ContainSingle(reference => reference.FullName == "System.Collections.Generic.IEnumerable").Which;
+            var enumerableElement = enumerable.TypeArguments.Should().ContainSingle().Which;
+            enumerableElement.Name.Should().Be("SelfEnumerable");
+            enumerableElement.Arity.Should().Be(arity);
+            enumerableElement.TypeArguments.Should().HaveCount(arity);
             type.ElementType.Should().NotBeNull();
             type.ElementType.Name.Should().Be("SelfEnumerable");
             type.ElementType.Arity.Should().Be(arity);
