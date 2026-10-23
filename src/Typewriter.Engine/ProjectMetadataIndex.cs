@@ -297,6 +297,12 @@ internal sealed class ProjectMetadataIndex
                     pending.Push(item: current.ElementType);
                 }
 
+                // Nested types do not carry their containing type's arguments in TypeArguments.
+                if (current.ContainingType is not null)
+                {
+                    pending.Push(item: current.ContainingType);
+                }
+
                 foreach (var typeArgument in current.TypeArguments)
                 {
                     pending.Push(item: typeArgument);

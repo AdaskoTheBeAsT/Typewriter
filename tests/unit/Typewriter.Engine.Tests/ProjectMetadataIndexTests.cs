@@ -38,21 +38,7 @@ public sealed class ProjectMetadataIndexTests
             TypeArguments = [CreateReference(fullName: "System.Object")],
             Interfaces = [contract],
         };
-        var holder = CreateType(name: "Holder", kind: TypeMetadataKind.Class) with
-        {
-            Properties =
-            [
-                new PropertyMetadata(
-                    Name: "Value",
-                    FullName: "Sample.Holder.Value",
-                    Type: reference,
-                    Accessibility: MetadataAccessibility.Public,
-                    HasGetter: true,
-                    HasSetter: true,
-                    IsRequired: false,
-                    Attributes: []),
-            ],
-        };
+        var holder = CreateHolder(reference: reference);
         var metadata = new ProjectMetadata(
             ProjectPath: "Sample.csproj",
             SourceFiles:
@@ -71,6 +57,79 @@ public sealed class ProjectMetadataIndexTests
         affected.Should().Contain(holderPath);
         recursiveInterfaces.VerifyNoOtherCalls();
     }
+
+    [Theory]
+    [InlineData("A")]
+    [InlineData("B")]
+    public void GetAffectedSourceFilesTracksNestedContainingTypeArguments(string changedType)
+    {
+        TypeMetadataReference[] arguments =
+        [
+            CreateReference(fullName: "Sample.A"),
+            CreateReference(fullName: "Sample.B"),
+        ];
+        var sourceFiles = arguments
+            .Select(
+                selector: argument => new SourceFileMetadata(
+                    Path: Path.GetFullPath(path: argument.Name + ".cs"),
+                    Types: [CreateType(name: argument.Name, kind: TypeMetadataKind.Class)]))
+            .ToArray();
+        var nestedTypes = arguments
+            .Select(
+                selector: argument => CreateReference(fullName: "External.Outer.Inner") with
+                {
+                    AssemblyName = "ExternalLibrary",
+                    ContainingType = CreateReference(fullName: "External.Outer") with
+                    {
+                        AssemblyName = "ExternalLibrary",
+                        TypeArguments = [argument],
+                    },
+                    Interfaces =
+                    [
+                        CreateReference(fullName: "External.IContract") with
+                        {
+                            TypeArguments = [argument],
+                        },
+                    ],
+                })
+            .ToArray();
+        var holder = CreateHolder(
+            reference: CreateReference(fullName: "System.Tuple") with
+            {
+                TypeArguments = nestedTypes,
+            });
+        var holderPath = Path.GetFullPath(path: "Holder.cs");
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [.. sourceFiles, new SourceFileMetadata(Path: holderPath, Types: [holder])],
+            Types: [.. sourceFiles.SelectMany(selector: file => file.Types), holder],
+            Diagnostics: []);
+        var index = ProjectMetadataIndex.Create(metadata: metadata);
+        var changedPath = Path.GetFullPath(path: changedType + ".cs");
+
+        var affected = index.GetAffectedSourceFiles(changedSourcePaths: [changedPath]);
+
+        affected.Should().HaveCount(2);
+        affected.Should().Contain(changedPath);
+        affected.Should().Contain(holderPath);
+    }
+
+    private static TypeMetadata CreateHolder(TypeMetadataReference reference) =>
+        CreateType(name: "Holder", kind: TypeMetadataKind.Class) with
+        {
+            Properties =
+            [
+                new PropertyMetadata(
+                    Name: "Value",
+                    FullName: "Sample.Holder.Value",
+                    Type: reference,
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+            ],
+        };
 
     private static TypeMetadata CreateType(string name, TypeMetadataKind kind) =>
         new(

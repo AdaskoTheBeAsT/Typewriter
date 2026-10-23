@@ -1454,7 +1454,10 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
     {
         if (!visitedSymbols.Add(item: symbol))
         {
-            return CreateShallowTypeReference(symbol: symbol, nullableAnnotation: nullableAnnotation);
+            return CreateShallowTypeReference(
+                symbol: symbol,
+                nullableAnnotation: nullableAnnotation,
+                visitedSymbols: visitedSymbols);
         }
 
         try
@@ -1527,6 +1530,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
             AssemblyName = GetAssemblyName(symbol: symbol),
+            ContainingType = GetContainingTypeReference(symbol: symbol, visitedSymbols: visitedSymbols),
             Interfaces = GetInterfaceReferences(symbol: symbol),
             IsValueTuple = IsValueTuple(symbol: symbol),
             TupleElements = GetTupleElements(symbol: symbol, visitedSymbols: visitedSymbols).ToArray(),
@@ -1555,7 +1559,8 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
     private static TypeMetadataReference CreateShallowTypeReference(
         ITypeSymbol symbol,
-        NullableAnnotation nullableAnnotation) =>
+        NullableAnnotation nullableAnnotation,
+        ISet<ITypeSymbol> visitedSymbols) =>
         new(
             Name: GetDisplayName(symbol: symbol),
             FullName: GetFullName(symbol: symbol),
@@ -1571,12 +1576,23 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
             AssemblyName = GetAssemblyName(symbol: symbol),
+            ContainingType = GetContainingTypeReference(symbol: symbol, visitedSymbols: visitedSymbols),
             Interfaces = GetInterfaceReferences(symbol: symbol),
             IsValueTuple = IsValueTuple(symbol: symbol),
             EnumValues = symbol is INamedTypeSymbol enumType
                 ? GetEnumValues(symbol: enumType).ToArray()
                 : [],
         };
+
+    private static TypeMetadataReference? GetContainingTypeReference(
+        ITypeSymbol symbol,
+        ISet<ITypeSymbol> visitedSymbols) =>
+        symbol is INamedTypeSymbol { ContainingType: { } containingType }
+            ? CreateTypeReference(
+                symbol: containingType,
+                nullableAnnotation: NullableAnnotation.NotAnnotated,
+                visitedSymbols: visitedSymbols)
+            : null;
 
     private static TypeMetadataReference? GetElementType(
         ITypeSymbol symbol,
