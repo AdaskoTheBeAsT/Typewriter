@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using Typewriter.Abstractions;
 
 namespace Typewriter.Engine;
@@ -17,8 +18,9 @@ public sealed class TypeScriptTypeMapper
     public const string DefaultGuidType = OutputConfiguration.DefaultGuidType;
     public const string DefaultGuidInitializer = OutputConfiguration.DefaultGuidInitializer;
 
-    private readonly ConcurrentDictionary<MapCacheKey, string> _cache = new();
-    private readonly ConcurrentDictionary<SemanticMapCacheKey, string> _semanticCache = new();
+    // Metadata references can carry lazy factories that retain their Roslyn compilation.
+    private readonly ConditionalWeakTable<TypeMetadataReference, ConcurrentDictionary<MapCacheKey, string>> _cache = [];
+    private readonly ConditionalWeakTable<TypeMetadataReference, ConcurrentDictionary<SemanticMapCacheKey, string>> _semanticCache = [];
 
     public string Map(TypeMetadataReference type) =>
         Map(type: type, strictNull: true);
@@ -51,24 +53,23 @@ public sealed class TypeScriptTypeMapper
         var normalizedGuidType = NormalizeGuidType(guidType: guidType);
         var normalizedDateOnlyType = NormalizeDateOnlyType(dateOnlyType: dateOnlyType);
         var normalizedTimeOnlyType = NormalizeTimeOnlyType(timeOnlyType: timeOnlyType);
-        return _cache.GetOrAdd(
+        return _cache.GetOrCreateValue(key: type).GetOrAdd(
             key: new MapCacheKey(
-                Type: type,
                 StrictNull: strictNull,
                 DateType: normalizedDateType,
                 DecimalType: normalizedDecimalType,
                 GuidType: normalizedGuidType,
                 DateOnlyType: normalizedDateOnlyType,
                 TimeOnlyType: normalizedTimeOnlyType),
-            valueFactory: static (key, mapper) => mapper.MapUncached(
-                type: key.Type,
+            valueFactory: static (key, state) => state.Mapper.MapUncached(
+                type: state.Type,
                 strictNull: key.StrictNull,
                 dateType: key.DateType,
                 decimalType: key.DecimalType,
                 guidType: key.GuidType,
                 dateOnlyType: key.DateOnlyType,
                 timeOnlyType: key.TimeOnlyType),
-            factoryArgument: this);
+            factoryArgument: (Mapper: this, Type: type));
     }
 
     internal string Map(
@@ -82,22 +83,21 @@ public sealed class TypeScriptTypeMapper
         ArgumentNullException.ThrowIfNull(argument: type);
         ArgumentNullException.ThrowIfNull(argument: dateMapping);
 
-        return _semanticCache.GetOrAdd(
+        return _semanticCache.GetOrCreateValue(key: type).GetOrAdd(
             key: new SemanticMapCacheKey(
-                Type: type,
                 StrictNull: strictNull,
                 DateMapping: dateMapping,
                 DecimalType: NormalizeDecimalType(decimalType: decimalType),
                 GuidType: NormalizeGuidType(guidType: guidType),
                 RuntimeType: runtimeType),
-            valueFactory: static (key, mapper) => mapper.MapSemanticUncached(
-                type: key.Type,
+            valueFactory: static (key, state) => state.Mapper.MapSemanticUncached(
+                type: state.Type,
                 strictNull: key.StrictNull,
                 dateMapping: key.DateMapping,
                 decimalType: key.DecimalType,
                 guidType: key.GuidType,
                 runtimeType: key.RuntimeType),
-            factoryArgument: this);
+            factoryArgument: (Mapper: this, Type: type));
     }
 
     private static bool IsBoolean(string fullName) =>
@@ -645,7 +645,6 @@ public sealed class TypeScriptTypeMapper
     }
 
     private sealed record MapCacheKey(
-        TypeMetadataReference Type,
         bool StrictNull,
         string DateType,
         string DecimalType,
@@ -654,7 +653,6 @@ public sealed class TypeScriptTypeMapper
         string TimeOnlyType);
 
     private sealed record SemanticMapCacheKey(
-        TypeMetadataReference Type,
         bool StrictNull,
         TypeScriptDateMapping DateMapping,
         string DecimalType,
