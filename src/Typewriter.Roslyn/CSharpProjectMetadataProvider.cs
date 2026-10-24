@@ -740,6 +740,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 analyzerConfigFiles: analyzerConfigFiles,
                 cancellationToken: cancellationToken));
 
+#pragma warning disable S3776
     private static IReadOnlyDictionary<string, string> LoadGlobalAnalyzerConfigOptions(
         IEnumerable<string> analyzerConfigFiles,
         CancellationToken cancellationToken)
@@ -804,6 +805,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
         return options;
     }
+#pragma warning restore S3776
 
     private static IEnumerable<ISourceGenerator> CreateSourceGenerators(
         IEnumerable<string> analyzerReferences,
@@ -2267,6 +2269,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 : ManifestValidation.SourcesChanged(changedSourceFiles: changedSources);
         }
 
+#pragma warning disable S3776
         public ManifestValidation ValidateDirtyPaths(IReadOnlyList<string> dirtyPaths)
         {
             List<string>? changedSources = null;
@@ -2318,6 +2321,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 ? ManifestValidation.Valid
                 : ManifestValidation.SourcesChanged(changedSourceFiles: changedSources);
         }
+#pragma warning restore S3776
 
         private static void AddStamp(
             Dictionary<string, FileStamp> stamps,
