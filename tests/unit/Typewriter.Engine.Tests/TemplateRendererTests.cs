@@ -2773,6 +2773,57 @@ public sealed class TemplateRendererTests
         output.Trim().Should().Be("class=Factory;implements=IFactoryContract<string>;matched=Contract:IBaseContract<string>");
     }
 
+    [Fact]
+    public void RenderCompilesAndExecutesHelperWithEscapedAndStringBracesIssue114()
+    {
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "Model",
+                    FullName: "Repro.Model",
+                    Namespace: "Repro",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties: [],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+            ],
+            Diagnostics: []);
+
+        const string template = """
+            ${
+                string ModelName(Class model) => model.Name;
+
+                string Foo(Class model)
+                {
+                    var methodName = "foo";
+                    var sb = new StringBuilder();
+                    sb.AppendLine($"public {methodName}() {{");
+                    sb.AppendLine("}");
+                    return sb.ToString();
+                }
+            }
+            $Classes[export class $ModelName {
+                $Foo
+            }]
+            """;
+
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "Models.tst", Content: template), diagnostics: diagnostics);
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        var normalized = output.Replace(oldValue: "\r\n", newValue: "\n", comparisonType: StringComparison.Ordinal).Trim();
+        normalized.Should().Be("export class Model {\n    public foo() {\n}\n}");
+    }
+
 #pragma warning disable S107
     private static TypeMetadataReference TypeReference(
         string name,

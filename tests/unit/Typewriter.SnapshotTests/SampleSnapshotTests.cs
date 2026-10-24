@@ -27,6 +27,7 @@ public sealed class SampleSnapshotTests
     [InlineData(data: ["issue81", "App/App.csproj", "App/Models.tst", "App/MyModel.ts"])]
     [InlineData(data: ["issue90", "App/App.csproj", "App/Models.tst", "App/Models.ts"])]
     [InlineData(data: ["issue96", "App/App.csproj", "App/Models.tst", "App/DerivedRecordVm.ts"])]
+    [InlineData(data: ["issue114", "Issue114.csproj", "Models.tst", "Model.ts"])]
     public async Task GenerateAsyncMatchesModelsSnapshot(
         string sampleName,
         string projectPath,

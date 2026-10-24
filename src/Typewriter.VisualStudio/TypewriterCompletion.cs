@@ -195,28 +195,6 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
         "unknown",
     ];
 
-    private static readonly string[] CSharpBlockPrefixes =
-    [
-        "using",
-        "#r",
-        "#reference",
-        "Template",
-        "public",
-        "private",
-        "internal",
-        "protected",
-        "static",
-        "const",
-        "bool",
-        "string",
-        "char",
-        "int",
-        "long",
-        "void",
-        "List<",
-        "IEnumerable<",
-    ];
-
     private readonly ITextBuffer _textBuffer;
     private bool _isDisposed;
 
@@ -390,7 +368,7 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
                 return false;
             }
 
-            var end = FindBalancedEnd(text: text, openIndex: start + 1, open: '{', close: '}');
+            var end = CSharpBlockScanner.FindBalancedEnd(content: text, openIndex: start + 1);
             if (end < 0)
             {
                 return false;
@@ -398,7 +376,9 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
 
             if (position >= start
                 && position <= end + 1
-                && IsCSharpBlock(block: text.Substring(startIndex: start + 2, length: end - start - 2), allowPartial: IsStandaloneBlockStart(text: text, dollarIndex: start)))
+                && CSharpBlockScanner.IsCSharpBlock(
+                    block: text.Substring(startIndex: start + 2, length: end - start - 2),
+                    allowPartial: IsStandaloneBlockStart(text: text, dollarIndex: start)))
             {
                 return true;
             }
@@ -407,28 +387,6 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
         }
 
         return false;
-    }
-
-    private static bool IsCSharpBlock(
-        string block,
-        bool allowPartial)
-    {
-        var trimmed = block.TrimStart();
-        if (trimmed.Length == 0)
-        {
-            return false;
-        }
-
-        var firstLineEnd = trimmed.IndexOfAny(anyOf: ['\r', '\n']);
-        var firstLine = firstLineEnd < 0 ? trimmed : trimmed.Substring(startIndex: 0, length: firstLineEnd);
-        if (CSharpBlockPrefixes.Any(predicate: prefix => firstLine.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal)))
-        {
-            return true;
-        }
-
-        return allowPartial
-            && new[] { "boo", "cha", "con", "int", "lon", "pri", "pro", "pub", "sta", "str", "usi", "voi" }
-                .Any(predicate: prefix => firstLine.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal));
     }
 
     private static bool IsStandaloneBlockStart(
@@ -452,32 +410,6 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
         }
 
         return true;
-    }
-
-    private static int FindBalancedEnd(
-        string text,
-        int openIndex,
-        char open,
-        char close)
-    {
-        var depth = 0;
-        for (var index = openIndex; index < text.Length; index++)
-        {
-            if (text[index: index] == open)
-            {
-                depth++;
-            }
-            else if (text[index: index] == close)
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    return index;
-                }
-            }
-        }
-
-        return -1;
     }
 
     private static IEnumerable<string> GetHelperNames(string text) =>

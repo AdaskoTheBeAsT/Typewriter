@@ -107,7 +107,7 @@ public sealed record TemplateDocument(
                 && index + 1 < content.Length
                 && content[index: index + 1] == '{')
             {
-                var end = FindBalancedEnd(content: content, openIndex: index + 1, open: '{', close: '}');
+                var end = TemplateCodeBlockScanner.FindBalancedEnd(content: content, openIndex: index + 1);
                 if (end < 0)
                 {
                     diagnostics.Add(
@@ -122,7 +122,7 @@ public sealed record TemplateDocument(
                 }
 
                 var blockContent = content.Substring(startIndex: index + 2, length: end - index - 2);
-                if (!IsCompatibilityCodeBlock(block: blockContent))
+                if (!TemplateCodeBlockScanner.IsCompatibilityCodeBlock(block: blockContent))
                 {
                     result.Append(value: content[index: index]);
                     continue;
@@ -165,14 +165,14 @@ public sealed record TemplateDocument(
                 continue;
             }
 
-            var end = FindBalancedEnd(content: content, openIndex: index + 1, open: '{', close: '}');
+            var end = TemplateCodeBlockScanner.FindBalancedEnd(content: content, openIndex: index + 1);
             if (end < 0)
             {
                 yield break;
             }
 
             var blockContent = content.Substring(startIndex: index + 2, length: end - index - 2);
-            if (!IsCompatibilityCodeBlock(block: blockContent))
+            if (!TemplateCodeBlockScanner.IsCompatibilityCodeBlock(block: blockContent))
             {
                 continue;
             }
@@ -200,37 +200,6 @@ public sealed record TemplateDocument(
         }
 
         return line;
-    }
-
-    private static bool IsCompatibilityCodeBlock(string block)
-    {
-        var trimmed = block.TrimStart();
-        if (trimmed.Length == 0)
-        {
-            return false;
-        }
-
-        var firstLineEnd = trimmed.IndexOfAny(anyOf: ['\r', '\n']);
-        var firstLine = firstLineEnd < 0 ? trimmed : trimmed[..firstLineEnd];
-        return firstLine.StartsWith(value: "using ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "#r ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "#reference ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "#load ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "Template", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "public ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "private ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "internal ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "protected ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "static ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "const ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "bool ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "string ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "char ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "int ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "long ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "void ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "List<", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "IEnumerable<", comparisonType: StringComparison.Ordinal);
     }
 
     private static void AddExpressionBodiedMethods(
@@ -271,7 +240,7 @@ public sealed record TemplateDocument(
                      matchTimeout: RegexTimeout))
         {
             var openBrace = match.Index + match.Length - 1;
-            var closeBrace = FindBalancedEnd(content: block, openIndex: openBrace, open: '{', close: '}');
+            var closeBrace = TemplateCodeBlockScanner.FindBalancedEnd(content: block, openIndex: openBrace);
             if (closeBrace < 0)
             {
                 continue;
@@ -325,32 +294,6 @@ public sealed record TemplateDocument(
             Expression: methodExpression,
             Body: body ?? methodExpression ?? string.Empty);
         methods[key: method.Name] = method;
-    }
-
-    private static int FindBalancedEnd(
-        string content,
-        int openIndex,
-        char open,
-        char close)
-    {
-        var depth = 0;
-        for (var index = openIndex; index < content.Length; index++)
-        {
-            if (content[index: index] == open)
-            {
-                depth++;
-            }
-            else if (content[index: index] == close)
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    return index;
-                }
-            }
-        }
-
-        return -1;
     }
 
     private static string? FindSingleFileMode(string block)

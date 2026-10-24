@@ -99,27 +99,228 @@ class TypewriterHighlightingLexer : LexerBase() {
     }
 
     private fun scanHelperBlock(index: Int): Int {
-        var current = index + 2
-        var depth = 1
+        val closeIndex = scanCSharpBalancedBraces(index + 1)
+        return if (closeIndex < 0) endOffset else closeIndex + 1
+    }
+
+    private fun scanCSharpBalancedBraces(openIndex: Int): Int {
+        if (openIndex >= endOffset || buffer[openIndex] != '{') {
+            return -1
+        }
+
+        var current = openIndex
+        var depth = 0
         while (current < endOffset) {
+            val skipped = trySkipCSharpNonCode(current)
+            if (skipped > current) {
+                current = skipped
+                continue
+            }
+
             when (buffer[current]) {
-                '\'', '"' -> current = scanString(current)
                 '{' -> {
                     depth++
                     current++
                 }
                 '}' -> {
                     depth--
-                    current++
                     if (depth == 0) {
                         return current
                     }
+                    current++
                 }
                 else -> current++
             }
         }
 
+        return -1
+    }
+
+    private fun trySkipCSharpNonCode(index: Int): Int {
+        val ch = buffer[index]
+        if (ch == '/' && peek(index + 1) == '/') {
+            return lineEnd(index + 2)
+        }
+        if (ch == '/' && peek(index + 1) == '*') {
+            var current = index + 2
+            while (current < endOffset) {
+                if (buffer[current] == '*' && peek(current + 1) == '/') {
+                    return current + 2
+                }
+                current++
+            }
+            return endOffset
+        }
+        if (ch == '\'') {
+            return scanString(index)
+        }
+        return trySkipCSharpString(index)
+    }
+
+    private fun trySkipCSharpString(index: Int): Int {
+        val ch = buffer[index]
+        if (ch == '@') {
+            if (peek(index + 1) == '$' && peek(index + 2) == '"') {
+                return skipVerbatimString(index + 3, interpolated = true)
+            }
+            if (peek(index + 1) == '"') {
+                return skipVerbatimString(index + 2, interpolated = false)
+            }
+            return index
+        }
+
+        if (ch == '$') {
+            val dollarCount = countConsecutive(index, '$')
+            val afterDollars = index + dollarCount
+            if (peek(afterDollars) == '@' && dollarCount == 1 && peek(afterDollars + 1) == '"') {
+                return skipVerbatimString(afterDollars + 2, interpolated = true)
+            }
+            if (peek(afterDollars) == '"') {
+                val quoteCount = countConsecutive(afterDollars, '"')
+                if (quoteCount >= 3) {
+                    return skipInterpolatedRawString(afterDollars + quoteCount, quoteCount, dollarCount)
+                }
+                if (dollarCount == 1) {
+                    return skipRegularString(afterDollars + 1, interpolated = true)
+                }
+            }
+            return index
+        }
+
+        if (ch == '"') {
+            val quoteCount = countConsecutive(index, '"')
+            return if (quoteCount >= 3) {
+                skipRawString(index + quoteCount, quoteCount)
+            } else {
+                skipRegularString(index + 1, interpolated = false)
+            }
+        }
+
+        return index
+    }
+
+    private fun skipRegularString(startIndex: Int, interpolated: Boolean): Int {
+        var current = startIndex
+        while (current < endOffset) {
+            val ch = buffer[current]
+            if (ch == '\\') {
+                current += if (current + 1 < endOffset) 2 else 1
+                continue
+            }
+            if (ch == '"' || ch == '\r' || ch == '\n') {
+                return current + 1
+            }
+            if (interpolated && (ch == '{' || ch == '}')) {
+                if (peek(current + 1) == ch) {
+                    current += 2
+                    continue
+                }
+                if (ch == '{') {
+                    val holeEnd = scanCSharpBalancedBraces(current)
+                    if (holeEnd < 0) {
+                        return endOffset
+                    }
+                    current = holeEnd + 1
+                    continue
+                }
+            }
+            current++
+        }
+
         return endOffset
+    }
+
+    private fun skipVerbatimString(startIndex: Int, interpolated: Boolean): Int {
+        var current = startIndex
+        while (current < endOffset) {
+            val ch = buffer[current]
+            if (ch == '"') {
+                if (peek(current + 1) == '"') {
+                    current += 2
+                    continue
+                }
+                return current + 1
+            }
+            if (interpolated && (ch == '{' || ch == '}')) {
+                if (peek(current + 1) == ch) {
+                    current += 2
+                    continue
+                }
+                if (ch == '{') {
+                    val holeEnd = scanCSharpBalancedBraces(current)
+                    if (holeEnd < 0) {
+                        return endOffset
+                    }
+                    current = holeEnd + 1
+                    continue
+                }
+            }
+            current++
+        }
+
+        return endOffset
+    }
+
+    private fun skipRawString(startIndex: Int, quoteCount: Int): Int {
+        var current = startIndex
+        while (current < endOffset) {
+            if (buffer[current] == '"') {
+                val run = countConsecutive(current, '"')
+                if (run >= quoteCount) {
+                    return current + run
+                }
+                current += run
+                continue
+            }
+            current++
+        }
+
+        return endOffset
+    }
+
+    private fun skipInterpolatedRawString(startIndex: Int, quoteCount: Int, dollarCount: Int): Int {
+        var current = startIndex
+        while (current < endOffset) {
+            val ch = buffer[current]
+            if (ch == '"') {
+                val run = countConsecutive(current, '"')
+                if (run >= quoteCount) {
+                    return current + run
+                }
+                current += run
+                continue
+            }
+            if (ch == '{') {
+                val braceRun = countConsecutive(current, '{')
+                if (braceRun < dollarCount) {
+                    current += braceRun
+                    continue
+                }
+                val holeOpenIndex = current + braceRun - 1
+                val holeEnd = scanCSharpBalancedBraces(holeOpenIndex)
+                if (holeEnd < 0) {
+                    return endOffset
+                }
+                val consumedClose = minOf(dollarCount - 1, countConsecutive(holeEnd + 1, '}'))
+                current = holeEnd + 1 + consumedClose
+                continue
+            }
+            if (ch == '}') {
+                current += countConsecutive(current, '}')
+                continue
+            }
+            current++
+        }
+
+        return endOffset
+    }
+
+    private fun countConsecutive(startIndex: Int, target: Char): Int {
+        var current = startIndex
+        while (current < endOffset && buffer[current] == target) {
+            current++
+        }
+        return current - startIndex
     }
 
     private fun scanString(index: Int): Int {

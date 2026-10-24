@@ -38,6 +38,53 @@ public sealed class TemplateDiagnosticServiceTests
     }
 
     [Fact]
+    public async Task ValidateAsyncDoesNotReportUnclosedBlockForEscapedInterpolatedBracesIssue114()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            const string issue114Template = """
+                ${
+                    string ModelName(Class model) => model.Name;
+
+                    string Foo(Class model)
+                    {
+                        var methodName = "foo";
+                        var sb = new StringBuilder();
+                        sb.AppendLine($"public {methodName}() {{");
+                        sb.AppendLine("}");
+                        return sb.ToString();
+                    }
+                }
+                $Classes[export class $ModelName {
+                    $Foo
+                }]
+                """;
+            var document = new TextDocumentState(
+                Uri: UriFromPath(path: project.TemplatePath),
+                Path: project.TemplatePath,
+                Text: issue114Template,
+                Version: 2);
+            var settings = new LanguageServerSettings(
+                RootPath: directory,
+                WorkspacePath: directory,
+                ProjectPath: project.ProjectPath,
+                Framework: "net10.0",
+                AllProjects: false);
+
+            var diagnostics = await new TemplateDiagnosticService()
+                .ValidateAsync(document: document, settings: settings, cancellationToken: CancellationToken.None);
+
+            diagnostics.Should().BeEmpty();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public void MapUsesZeroBasedLspRanges()
     {
         var templatePath = Path.Combine(path1: Path.GetTempPath(), path2: "Models.tst");
