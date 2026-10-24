@@ -537,7 +537,8 @@ internal sealed class TemplateCodeModelAdapterFactory
             guidType: _settings.GuidTypeGeneration,
             runtimeType: runtimeType);
         var isStruct = typeMetadata?.Kind == TypeMetadataKind.Struct;
-        return new MappedCodeType
+        return new MappedCodeType(
+            interfacesFactory: () => CreateInterfaces(reference: type, metadata: typeMetadata))
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = GetLegacyTypeName(mappedName: mappedName),
@@ -813,6 +814,20 @@ internal sealed class TemplateCodeModelAdapterFactory
             items: type.BaseTypes
                 .Where(predicate: IsInterfaceReference)
                 .Select(selector: CreateInterfaceReference));
+    }
+
+    private Typewriter.CodeModel.InterfaceCollection CreateInterfaces(
+        TypeMetadataReference reference,
+        TypeMetadata? metadata)
+    {
+        if (reference.Interfaces.Count > 0)
+        {
+            return new Typewriter.CodeModel.InterfaceCollection(items: reference.Interfaces.Select(selector: CreateInterfaceReference));
+        }
+
+        return metadata is null
+            ? new Typewriter.CodeModel.InterfaceCollection()
+            : CreateInterfaces(type: metadata);
     }
 
     private bool IsInterfaceReference(TypeMetadataReference reference)

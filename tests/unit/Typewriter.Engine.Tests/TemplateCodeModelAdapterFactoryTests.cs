@@ -126,6 +126,71 @@ public sealed class TemplateCodeModelAdapterFactoryTests
     }
 
     [Theory]
+    [InlineData(TypeMetadataKind.Class)]
+    [InlineData(TypeMetadataKind.Record)]
+    [InlineData(TypeMetadataKind.Struct)]
+    [InlineData(TypeMetadataKind.Interface)]
+    public void TryAdaptExpandsSelfReferentialInterfacesLazily(TypeMetadataKind kind)
+    {
+        var reference = CreateReference(name: "Factory", fullName: "Sample.Factory");
+        var contractReference = CreateReference(name: "IContract", fullName: "Sample.IContract") with
+        {
+            TypeArguments = [reference],
+        };
+        var declaration = CreateType(kind: kind, arity: 0) with
+        {
+            BaseTypes = [contractReference],
+        };
+        var contract = CreateType(kind: TypeMetadataKind.Interface, arity: 1) with
+        {
+            Name = "IContract",
+            FullName = "Sample.IContract",
+        };
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types: [declaration, contract],
+            Diagnostics: []);
+        var factory = new TemplateCodeModelAdapterFactory(metadata: metadata, templatePath: "models.tst");
+
+        factory.TryAdapt(context: reference, targetType: typeof(Typewriter.CodeModel.Type), adapted: out var adapted).Should().BeTrue();
+
+        var type = adapted.Should().BeAssignableTo<Typewriter.CodeModel.Type>().Which;
+        var interfaces = type.Interfaces;
+        type.Interfaces.Should().BeSameAs(interfaces);
+        for (var depth = 0; depth < 5; depth++)
+        {
+            type.IsStruct.Should().Be(kind == TypeMetadataKind.Struct);
+            var implemented = type.Interfaces.Should().ContainSingle().Which;
+            implemented.Name.Should().Be("IContract");
+            type = implemented.TypeArguments.Should().ContainSingle().Which;
+            type.FullName.Should().Be("Sample.Factory");
+        }
+    }
+
+    [Fact]
+    public void TryAdaptUsesInterfacesCarriedByExternalTypeReferences()
+    {
+        var metadata = new ProjectMetadata(ProjectPath: "Sample.csproj", SourceFiles: [], Types: [], Diagnostics: []);
+        var factory = new TemplateCodeModelAdapterFactory(metadata: metadata, templatePath: "models.tst");
+        var contract = CreateReference(name: "Contract", fullName: "External.Contract") with
+        {
+            TypeArguments = [CreateReference(name: "String", fullName: "System.String")],
+        };
+        var reference = CreateReference(name: "Factory", fullName: "External.Factory") with
+        {
+            Interfaces = [contract],
+        };
+
+        factory.TryAdapt(context: reference, targetType: typeof(Typewriter.CodeModel.Type), adapted: out var adapted).Should().BeTrue();
+
+        var type = adapted.Should().BeAssignableTo<Typewriter.CodeModel.Type>().Which;
+        var implemented = type.Interfaces.Should().ContainSingle().Which;
+        implemented.FullName.Should().Be("External.Contract");
+        implemented.TypeArguments.Should().ContainSingle().Which.Name.Should().Be("string");
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public void RenderCompilesIssue112HelperWithSameNameGenericBase(bool derivedFirst)

@@ -1108,12 +1108,263 @@ public sealed class CSharpProjectMetadataProviderTests
             type.Arity.Should().Be(arity);
             type.TypeArguments.Should().HaveCount(arity);
             type.IsCollection.Should().BeTrue();
+            var enumerable = type.Interfaces.Should().ContainSingle(reference => reference.FullName == "System.Collections.Generic.IEnumerable").Which;
+            var enumerableElement = enumerable.TypeArguments.Should().ContainSingle().Which;
+            enumerableElement.Name.Should().Be("SelfEnumerable");
+            enumerableElement.Arity.Should().Be(arity);
+            enumerableElement.TypeArguments.Should().HaveCount(arity);
             type.ElementType.Should().NotBeNull();
             type.ElementType.Name.Should().Be("SelfEnumerable");
             type.ElementType.Arity.Should().Be(arity);
             type.ElementType.TypeArguments.Should().BeEmpty();
             type.ElementType.IsCollection.Should().BeFalse();
             type.ElementType.ElementType.Should().BeNull();
+            var recursiveElement = type.ElementType;
+            for (var depth = 0; depth < 5; depth++)
+            {
+                var recursiveEnumerable = recursiveElement.Interfaces.Should().ContainSingle(reference => reference.FullName == "System.Collections.Generic.IEnumerable").Which;
+                recursiveElement = recursiveEnumerable.TypeArguments.Should().ContainSingle().Which;
+                recursiveElement.Name.Should().Be("SelfEnumerable");
+                recursiveElement.Arity.Should().Be(arity);
+                recursiveElement.TypeArguments.Should().HaveCount(arity);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task GetMetadataPreservesConstructedContainingTypesForExternalNestedReferences()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            EmitAssembly(
+                path: Path.Combine(path1: directory, path2: "ExternalLibrary.dll"),
+                assemblyName: "ExternalLibrary",
+                source: """
+                        using System.Collections;
+                        using System.Collections.Generic;
+
+                        namespace External;
+
+                        public interface IContract<T>
+                        {
+                        }
+
+                        public sealed class Outer<T>
+                        {
+                            public sealed class Inner : IContract<T>, IEnumerable<Inner>
+                            {
+                                public IEnumerator<Inner> GetEnumerator() => throw new System.NotImplementedException();
+
+                                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+                            }
+                        }
+                        """);
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <Reference Include="ExternalLibrary">
+                                <HintPath>ExternalLibrary.dll</HintPath>
+                              </Reference>
+                            </ItemGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Models.cs"),
+                contents: """
+                          namespace Sample;
+
+                          public sealed class A
+                          {
+                          }
+
+                          public sealed class B
+                          {
+                          }
+
+                          public sealed class Holder
+                          {
+                              public System.Tuple<External.Outer<A>.Inner, External.Outer<B>.Inner> Pair { get; set; } = null!;
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().BeEmpty();
+            metadata.Types.Should().NotContain(type => type.Namespace == "External");
+            var holder = metadata.Types.Should().ContainSingle(type => type.Name == "Holder").Which;
+            var pair = holder.Properties.Should().ContainSingle(property => property.Name == "Pair").Which;
+            pair.Type.TypeArguments.Should().HaveCount(2);
+            for (var index = 0; index < pair.Type.TypeArguments.Count; index++)
+            {
+                var type = pair.Type.TypeArguments[index];
+                var expectedArgument = index == 0 ? "A" : "B";
+                VerifyContainingType(type: type, expectedArgument: expectedArgument);
+                var element = type.ElementType;
+                element.Should().NotBeNull();
+                element.TypeArguments.Should().BeEmpty();
+                VerifyContainingType(type: element, expectedArgument: expectedArgument);
+                for (var depth = 0; depth < 5; depth++)
+                {
+                    var enumerable = type.Interfaces.Should().ContainSingle(reference => reference.FullName == "System.Collections.Generic.IEnumerable").Which;
+                    type = enumerable.TypeArguments.Should().ContainSingle().Which;
+                    VerifyContainingType(type: type, expectedArgument: expectedArgument);
+                }
+            }
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+
+        static void VerifyContainingType(TypeMetadataReference type, string expectedArgument)
+        {
+            type.FullName.Should().Be("External.Outer.Inner");
+            type.Arity.Should().Be(0);
+            type.TypeArguments.Should().BeEmpty();
+            var containing = type.ContainingType;
+            containing.Should().NotBeNull();
+            containing.FullName.Should().Be("External.Outer");
+            containing.AssemblyName.Should().Be("ExternalLibrary");
+            containing.Arity.Should().Be(1);
+            containing.TypeArguments.Should().ContainSingle().Which.Name.Should().Be(expectedArgument);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetMetadataDoesNotExpandExternalContainingTypeCollections(bool expanding)
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var elementType = expanding ? "Outer<T[]>" : "T";
+            EmitAssembly(
+                path: Path.Combine(path1: directory, path2: "ExternalLibrary.dll"),
+                assemblyName: "ExternalLibrary",
+                source: $$"""
+                          using System.Collections;
+                          using System.Collections.Generic;
+
+                          namespace External;
+
+                          public sealed class Outer<T> : IEnumerable<{{elementType}}>
+                          {
+                              public IEnumerator<{{elementType}}> GetEnumerator() => throw new System.NotImplementedException();
+
+                              IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+                              public sealed class Inner
+                              {
+                              }
+
+                              public sealed class Middle<TItem>
+                              {
+                                  public sealed class Inner
+                                  {
+                                  }
+                              }
+                          }
+                          """);
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <Reference Include="ExternalLibrary">
+                                <HintPath>ExternalLibrary.dll</HintPath>
+                              </Reference>
+                            </ItemGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Models.cs"),
+                contents: """
+                          namespace Sample;
+
+                          public sealed class Payload
+                          {
+                          }
+
+                          public sealed class Holder
+                          {
+                              public External.Outer<int>.Inner Value { get; set; } = null!;
+                              public External.Outer<Payload[]>.Inner ArrayArgument { get; set; } = null!;
+                              public External.Outer<External.Outer<Payload>>.Inner NestedArgument { get; set; } = null!;
+                              public External.Outer<int>.Middle<Payload[]>.Inner NestedContainer { get; set; } = null!;
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().BeEmpty();
+            var holder = metadata.Types.Should().ContainSingle(type => type.Name == "Holder").Which;
+            var value = holder.Properties.Should().ContainSingle(property => property.Name == "Value").Which;
+            value.Type.FullName.Should().Be("External.Outer.Inner");
+            value.Type.Arity.Should().Be(0);
+            value.Type.TypeArguments.Should().BeEmpty();
+            var containing = value.Type.ContainingType;
+            containing.Should().NotBeNull();
+            VerifyContainer(type: containing, fullName: "External.Outer");
+            containing.TypeArguments.Should().ContainSingle().Which.FullName.Should().Be("System.Int32");
+
+            var arrayArgument = holder.Properties.Should().ContainSingle(property => property.Name == "ArrayArgument").Which;
+            var array = arrayArgument.Type.ContainingType!.TypeArguments.Should().ContainSingle().Which;
+            VerifyArrayArgument(type: array);
+
+            var nestedArgument = holder.Properties.Should().ContainSingle(property => property.Name == "NestedArgument").Which;
+            var argument = nestedArgument.Type.ContainingType!.TypeArguments.Should().ContainSingle().Which;
+            VerifyContainer(type: argument, fullName: "External.Outer");
+            argument.TypeArguments.Should().ContainSingle().Which.FullName.Should().Be("Sample.Payload");
+
+            var nestedContainer = holder.Properties.Should().ContainSingle(property => property.Name == "NestedContainer").Which;
+            var middle = nestedContainer.Type.ContainingType;
+            middle.Should().NotBeNull();
+            VerifyContainer(type: middle, fullName: "External.Outer.Middle");
+            VerifyArrayArgument(type: middle.TypeArguments.Should().ContainSingle().Which);
+            middle.ContainingType.Should().NotBeNull();
+            VerifyContainer(type: middle.ContainingType, fullName: "External.Outer");
+            middle.ContainingType.TypeArguments.Should().ContainSingle().Which.FullName.Should().Be("System.Int32");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+
+        static void VerifyContainer(TypeMetadataReference type, string fullName)
+        {
+            type.FullName.Should().Be(fullName);
+            type.AssemblyName.Should().Be("ExternalLibrary");
+            type.Arity.Should().Be(1);
+            type.IsCollection.Should().BeFalse();
+            type.ElementType.Should().BeNull();
+            type.Interfaces.Should().BeEmpty();
+        }
+
+        static void VerifyArrayArgument(TypeMetadataReference type)
+        {
+            type.IsCollection.Should().BeTrue();
+            type.ElementType.Should().NotBeNull();
+            type.ElementType.FullName.Should().Be("Sample.Payload");
         }
     }
 
@@ -1325,14 +1576,11 @@ public sealed class CSharpProjectMetadataProviderTests
         return directory;
     }
 
-    private static void EmitSourceGeneratorAssembly(string path)
-    {
-        var compilation = CSharpCompilation.Create(
+    private static void EmitSourceGeneratorAssembly(string path) =>
+        EmitAssembly(
+            path: path,
             assemblyName: "DuplicateGenerator",
-            syntaxTrees:
-            [
-                CSharpSyntaxTree.ParseText(
-                    text: """
+            source: """
                           using Microsoft.CodeAnalysis;
 
                           [Generator]
@@ -1346,9 +1594,14 @@ public sealed class CSharpProjectMetadataProviderTests
                               {
                               }
                           }
-                          """),
-            ],
-            references: GetSourceGeneratorReferences(),
+                          """);
+
+    private static void EmitAssembly(string path, string assemblyName, string source)
+    {
+        var compilation = CSharpCompilation.Create(
+            assemblyName: assemblyName,
+            syntaxTrees: [CSharpSyntaxTree.ParseText(text: source)],
+            references: GetCompilationReferences(),
             options: new CSharpCompilationOptions(outputKind: OutputKind.DynamicallyLinkedLibrary));
 
         using var stream = File.Create(path: path);
@@ -1356,7 +1609,7 @@ public sealed class CSharpProjectMetadataProviderTests
         result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics));
     }
 
-    private static IReadOnlyList<MetadataReference> GetSourceGeneratorReferences()
+    private static IReadOnlyList<MetadataReference> GetCompilationReferences()
     {
         var trustedAssemblies = (string?)AppContext.GetData(name: "TRUSTED_PLATFORM_ASSEMBLIES");
         trustedAssemblies.Should().NotBeNullOrWhiteSpace();

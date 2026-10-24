@@ -23,6 +23,10 @@ public sealed record TypeMetadataReference(
 
     public string AssemblyName { get; init; } = string.Empty;
 
+    public TypeMetadataReference? ContainingType { get; init; }
+
+    public IReadOnlyList<TypeMetadataReference> Interfaces { get; init; } = [];
+
     public bool IsValueTuple { get; init; }
 
     public IReadOnlyList<FieldMetadata> TupleElements { get; init; } = [];

@@ -740,6 +740,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 analyzerConfigFiles: analyzerConfigFiles,
                 cancellationToken: cancellationToken));
 
+#pragma warning disable S3776
     private static IReadOnlyDictionary<string, string> LoadGlobalAnalyzerConfigOptions(
         IEnumerable<string> analyzerConfigFiles,
         CancellationToken cancellationToken)
@@ -804,6 +805,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
         return options;
     }
+#pragma warning restore S3776
 
     private static IEnumerable<ISourceGenerator> CreateSourceGenerators(
         IEnumerable<string> analyzerReferences,
@@ -1454,12 +1456,17 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
     {
         if (!visitedSymbols.Add(item: symbol))
         {
-            return CreateShallowTypeReference(symbol: symbol, nullableAnnotation: nullableAnnotation);
+            return CreateShallowTypeReference(
+                symbol: symbol,
+                nullableAnnotation: nullableAnnotation);
         }
 
         try
         {
-            return CreateTypeReferenceCore(symbol: symbol, nullableAnnotation: nullableAnnotation, visitedSymbols: visitedSymbols);
+            return CreateTypeReferenceCore(
+                symbol: symbol,
+                nullableAnnotation: nullableAnnotation,
+                visitedSymbols: visitedSymbols);
         }
         finally
         {
@@ -1524,12 +1531,31 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
             AssemblyName = GetAssemblyName(symbol: symbol),
+            ContainingType = GetContainingTypeReference(symbol: symbol),
+            Interfaces = GetInterfaceReferences(symbol: symbol),
             IsValueTuple = IsValueTuple(symbol: symbol),
             TupleElements = GetTupleElements(symbol: symbol, visitedSymbols: visitedSymbols).ToArray(),
             EnumValues = symbol is INamedTypeSymbol enumType
                 ? GetEnumValues(symbol: enumType).ToArray()
                 : [],
         };
+    }
+
+    private static IReadOnlyList<TypeMetadataReference> GetInterfaceReferences(ITypeSymbol symbol)
+    {
+        if (symbol.AllInterfaces.IsEmpty)
+        {
+            return [];
+        }
+
+        // Resolve each edge from its constructed symbol only when it is traversed.
+        return new LazyTypeReferenceList(
+            valueFactory: () => symbol.AllInterfaces
+                .Select(
+                    selector: interfaceSymbol => CreateTypeReference(
+                        symbol: interfaceSymbol,
+                        nullableAnnotation: NullableAnnotation.NotAnnotated))
+                .ToArray());
     }
 
     private static TypeMetadataReference CreateShallowTypeReference(
@@ -1550,11 +1576,59 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         {
             Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
             AssemblyName = GetAssemblyName(symbol: symbol),
+            ContainingType = GetContainingTypeReference(symbol: symbol),
+            Interfaces = GetInterfaceReferences(symbol: symbol),
             IsValueTuple = IsValueTuple(symbol: symbol),
             EnumValues = symbol is INamedTypeSymbol enumType
                 ? GetEnumValues(symbol: enumType).ToArray()
                 : [],
         };
+
+    private static TypeMetadataReference? GetContainingTypeReference(ITypeSymbol symbol) =>
+        symbol is INamedTypeSymbol { ContainingType: { } containingType }
+            ? CreateIdentityTypeReference(
+                symbol: containingType,
+                nullableAnnotation: NullableAnnotation.NotAnnotated)
+            : null;
+
+    private static TypeMetadataReference CreateIdentityTypeReference(
+        ITypeSymbol symbol,
+        NullableAnnotation nullableAnnotation)
+    {
+        // Containing types contribute identity and arguments, not collection or interface graphs.
+        var elementType = symbol is IArrayTypeSymbol arrayType
+            ? CreateIdentityTypeReference(
+                symbol: arrayType.ElementType,
+                nullableAnnotation: arrayType.ElementNullableAnnotation)
+            : null;
+        var typeArguments = symbol is INamedTypeSymbol namedType
+            ? namedType.TypeArguments
+                .Zip(
+                    second: namedType.TypeArgumentNullableAnnotations,
+                    resultSelector: (argument, annotation) => CreateIdentityTypeReference(
+                        symbol: argument,
+                        nullableAnnotation: annotation))
+                .ToArray()
+            : [];
+
+        return new TypeMetadataReference(
+            Name: GetDisplayName(symbol: symbol),
+            FullName: GetFullName(symbol: symbol),
+            Namespace: GetNamespace(symbol: symbol),
+            IsNullable: nullableAnnotation == NullableAnnotation.Annotated,
+            IsCollection: elementType is not null,
+            IsDictionary: IsDictionary(symbol: symbol),
+            IsEnum: IsEnum(symbol: symbol),
+            IsPrimitive: IsPrimitive(symbol: symbol),
+            IsDateLike: IsDateLike(symbol: symbol),
+            ElementType: elementType,
+            TypeArguments: typeArguments)
+        {
+            Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
+            AssemblyName = GetAssemblyName(symbol: symbol),
+            ContainingType = GetContainingTypeReference(symbol: symbol),
+        };
+    }
 
     private static TypeMetadataReference? GetElementType(
         ITypeSymbol symbol,
@@ -1567,7 +1641,10 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
 
         if (symbol is IArrayTypeSymbol arrayType)
         {
-            return CreateTypeReference(symbol: arrayType.ElementType, nullableAnnotation: arrayType.ElementNullableAnnotation, visitedSymbols: visitedSymbols);
+            return CreateTypeReference(
+                symbol: arrayType.ElementType,
+                nullableAnnotation: arrayType.ElementNullableAnnotation,
+                visitedSymbols: visitedSymbols);
         }
 
         if (symbol is not INamedTypeSymbol namedType)
@@ -1590,7 +1667,10 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         var annotation = enumerable.TypeArgumentNullableAnnotations.Length > 0
             ? enumerable.TypeArgumentNullableAnnotations[index: 0]
             : NullableAnnotation.NotAnnotated;
-        return CreateTypeReference(symbol: enumerable.TypeArguments[index: 0], nullableAnnotation: annotation, visitedSymbols: visitedSymbols);
+        return CreateTypeReference(
+            symbol: enumerable.TypeArguments[index: 0],
+            nullableAnnotation: annotation,
+            visitedSymbols: visitedSymbols);
     }
 
     private static bool IsDictionary(ITypeSymbol symbol)
@@ -1637,7 +1717,10 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 Name: field.Name,
                 FullName: field.ToDisplayString(format: SymbolDisplayFormat.CSharpErrorMessageFormat),
                 Accessibility: MapAccessibility(accessibility: field.DeclaredAccessibility),
-                Type: CreateTypeReference(symbol: field.Type, nullableAnnotation: field.NullableAnnotation, visitedSymbols: visitedSymbols),
+                Type: CreateTypeReference(
+                    symbol: field.Type,
+                    nullableAnnotation: field.NullableAnnotation,
+                    visitedSymbols: visitedSymbols),
                 Attributes: GetAttributes(attributes: field.GetAttributes()).ToArray(),
                 ParentTypeFullName: GetFullName(symbol: tupleType))
             {
@@ -2036,6 +2119,19 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
         FileStamp Stamp,
         SyntaxTree Tree);
 
+    private sealed class LazyTypeReferenceList(Func<IReadOnlyList<TypeMetadataReference>> valueFactory) : IReadOnlyList<TypeMetadataReference>
+    {
+        private readonly Lazy<IReadOnlyList<TypeMetadataReference>> _references = new(valueFactory: valueFactory);
+
+        public int Count => _references.Value.Count;
+
+        public TypeMetadataReference this[int index] => _references.Value[index];
+
+        public IEnumerator<TypeMetadataReference> GetEnumerator() => _references.Value.GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
     private sealed class TypeReferenceCacheNode
     {
         public TypeMetadataReference?[] ByAnnotation { get; } = new TypeMetadataReference?[3];
@@ -2173,6 +2269,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 : ManifestValidation.SourcesChanged(changedSourceFiles: changedSources);
         }
 
+#pragma warning disable S3776
         public ManifestValidation ValidateDirtyPaths(IReadOnlyList<string> dirtyPaths)
         {
             List<string>? changedSources = null;
@@ -2224,6 +2321,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 ? ManifestValidation.Valid
                 : ManifestValidation.SourcesChanged(changedSourceFiles: changedSources);
         }
+#pragma warning restore S3776
 
         private static void AddStamp(
             Dictionary<string, FileStamp> stamps,

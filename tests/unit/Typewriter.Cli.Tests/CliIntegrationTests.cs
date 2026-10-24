@@ -277,6 +277,148 @@ public sealed class CliIntegrationTests
         }
     }
 
+    [Theory]
+    [InlineData("net48")]
+    [InlineData("net10.0")]
+    public async Task RunAsyncGenerateExposesPropertyTypeInterfacesWithoutRecursiveExpansion(string framework)
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                templateContent: """
+                                 // output: generated/models.ts
+                                 ${
+                                     string Describe(Property property)
+                                     {
+                                         Type underlying = property.Type;
+                                         var interfaces = underlying.Interfaces;
+                                         var contract = interfaces.FirstOrDefault(i => i.Name == "IGenericEntity");
+                                         var equatable = interfaces.FirstOrDefault(i => i.Name == "IEquatable");
+                                         var argument = equatable?.TypeArguments.FirstOrDefault();
+                                         return $"{property.Name}|{interfaces.Any(i => i.Name == "IEntity")}|{interfaces.Any(i => i.Name == "IList")}|{argument?.Interfaces.Any(i => i.Name == "IEquatable") ?? false}|{contract?.TypeArguments.FirstOrDefault()?.Name}|{argument?.TypeArguments.FirstOrDefault()?.Name}";
+                                     }
+
+                                     bool HasRecursiveEquatable(Type type)
+                                     {
+                                         for (var depth = 0; depth < 5; depth++)
+                                         {
+                                             var argument = type.Interfaces.FirstOrDefault(i => i.Name == "IEquatable")?.TypeArguments.FirstOrDefault();
+                                             if (argument == null)
+                                             {
+                                                 return false;
+                                             }
+
+                                             type = argument;
+                                         }
+
+                                         return true;
+                                     }
+
+                                     string DescribeNested(Property property)
+                                     {
+                                         var interfaces = property.Type.Interfaces;
+                                         var argument = interfaces.FirstOrDefault(i => i.Name == "IEquatable")?.TypeArguments.FirstOrDefault();
+                                         var nestedInterfaces = argument?.Interfaces;
+                                         var contract = nestedInterfaces?.FirstOrDefault(i => i.Name == "IGenericEntity");
+                                         var enumerableArgument = interfaces.FirstOrDefault(i => i.Name == "IEnumerable" && i.TypeArguments.Any())?.TypeArguments.FirstOrDefault();
+                                         return $"Nested:{property.Name}|{nestedInterfaces?.Any(i => i.Name == "IEntity") ?? false}|{contract?.TypeArguments.FirstOrDefault()?.Name}|{HasRecursiveEquatable(property.Type)}|{enumerableArgument != null && HasRecursiveEquatable(enumerableArgument)}";
+                                     }
+                                 }
+                                 $Classes(c => c.Name == "Holder")[$Properties[$Describe;$DescribeNested;]]
+                                 """,
+                sourceContent: """
+                               using System;
+                               using System.Collections.Generic;
+
+                               namespace Sample.Models;
+
+                               public interface IEntity
+                               {
+                               }
+
+                               public interface IDerivedEntity : IEntity
+                               {
+                               }
+
+                               public interface IGenericEntity<T>
+                               {
+                               }
+
+                               public class Account : IDerivedEntity, IEquatable<Account>
+                               {
+                                   public bool Equals(Account? other) => ReferenceEquals(this, other);
+                               }
+
+                               public class DerivedAccount : Account
+                               {
+                               }
+
+                               public class Account<T> : IGenericEntity<T>, IEquatable<Account<T>>
+                               {
+                                   public bool Equals(Account<T>? other) => ReferenceEquals(this, other);
+                               }
+
+                               public sealed class Holder
+                               {
+                                   public Account Primary { get; set; } = new();
+                                   public DerivedAccount Inherited { get; set; } = new();
+                                   public Account<string> Generic { get; set; } = new();
+                                   public List<string> Names { get; set; } = new();
+                                   public string Text { get; set; } = string.Empty;
+                                   public object Plain { get; set; } = new();
+                               }
+                               """);
+            await File.WriteAllTextAsync(
+                path: project.ProjectPath,
+                contents: $$"""
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>{{framework}}</TargetFramework>
+                              <LangVersion>latest</LangVersion>
+                              <Nullable>enable</Nullable>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+
+            var result = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                framework,
+                "--output",
+                "json");
+
+            result.ExitCode.Should().Be(0);
+            result.Success.Should().BeTrue(because: result.StandardError);
+            result.Diagnostics.Should().BeEmpty();
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            var generatedContent = await File.ReadAllTextAsync(path: generatedFile.Path);
+            generatedContent.Should().Contain("Primary|True|False|True||");
+            generatedContent.Should().Contain("Inherited|True|False|True||");
+            generatedContent.Should().Contain("Generic|False|False|True|string|string");
+            generatedContent.Should().Contain("Names|False|True|False||");
+            generatedContent.Should().Contain("Text|False|False|True||");
+            generatedContent.Should().Contain("Plain|False|False|False||");
+            generatedContent.Should().Contain("Nested:Primary|True||True|False");
+            generatedContent.Should().Contain("Nested:Inherited|True||True|False");
+            generatedContent.Should().Contain("Nested:Generic|False|string|True|False");
+            generatedContent.Should().Contain("Nested:Names|False||False|True");
+            generatedContent.Should().Contain("Nested:Text|False||True|True");
+            generatedContent.Should().Contain("Nested:Plain|False||False|False");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     [Fact]
     public async Task RunAsyncGenerateWithDiffIncludesUnifiedDiffInJsonOutput()
     {
