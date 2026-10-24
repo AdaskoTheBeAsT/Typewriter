@@ -212,6 +212,156 @@ public sealed class TemplateCodeModelAdapterFactoryTests
         output.Trim().Should().Be("export interface Factory {},export interface Factory {}");
     }
 
+    [Fact]
+    public void CreateFilePreservesConstructedTypeArgumentsAcrossInProjectInterfaceAndBaseClassHierarchy()
+    {
+        var openT = CreateReference(name: "T", fullName: "T");
+        var stringRef = CreateReference(name: "String", fullName: "System.String") with
+        {
+            IsPrimitive = true,
+        };
+        var intRef = CreateReference(name: "Int32", fullName: "System.Int32") with
+        {
+            IsPrimitive = true,
+        };
+
+        var baseContract = new TypeMetadata(
+            Name: "IBaseContract",
+            FullName: "Sample.IBaseContract",
+            Namespace: "Sample",
+            Kind: TypeMetadataKind.Interface,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes: [],
+            BaseTypes: [],
+            EnumValues: [],
+            IsNullableAware: true)
+        {
+            TypeParameters = [new TypeParameterMetadata(Name: "T")],
+        };
+
+        var derivedContract = new TypeMetadata(
+            Name: "IFactoryContract",
+            FullName: "Sample.IFactoryContract",
+            Namespace: "Sample",
+            Kind: TypeMetadataKind.Interface,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes: [],
+            BaseTypes:
+            [
+                CreateReference(name: "IBaseContract", fullName: "Sample.IBaseContract") with
+                {
+                    TypeArguments = [openT],
+                },
+            ],
+            EnumValues: [],
+            IsNullableAware: true)
+        {
+            TypeParameters = [new TypeParameterMetadata(Name: "T")],
+        };
+
+        var genericBase2 = new TypeMetadata(
+            Name: "Factory",
+            FullName: "Sample.Factory",
+            Namespace: "Sample",
+            Kind: TypeMetadataKind.Class,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes: [],
+            BaseTypes: [],
+            EnumValues: [],
+            IsNullableAware: true)
+        {
+            TypeParameters =
+            [
+                new TypeParameterMetadata(Name: "T"),
+                new TypeParameterMetadata(Name: "TResult"),
+            ],
+        };
+
+        var genericBase1 = new TypeMetadata(
+            Name: "Factory",
+            FullName: "Sample.Factory",
+            Namespace: "Sample",
+            Kind: TypeMetadataKind.Class,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes: [],
+            BaseTypes:
+            [
+                CreateReference(name: "Factory", fullName: "Sample.Factory") with
+                {
+                    TypeArguments = [openT, intRef],
+                },
+                CreateReference(name: "IFactoryContract", fullName: "Sample.IFactoryContract") with
+                {
+                    TypeArguments = [openT],
+                },
+            ],
+            EnumValues: [],
+            IsNullableAware: true)
+        {
+            TypeParameters = [new TypeParameterMetadata(Name: "T")],
+        };
+
+        var concreteFactory = new TypeMetadata(
+            Name: "Factory",
+            FullName: "Sample.Factory",
+            Namespace: "Sample",
+            Kind: TypeMetadataKind.Class,
+            Accessibility: MetadataAccessibility.Public,
+            Properties:
+            [
+                new PropertyMetadata(
+                    Name: "Contract",
+                    FullName: "Sample.Factory.Contract",
+                    Type: CreateReference(name: "IFactoryContract", fullName: "Sample.IFactoryContract") with
+                    {
+                        TypeArguments = [stringRef],
+                    },
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+            ],
+            Attributes: [],
+            BaseTypes:
+            [
+                CreateReference(name: "Factory", fullName: "Sample.Factory") with
+                {
+                    TypeArguments = [stringRef],
+                },
+            ],
+            EnumValues: [],
+            IsNullableAware: true);
+
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types: [baseContract, derivedContract, genericBase2, genericBase1, concreteFactory],
+            Diagnostics: []);
+        var factory = new TemplateCodeModelAdapterFactory(metadata: metadata, templatePath: "models.tst");
+
+        var file = factory.CreateFile(project: metadata);
+
+        var concreteClass = file.Classes.Single(predicate: c => !c.IsGeneric);
+        var firstBase = concreteClass.BaseClass;
+        firstBase.Should().NotBeNull();
+        firstBase.TypeArguments.Select(selector: a => a.Name).Should().Equal("string");
+        firstBase.Interfaces.Should().ContainSingle().Which.TypeArguments.Select(selector: a => a.Name).Should().Equal("string");
+
+        var secondBase = firstBase.BaseClass;
+        secondBase.Should().NotBeNull();
+        secondBase.TypeArguments.Select(selector: a => a.Name).Should().Equal("string", "number");
+
+        var contractProperty = concreteClass.Properties.Should().ContainSingle().Which;
+        var contractInterface = contractProperty.Type.Interfaces.Should().ContainSingle().Which;
+        contractInterface.Name.Should().Be("IBaseContract");
+        contractInterface.TypeArguments.Select(selector: a => a.Name).Should().Equal("string");
+    }
+
     private static ProjectMetadata CreateMetadata(
         TypeMetadataKind kind,
         int derivedArity,
@@ -260,10 +410,11 @@ public sealed class TemplateCodeModelAdapterFactoryTests
 
     private static TypeMetadataReference CreateReference(string name, string fullName)
     {
+        var lastDotIndex = fullName.LastIndexOf(value: '.');
         return new TypeMetadataReference(
             Name: name,
             FullName: fullName,
-            Namespace: fullName[..fullName.LastIndexOf(value: '.')],
+            Namespace: lastDotIndex < 0 ? string.Empty : fullName[..lastDotIndex],
             IsNullable: false,
             IsCollection: false,
             IsDictionary: false,
