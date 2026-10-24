@@ -2670,6 +2670,109 @@ public sealed class TemplateRendererTests
         nullableListResult.Should().Be("(string | null)[] | null");
     }
 
+    [Fact]
+    public void RenderSupportsDirectInterfacesTokenAndLambdaFilterOnClassAndPropertyType()
+    {
+        var openT = TypeReference(name: "T", fullName: "T", isNullable: false, isPrimitive: false);
+        var stringRef = TypeReference(name: "String", fullName: "System.String", isNullable: false, isPrimitive: true);
+
+        var baseContract = new TypeMetadata(
+            Name: "IBaseContract",
+            FullName: "Sample.IBaseContract",
+            Namespace: "Sample",
+            Kind: TypeMetadataKind.Interface,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes: [],
+            BaseTypes: [],
+            EnumValues: [],
+            IsNullableAware: true)
+        {
+            TypeParameters = [new TypeParameterMetadata(Name: "T")],
+        };
+
+        var derivedContract = new TypeMetadata(
+            Name: "IFactoryContract",
+            FullName: "Sample.IFactoryContract",
+            Namespace: "Sample",
+            Kind: TypeMetadataKind.Interface,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes: [],
+            BaseTypes:
+            [
+                TypeReference(
+                    name: "IBaseContract",
+                    fullName: "Sample.IBaseContract",
+                    isNullable: false,
+                    isPrimitive: false,
+                    typeArguments: [openT]),
+            ],
+            EnumValues: [],
+            IsNullableAware: true)
+        {
+            TypeParameters = [new TypeParameterMetadata(Name: "T")],
+        };
+
+        var contractRef = TypeReference(
+            name: "IFactoryContract",
+            fullName: "Sample.IFactoryContract",
+            isNullable: false,
+            isPrimitive: false,
+            typeArguments: [stringRef]);
+
+        var factoryClass = new TypeMetadata(
+            Name: "Factory",
+            FullName: "Sample.Factory",
+            Namespace: "Sample",
+            Kind: TypeMetadataKind.Class,
+            Accessibility: MetadataAccessibility.Public,
+            Properties:
+            [
+                new PropertyMetadata(
+                    Name: "Contract",
+                    FullName: "Sample.Factory.Contract",
+                    Type: contractRef,
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+                new PropertyMetadata(
+                    Name: "Title",
+                    FullName: "Sample.Factory.Title",
+                    Type: stringRef,
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+            ],
+            Attributes: [],
+            BaseTypes: [contractRef],
+            EnumValues: [],
+            IsNullableAware: true);
+
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types: [baseContract, derivedContract, factoryClass],
+            Diagnostics: []);
+
+        const string template = """
+            $Classes[class=$Name;implements=$Interfaces[$Name$TypeArguments][,];matched=$Properties(p => p.Type.Interfaces.Any(i => i.Name == "IBaseContract"))[$Name:$Type[$Interfaces[$Name$TypeArguments][,]]]]
+            """;
+
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "models.tst", Content: template), diagnostics: diagnostics);
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Trim().Should().Be("class=Factory;implements=IFactoryContract<string>;matched=Contract:IBaseContract<string>");
+    }
+
 #pragma warning disable S107
     private static TypeMetadataReference TypeReference(
         string name,

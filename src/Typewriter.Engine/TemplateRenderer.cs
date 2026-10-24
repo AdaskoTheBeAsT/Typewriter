@@ -749,6 +749,8 @@ public sealed class TemplateRenderer
             AttributeMetadata attribute => [attribute.Name, attribute.FullName],
             ParameterCommentMetadata parameterComment => [parameterComment.Name],
             TypeParameterMetadata typeParameter => [typeParameter.Name, typeParameter.FullName],
+            CodeModelInterface @interface => [@interface.Name, @interface.FullName, @interface.Namespace],
+            CodeModelItem codeModelItem => [codeModelItem.Name, codeModelItem.FullName],
             _ => [item.ToString() ?? string.Empty],
         };
     }
@@ -767,6 +769,7 @@ public sealed class TemplateRenderer
             EventMetadata @event => @event.Attributes.SelectMany(selector: attribute => new[] { attribute.Name, attribute.FullName }),
             DelegateMetadata @delegate => @delegate.Attributes.SelectMany(selector: attribute => new[] { attribute.Name, attribute.FullName }),
             EnumValueMetadata enumValue => enumValue.Attributes.SelectMany(selector: attribute => new[] { attribute.Name, attribute.FullName }),
+            CodeModelInterface @interface => @interface.Attributes.SelectMany(selector: attribute => new[] { attribute.Name, attribute.FullName }),
             _ => [],
         };
     }
@@ -776,6 +779,7 @@ public sealed class TemplateRenderer
         return item switch
         {
             TypeMetadata type => type.BaseTypes.SelectMany(selector: typeReference => new[] { typeReference.Name, typeReference.FullName }),
+            CodeModelInterface @interface => @interface.Interfaces.SelectMany(selector: implemented => new[] { implemented.Name, implemented.FullName }),
             _ => [],
         };
     }
@@ -1558,10 +1562,42 @@ public sealed class TemplateRenderer
         }
 
         return state is not null
-            && state.TryResolveType(fullName: type.FullName, type: out var enumMetadata)
+            && state.TryResolveType(reference: type, type: out var enumMetadata)
             && enumMetadata.EnumValues.Count > 0
                 ? $"{type.Name}.{enumMetadata.EnumValues[index: 0].Name}"
                 : null;
+    }
+
+    private static Typewriter.CodeModel.InterfaceCollection ResolveInterfaces(
+        TypeMetadata type,
+        RenderState? state)
+    {
+        return state is not null
+            ? state.AdapterFactory.CreateInterfaces(type: type)
+            : CreateFallbackAdapterFactory(settings: null).CreateInterfaces(type: type);
+    }
+
+    private static Typewriter.CodeModel.InterfaceCollection ResolveInterfaces(
+        TypeMetadataReference type,
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state)
+    {
+        return state is not null
+            ? state.AdapterFactory.CreateInterfaces(reference: type)
+            : CreateFallbackAdapterFactory(settings: settings).CreateInterfaces(reference: type);
+    }
+
+    private static TemplateCodeModelAdapterFactory CreateFallbackAdapterFactory(
+        Typewriter.Configuration.Settings? settings)
+    {
+        var emptyMetadata = new ProjectMetadata(
+            ProjectPath: "Template.csproj",
+            SourceFiles: [],
+            Types: [],
+            Diagnostics: []);
+        return settings is null
+            ? new TemplateCodeModelAdapterFactory(metadata: emptyMetadata, templatePath: string.Empty)
+            : new TemplateCodeModelAdapterFactory(metadata: emptyMetadata, settings: settings);
     }
 
     private static bool TryReadBlock(
@@ -1610,9 +1646,25 @@ public sealed class TemplateRenderer
             MethodMetadata method => method.Name,
             ParameterMetadata parameter => parameter.Name,
             ConstantMetadata constant => constant.Name,
+            FieldMetadata field => field.Name,
+            StaticReadOnlyFieldMetadata field => field.Name,
+            EventMetadata @event => @event.Name,
+            DelegateMetadata @delegate => @delegate.Name,
+            TypeParameterMetadata typeParameter => typeParameter.Name,
             EnumValueMetadata enumValue => enumValue.Name,
             AttributeMetadata attribute => attribute.Name,
+            CodeModelItem codeModelItem => codeModelItem.Name,
             _ => item.ToString() ?? string.Empty,
+        };
+    }
+
+    private static string? GetNamespace(object item)
+    {
+        return item switch
+        {
+            TypeMetadata type => type.Namespace,
+            CodeModelInterface @interface => @interface.Namespace,
+            _ => null,
         };
     }
 
@@ -1914,8 +1966,10 @@ public sealed class TemplateRenderer
             "Public" => items.Where(predicate: item => HasAccessibility(item: item, accessibility: MetadataAccessibility.Public)),
             "Internal" => items.Where(predicate: item => HasAccessibility(item: item, accessibility: MetadataAccessibility.Internal)),
             _ when trimmed.StartsWith(value: "Namespace=", comparisonType: StringComparison.OrdinalIgnoreCase) => items
-                .OfType<TypeMetadata>()
-                .Where(predicate: type => type.Namespace.Equals(value: trimmed["Namespace=".Length..], comparisonType: StringComparison.Ordinal)),
+                .Where(predicate: item => string.Equals(
+                    a: GetNamespace(item: item),
+                    b: trimmed["Namespace=".Length..],
+                    comparisonType: StringComparison.Ordinal)),
             _ when trimmed.StartsWith(value: "Name=", comparisonType: StringComparison.OrdinalIgnoreCase) => items
                 .Where(predicate: item => GetName(item: item).Equals(value: trimmed["Name=".Length..], comparisonType: StringComparison.Ordinal)),
             _ when trimmed.StartsWith(value: '[') && trimmed.EndsWith(value: ']') => items
@@ -1936,7 +1990,7 @@ public sealed class TemplateRenderer
         filtered = [];
         if (TryParseLambda(value: filter, parameterName: out var parameterName, expression: out var expression))
         {
-            filtered = items.Where(predicate: item => EvaluatePredicate(expression: expression, parameterName: parameterName, context: item));
+            filtered = items.Where(predicate: item => EvaluatePredicate(expression: expression, parameterName: parameterName, context: item, state: state));
             return true;
         }
 
@@ -1957,16 +2011,17 @@ public sealed class TemplateRenderer
             return false;
         }
 
-        filtered = items.Where(predicate: item => EvaluateCompatibilityPredicate(method: method, context: item));
+        filtered = items.Where(predicate: item => EvaluateCompatibilityPredicate(method: method, context: item, state: state));
         return true;
     }
 
     private bool EvaluateCompatibilityPredicate(
         TemplateCompatibilityMethod method,
-        object context)
+        object context,
+        RenderState? state)
     {
         return method.Expression is not null
-            ? EvaluatePredicate(expression: method.Expression, parameterName: method.ParameterName, context: context)
+            ? EvaluatePredicate(expression: method.Expression, parameterName: method.ParameterName, context: context, state: state)
             : EvaluateRecipePredicate(methodName: method.Name, body: method.Body, context: context);
     }
 
@@ -1991,7 +2046,7 @@ public sealed class TemplateRenderer
         }
 
         if (method.Expression is not null
-            && TryEvaluateValue(expression: method.Expression, parameterName: method.ParameterName, context: context, value: out value))
+            && TryEvaluateValue(expression: method.Expression, parameterName: method.ParameterName, context: context, value: out value, state: state))
         {
             value = value?.ToString() ?? string.Empty;
             return true;
@@ -2054,42 +2109,43 @@ public sealed class TemplateRenderer
     private bool EvaluatePredicate(
         string expression,
         string parameterName,
-        object context)
+        object context,
+        RenderState? state = null)
     {
         var trimmed = StripOuterParentheses(expression: expression.Trim());
         if (TrySplitTopLevel(expression: trimmed, operatorText: "||", left: out var left, right: out var right))
         {
-            return EvaluatePredicate(expression: left, parameterName: parameterName, context: context)
-                || EvaluatePredicate(expression: right, parameterName: parameterName, context: context);
+            return EvaluatePredicate(expression: left, parameterName: parameterName, context: context, state: state)
+                || EvaluatePredicate(expression: right, parameterName: parameterName, context: context, state: state);
         }
 
         if (TrySplitTopLevel(expression: trimmed, operatorText: "&&", left: out left, right: out right))
         {
-            return EvaluatePredicate(expression: left, parameterName: parameterName, context: context)
-                && EvaluatePredicate(expression: right, parameterName: parameterName, context: context);
+            return EvaluatePredicate(expression: left, parameterName: parameterName, context: context, state: state)
+                && EvaluatePredicate(expression: right, parameterName: parameterName, context: context, state: state);
         }
 
         if (trimmed.StartsWith(value: '!'))
         {
-            return !EvaluatePredicate(expression: trimmed[1..], parameterName: parameterName, context: context);
+            return !EvaluatePredicate(expression: trimmed[1..], parameterName: parameterName, context: context, state: state);
         }
 
-        if (TryEvaluateAnyPredicate(expression: trimmed, parameterName: parameterName, context: context, result: out var anyResult))
+        if (TryEvaluateAnyPredicate(expression: trimmed, parameterName: parameterName, context: context, result: out var anyResult, state: state))
         {
             return anyResult;
         }
 
-        if (TryEvaluateStringPredicate(expression: trimmed, parameterName: parameterName, context: context, result: out var stringResult))
+        if (TryEvaluateStringPredicate(expression: trimmed, parameterName: parameterName, context: context, result: out var stringResult, state: state))
         {
             return stringResult;
         }
 
-        if (TryEvaluateComparison(expression: trimmed, parameterName: parameterName, context: context, result: out var comparisonResult))
+        if (TryEvaluateComparison(expression: trimmed, parameterName: parameterName, context: context, result: out var comparisonResult, state: state))
         {
             return comparisonResult;
         }
 
-        return TryEvaluateValue(expression: trimmed, parameterName: parameterName, context: context, value: out var value)
+        return TryEvaluateValue(expression: trimmed, parameterName: parameterName, context: context, value: out var value, state: state)
             && value is bool boolValue
             && boolValue;
     }
@@ -2128,11 +2184,12 @@ public sealed class TemplateRenderer
         string expression,
         string parameterName,
         object context,
-        out bool result)
+        out bool result,
+        RenderState? state = null)
     {
         result = false;
         if (!TryParseInstanceMethodCall(expression: expression, methodName: "Any", target: out var target, arguments: out var arguments)
-            || !TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out var collection)
+            || !TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out var collection, state: state)
             || collection is not IEnumerable enumerable)
         {
             return false;
@@ -2150,7 +2207,7 @@ public sealed class TemplateRenderer
             return false;
         }
 
-        result = items.Any(predicate: item => EvaluatePredicate(expression: itemExpression, parameterName: itemName, context: item));
+        result = items.Any(predicate: item => EvaluatePredicate(expression: itemExpression, parameterName: itemName, context: item, state: state));
         return true;
     }
 
@@ -2158,13 +2215,14 @@ public sealed class TemplateRenderer
         string expression,
         string parameterName,
         object context,
-        out bool result)
+        out bool result,
+        RenderState? state = null)
     {
         foreach (var methodName in new[] { "StartsWith", "EndsWith", "Contains", "Equals" })
         {
             if (!TryParseInstanceMethodCall(expression: expression, methodName: methodName, target: out var target, arguments: out var arguments)
                 || !TryReadFirstStringLiteral(value: arguments, literal: out var expected)
-                || !TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out var value))
+                || !TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out var value, state: state))
             {
                 continue;
             }
@@ -2189,7 +2247,8 @@ public sealed class TemplateRenderer
         string expression,
         string parameterName,
         object context,
-        out bool result)
+        out bool result,
+        RenderState? state = null)
     {
         result = false;
         var isNegated = false;
@@ -2203,8 +2262,8 @@ public sealed class TemplateRenderer
             isNegated = true;
         }
 
-        if (!TryEvaluateValue(expression: left, parameterName: parameterName, context: context, value: out var leftValue)
-            || !TryEvaluateValue(expression: right, parameterName: parameterName, context: context, value: out var rightValue))
+        if (!TryEvaluateValue(expression: left, parameterName: parameterName, context: context, value: out var leftValue, state: state)
+            || !TryEvaluateValue(expression: right, parameterName: parameterName, context: context, value: out var rightValue, state: state))
         {
             return false;
         }
@@ -2222,7 +2281,8 @@ public sealed class TemplateRenderer
         string expression,
         string parameterName,
         object context,
-        out object? value)
+        out object? value,
+        RenderState? state = null)
     {
         var trimmed = StripOuterParentheses(expression: expression.Trim());
         if (TryEvaluateLiteral(expression: trimmed, value: out value))
@@ -2231,14 +2291,14 @@ public sealed class TemplateRenderer
         }
 
         if (TrySplitTopLevel(expression: trimmed, operatorText: "+", left: out var left, right: out var right)
-            && TryEvaluateValue(expression: left, parameterName: parameterName, context: context, value: out var leftValue)
-            && TryEvaluateValue(expression: right, parameterName: parameterName, context: context, value: out var rightValue))
+            && TryEvaluateValue(expression: left, parameterName: parameterName, context: context, value: out var leftValue, state: state)
+            && TryEvaluateValue(expression: right, parameterName: parameterName, context: context, value: out var rightValue, state: state))
         {
             value = string.Concat(str0: leftValue?.ToString(), str1: rightValue?.ToString());
             return true;
         }
 
-        if (TryEvaluateStringTransform(expression: trimmed, parameterName: parameterName, context: context, value: out value))
+        if (TryEvaluateStringTransform(expression: trimmed, parameterName: parameterName, context: context, value: out value, state: state))
         {
             return true;
         }
@@ -2260,7 +2320,7 @@ public sealed class TemplateRenderer
                 return true;
             }
 
-            if (!TryResolve(context: value, identifier: NormalizeLegacyMemberName(segment: segment), value: out value))
+            if (!TryResolve(context: value, identifier: NormalizeLegacyMemberName(segment: segment), value: out value, state: state))
             {
                 return false;
             }
@@ -2273,12 +2333,13 @@ public sealed class TemplateRenderer
         string expression,
         string parameterName,
         object context,
-        out object? value)
+        out object? value,
+        RenderState? state = null)
     {
         value = null;
         if (TryParseInstanceMethodCall(expression: expression, methodName: "ToUpperInvariant", target: out var target, arguments: out var arguments)
             && string.IsNullOrWhiteSpace(value: arguments)
-            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out var targetValue))
+            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out var targetValue, state: state))
         {
             value = (targetValue?.ToString() ?? string.Empty).ToUpperInvariant();
             return true;
@@ -2286,7 +2347,7 @@ public sealed class TemplateRenderer
 
         if (TryParseInstanceMethodCall(expression: expression, methodName: "ToLowerInvariant", target: out target, arguments: out arguments)
             && string.IsNullOrWhiteSpace(value: arguments)
-            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out targetValue))
+            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out targetValue, state: state))
         {
             value = (targetValue?.ToString() ?? string.Empty).ToLowerInvariant();
             return true;
@@ -2294,7 +2355,7 @@ public sealed class TemplateRenderer
 
         if (TryParseInstanceMethodCall(expression: expression, methodName: "Replace", target: out target, arguments: out arguments)
             && TryReadStringLiteralPair(value: arguments, first: out var oldValue, second: out var newValue)
-            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out targetValue))
+            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out targetValue, state: state))
         {
             value = (targetValue?.ToString() ?? string.Empty).Replace(oldValue: oldValue, newValue: newValue, comparisonType: StringComparison.Ordinal);
             return true;
@@ -2302,7 +2363,7 @@ public sealed class TemplateRenderer
 
         if (TryParseInstanceMethodCall(expression: expression, methodName: "ClassName", target: out target, arguments: out arguments)
             && string.IsNullOrWhiteSpace(value: arguments)
-            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out targetValue)
+            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out targetValue, state: state)
             && TryGetTypeReference(value: targetValue, type: out var type))
         {
             value = GetClassName(type: type);
@@ -2311,16 +2372,16 @@ public sealed class TemplateRenderer
 
         if (TryParseInstanceMethodCall(expression: expression, methodName: "Default", target: out target, arguments: out arguments)
             && string.IsNullOrWhiteSpace(value: arguments)
-            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out targetValue)
+            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out targetValue, state: state)
             && TryGetTypeReference(value: targetValue, type: out type))
         {
-            value = GetDefaultValue(type: type);
+            value = GetDefaultValue(type: type, state: state);
             return true;
         }
 
         if (TryParseInstanceMethodCall(expression: expression, methodName: "ToString", target: out target, arguments: out arguments)
             && string.IsNullOrWhiteSpace(value: arguments)
-            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out targetValue))
+            && TryEvaluateValue(expression: target, parameterName: parameterName, context: context, value: out targetValue, state: state))
         {
             value = targetValue?.ToString() ?? string.Empty;
             return true;
@@ -2716,6 +2777,7 @@ public sealed class TemplateRenderer
             "Events" => type.Events,
             "Delegates" => type.Delegates,
             "Attributes" => type.Attributes,
+            "Interfaces" => ResolveInterfaces(type: type, state: state),
             "BaseType" => type.BaseTypes.FirstOrDefault(),
             "BaseClass" => type.BaseTypes.FirstOrDefault(),
             "BaseRecord" => type.BaseTypes.FirstOrDefault(),
@@ -3032,6 +3094,7 @@ public sealed class TemplateRenderer
                 runtimeType: runtimeType),
             "TypeArguments" => type.TypeArguments.Select(
                 selector: argument => CreateTypeTemplateValue(type: argument, state: state, runtimeType: runtimeType)).ToArray(),
+            "Interfaces" => ResolveInterfaces(type: type, settings: settings, state: state),
             "TupleElements" => type.TupleElements,
             "IsGeneric" => type.TypeArguments.Count > 0,
             "IsNullable" => type.IsNullable,
@@ -3041,7 +3104,7 @@ public sealed class TemplateRenderer
             "IsEnum" => type.IsEnum,
             "IsPrimitive" => IsPrimitiveType(type: type),
             "IsStruct" => state is not null
-                && state.TryResolveType(fullName: type.FullName, type: out var metadata)
+                && state.TryResolveType(reference: type, type: out var metadata)
                 && metadata.Kind == TypeMetadataKind.Struct,
             "IsDate" => type.IsDateLike,
             "IsGuid" => type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal),
@@ -3119,9 +3182,11 @@ public sealed class TemplateRenderer
         private readonly ICollection<GenerationDiagnostic> _diagnostics;
         private readonly CompiledTemplateHelper? _compiledTemplateHelper;
         private readonly ProjectMetadata _metadata;
+        private readonly ProjectMetadataIndex _metadataIndex;
         private readonly IReadOnlyDictionary<string, MethodMetadata> _methodsByFullName;
         private readonly IReadOnlyDictionary<string, PropertyMetadata> _propertiesByFullName;
         private readonly IReadOnlyDictionary<string, TypeMetadata> _typesByFullName;
+        private readonly IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> _typesByFullNameAndArity;
         private readonly Stack<object> _parentContexts = new();
         private readonly HashSet<string> _reportedCompiledInvocationErrors = [];
         private readonly HashSet<string> _reportedUnknownIdentifiers = [];
@@ -3129,6 +3194,7 @@ public sealed class TemplateRenderer
         private readonly string _templateContent;
         private readonly string _templatePath;
         private readonly TemplateRenderDefaults _defaults;
+        private TemplateCodeModelAdapterFactory? _adapterFactory;
 
         public RenderState(
             TemplateDocument template,
@@ -3145,7 +3211,9 @@ public sealed class TemplateRenderer
             _diagnostics = diagnostics;
             _defaults = defaults;
             var index = metadataIndex ?? ProjectMetadataIndex.Create(metadata: metadata);
+            _metadataIndex = index;
             _typesByFullName = index.TypesByFullName;
+            _typesByFullNameAndArity = index.TypesByFullNameAndArity;
             _methodsByFullName = index.MethodsByFullName;
             _propertiesByFullName = index.PropertiesByFullName;
             _compiledTemplateHelper = template.CodeBlocks.Count == 0
@@ -3153,6 +3221,10 @@ public sealed class TemplateRenderer
                 : compiledTemplateFactory?.CreateHelper(metadata: metadata, diagnostics: diagnostics, defaults: defaults, metadataIndex: index)
                   ?? TemplateRuntimeCompiler.Compile(template: template, metadata: metadata, diagnostics: diagnostics, defaults: defaults, metadataIndex: index);
         }
+
+        public TemplateCodeModelAdapterFactory AdapterFactory =>
+            _compiledTemplateHelper?.AdapterFactory
+            ?? (_adapterFactory ??= CreateAdapterFactory());
 
         public Typewriter.Configuration.Settings? TemplateSettings => _compiledTemplateHelper?.Settings;
 
@@ -3407,6 +3479,14 @@ public sealed class TemplateRenderer
             return _typesByFullName.TryGetValue(key: fullName, value: out type!);
         }
 
+        public bool TryResolveType(
+            TypeMetadataReference reference,
+            out TypeMetadata type)
+        {
+            return _typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out type!)
+                || (reference.Arity == 0 && _typesByFullName.TryGetValue(key: reference.FullName, value: out type!));
+        }
+
         public void AddUnknownIdentifier(
             string identifier,
             int index)
@@ -3494,6 +3574,35 @@ public sealed class TemplateRenderer
                     Severity: DiagnosticSeverity.Error,
                     Message: $"Template C# helper '{methodName}' failed: {message}",
                     Code: DiagnosticCodes.TemplateParseError));
+        }
+
+        private TemplateCodeModelAdapterFactory CreateAdapterFactory()
+        {
+            var settings = new Typewriter.Configuration.Settings
+            {
+                TemplatePath = _templatePath,
+                SolutionFullName = _defaults.SolutionFullName,
+                Log = new TemplateDiagnosticsLog(templatePath: _templatePath, diagnostics: _diagnostics),
+            };
+            settings.ApplyConfigurationDefaults(
+                strictNullGeneration: _defaults.StrictNullGeneration,
+                utf8BomGeneration: _defaults.Utf8BomGeneration,
+                stringLiteralCharacter: _defaults.StringLiteralCharacter,
+                dateTypeGeneration: _defaults.DateTypeGeneration,
+                dateInitializerGeneration: _defaults.DateInitializerGeneration,
+                dateOnlyTypeGeneration: _defaults.DateOnlyTypeGeneration,
+                dateOnlyInitializerGeneration: _defaults.DateOnlyInitializerGeneration,
+                timeOnlyTypeGeneration: _defaults.TimeOnlyTypeGeneration,
+                timeOnlyInitializerGeneration: _defaults.TimeOnlyInitializerGeneration,
+                guidTypeGeneration: _defaults.GuidTypeGeneration,
+                guidInitializerGeneration: _defaults.GuidInitializerGeneration,
+                decimalTypeGeneration: _defaults.DecimalTypeGeneration,
+                decimalInitializerGeneration: _defaults.DecimalInitializerGeneration,
+                dateLibraryGeneration: _defaults.DateLibraryGeneration);
+            return new TemplateCodeModelAdapterFactory(
+                metadata: _metadata,
+                settings: settings,
+                metadataIndex: _metadataIndex);
         }
 
         private (int Line, int Column) GetLineColumn(int index)

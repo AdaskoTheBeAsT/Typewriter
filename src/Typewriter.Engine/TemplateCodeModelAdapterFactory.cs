@@ -98,6 +98,11 @@ internal sealed class TemplateCodeModelAdapterFactory
             AttributeMetadata attribute => CreateAttribute(attribute: attribute, parent: null),
             AttributeArgumentMetadata argument => CreateAttributeArgument(argument: argument),
             TypeMappingContext typeContext => CreateType(type: typeContext.Reference, runtimeType: typeContext.RuntimeType),
+            CodeClass codeClass when targetType.IsAssignableFrom(c: typeof(CodeType)) => codeClass.Type,
+            CodeRecord codeRecord when targetType.IsAssignableFrom(c: typeof(CodeType)) => codeRecord.Type,
+            CodeStruct codeStruct when targetType.IsAssignableFrom(c: typeof(CodeType)) => codeStruct.Type,
+            CodeInterface codeInterface when targetType.IsAssignableFrom(c: typeof(CodeType)) => codeInterface.Type,
+            CodeEnum codeEnum when targetType.IsAssignableFrom(c: typeof(CodeType)) => codeEnum.Type,
             _ => null,
         };
 
@@ -114,6 +119,23 @@ internal sealed class TemplateCodeModelAdapterFactory
         _cachedFile = (CodeFile)AdaptProject(project: project, targetType: typeof(CodeFile))!;
         _cachedFileProject = project;
         return _cachedFile;
+    }
+
+    public Typewriter.CodeModel.InterfaceCollection CreateInterfaces(
+        TypeMetadata type,
+        TypeMetadataReference? reference = null)
+    {
+        return new Typewriter.CodeModel.InterfaceCollection(
+            items: type.BaseTypes
+                .Where(predicate: IsInterfaceReference)
+                .Select(selector: baseInterface => CreateInterfaceReference(
+                    reference: SubstituteTypeArguments(type: type, reference: reference, target: baseInterface))));
+    }
+
+    public Typewriter.CodeModel.InterfaceCollection CreateInterfaces(TypeMetadataReference reference)
+    {
+        _typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out var metadata);
+        return CreateInterfaces(reference: reference, metadata: metadata);
     }
 
     private static Typewriter.CodeModel.DocComment? CreateDocComment(
@@ -228,6 +250,90 @@ internal sealed class TemplateCodeModelAdapterFactory
             : $"{enumName}.{enumValues[index: 0].Name}";
     }
 
+    private static TypeMetadataReference SubstituteTypeArguments(
+        TypeMetadata type,
+        TypeMetadataReference? reference,
+        TypeMetadataReference target)
+    {
+        if (reference is null
+            || type.TypeParameters.Count == 0
+            || type.TypeParameters.Count != reference.TypeArguments.Count)
+        {
+            return target;
+        }
+
+        var substitutions = new Dictionary<string, TypeMetadataReference>(comparer: StringComparer.Ordinal);
+        for (var index = 0; index < type.TypeParameters.Count; index++)
+        {
+            substitutions[type.TypeParameters[index: index].Name] = reference.TypeArguments[index: index];
+        }
+
+        return SubstituteTypeArguments(target: target, substitutions: substitutions);
+    }
+
+    private static TypeMetadataReference SubstituteTypeArguments(
+        TypeMetadataReference target,
+        IReadOnlyDictionary<string, TypeMetadataReference> substitutions)
+    {
+        if (target.Arity == 0
+            && target.TypeArguments.Count == 0
+            && (substitutions.TryGetValue(key: target.Name, value: out var replacement)
+                || substitutions.TryGetValue(key: target.FullName, value: out replacement)))
+        {
+            return target.IsNullable && !replacement.IsNullable
+                ? replacement with
+                {
+                    IsNullable = true,
+                }
+                : replacement;
+        }
+
+        var hasChanges = false;
+        var typeArguments = target.TypeArguments;
+        if (target.TypeArguments.Count > 0)
+        {
+            var substitutedArguments = new TypeMetadataReference[target.TypeArguments.Count];
+            for (var index = 0; index < target.TypeArguments.Count; index++)
+            {
+                var originalArgument = target.TypeArguments[index: index];
+                var substitutedArgument = SubstituteTypeArguments(target: originalArgument, substitutions: substitutions);
+                substitutedArguments[index] = substitutedArgument;
+                if (!ReferenceEquals(objA: originalArgument, objB: substitutedArgument))
+                {
+                    hasChanges = true;
+                }
+            }
+
+            if (hasChanges)
+            {
+                typeArguments = substitutedArguments;
+            }
+        }
+
+        var elementType = target.ElementType;
+        if (elementType is not null)
+        {
+            var substitutedElement = SubstituteTypeArguments(target: elementType, substitutions: substitutions);
+            if (!ReferenceEquals(objA: elementType, objB: substitutedElement))
+            {
+                elementType = substitutedElement;
+                hasChanges = true;
+            }
+        }
+
+        if (!hasChanges)
+        {
+            return target;
+        }
+
+        return target with
+        {
+            TypeArguments = typeArguments,
+            ElementType = elementType,
+            Interfaces = new LazySubstitutedTypeReferenceList(source: target.Interfaces, substitutions: substitutions),
+        };
+    }
+
     private object? AdaptProject(
         ProjectMetadata project,
         System.Type targetType)
@@ -326,10 +432,10 @@ internal sealed class TemplateCodeModelAdapterFactory
             FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
-            BaseClass = CreateBaseClass(type: type),
+            BaseClass = CreateBaseClass(type: type, reference: reference),
             ContainingClass = CreateContainingClass(type: type),
             DocComment = CreateDocComment(docComment: type.DocComment, parent: null),
-            Interfaces = CreateInterfaces(type: type),
+            Interfaces = CreateInterfaces(type: type, reference: reference),
             IsAbstract = type.IsAbstract,
             IsGeneric = classType.IsGeneric,
             IsStatic = type.IsStatic,
@@ -369,10 +475,10 @@ internal sealed class TemplateCodeModelAdapterFactory
             FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
-            BaseRecord = CreateBaseRecord(type: type),
+            BaseRecord = CreateBaseRecord(type: type, reference: reference),
             ContainingRecord = CreateContainingRecord(type: type),
             DocComment = CreateDocComment(docComment: type.DocComment, parent: null),
-            Interfaces = CreateInterfaces(type: type),
+            Interfaces = CreateInterfaces(type: type, reference: reference),
             IsAbstract = type.IsAbstract,
             IsGeneric = recordType.IsGeneric,
             Constants = new Typewriter.CodeModel.ConstantCollection(items: type.Constants.Select(selector: constant => CreateConstant(constant: constant, parent: null))),
@@ -415,7 +521,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             DocComment = CreateDocComment(docComment: type.DocComment, parent: null),
             Events = new Typewriter.CodeModel.EventCollection(items: type.Events.Select(selector: @event => CreateEvent(@event: @event, parent: null))),
             IsGeneric = interfaceType.IsGeneric,
-            Interfaces = CreateInterfaces(type: type),
+            Interfaces = CreateInterfaces(type: type, reference: reference),
             Methods = new Typewriter.CodeModel.MethodCollection(items: type.Methods.Select(selector: method => CreateMethod(method: method, parent: null))),
             NestedStructs = new Typewriter.CodeModel.StructCollection(items: type.NestedStructs.Select(selector: CreateStruct)),
             Properties = new Typewriter.CodeModel.PropertyCollection(items: type.Properties.Select(selector: property => CreateProperty(property: property, parent: null))),
@@ -445,7 +551,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             ContainingClass = CreateContainingClass(type: type),
             ContainingStruct = CreateContainingStruct(type: type),
             DocComment = CreateDocComment(docComment: type.DocComment, parent: null),
-            Interfaces = CreateInterfaces(type: type),
+            Interfaces = CreateInterfaces(type: type, reference: reference),
             IsGeneric = structType.IsGeneric,
             IsStatic = type.IsStatic,
             Constants = new Typewriter.CodeModel.ConstantCollection(items: type.Constants.Select(selector: constant => CreateConstant(constant: constant, parent: null))),
@@ -808,14 +914,6 @@ internal sealed class TemplateCodeModelAdapterFactory
         };
     }
 
-    private Typewriter.CodeModel.InterfaceCollection CreateInterfaces(TypeMetadata type)
-    {
-        return new Typewriter.CodeModel.InterfaceCollection(
-            items: type.BaseTypes
-                .Where(predicate: IsInterfaceReference)
-                .Select(selector: CreateInterfaceReference));
-    }
-
     private Typewriter.CodeModel.InterfaceCollection CreateInterfaces(
         TypeMetadataReference reference,
         TypeMetadata? metadata)
@@ -827,7 +925,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
         return metadata is null
             ? new Typewriter.CodeModel.InterfaceCollection()
-            : CreateInterfaces(type: metadata);
+            : CreateInterfaces(type: metadata, reference: reference);
     }
 
     private bool IsInterfaceReference(TypeMetadataReference reference)
@@ -1045,13 +1143,17 @@ internal sealed class TemplateCodeModelAdapterFactory
         };
     }
 
-    private CodeClass? CreateBaseClass(TypeMetadata type)
+    private CodeClass? CreateBaseClass(
+        TypeMetadata type,
+        TypeMetadataReference? reference = null)
     {
-        var baseType = type.BaseTypes.FirstOrDefault(predicate: reference => !IsInterfaceReference(reference: reference));
+        var baseType = type.BaseTypes.FirstOrDefault(predicate: candidate => !IsInterfaceReference(reference: candidate));
         if (baseType is null)
         {
             return null;
         }
+
+        baseType = SubstituteTypeArguments(type: type, reference: reference, target: baseType);
 
         return _typesByFullNameAndArity.TryGetValue(key: (baseType.FullName, baseType.Arity), value: out var baseMetadata)
             && baseMetadata.Kind == TypeMetadataKind.Class
@@ -1068,13 +1170,17 @@ internal sealed class TemplateCodeModelAdapterFactory
                 };
     }
 
-    private CodeRecord? CreateBaseRecord(TypeMetadata type)
+    private CodeRecord? CreateBaseRecord(
+        TypeMetadata type,
+        TypeMetadataReference? reference = null)
     {
         var baseType = type.BaseTypes.FirstOrDefault(predicate: IsRecordBaseReference);
         if (baseType is null)
         {
             return null;
         }
+
+        baseType = SubstituteTypeArguments(type: type, reference: reference, target: baseType);
 
         return _typesByFullNameAndArity.TryGetValue(key: (baseType.FullName, baseType.Arity), value: out var baseMetadata)
             && baseMetadata.Kind == TypeMetadataKind.Record
@@ -1265,5 +1371,26 @@ internal sealed class TemplateCodeModelAdapterFactory
         return _typesByFullNameAndArity.TryGetValue(key: (type.FullName, type.Arity), value: out var enumMetadata)
             ? ResolveEnumDefault(enumName: type.Name, enumValues: enumMetadata.EnumValues)
             : null;
+    }
+
+    private sealed class LazySubstitutedTypeReferenceList(
+        IReadOnlyList<TypeMetadataReference> source,
+        IReadOnlyDictionary<string, TypeMetadataReference> substitutions)
+        : IReadOnlyList<TypeMetadataReference>
+    {
+        private readonly Lazy<IReadOnlyList<TypeMetadataReference>> _items = new(
+            valueFactory: () => source.Count == 0
+                ? []
+                : source
+                    .Select(selector: item => SubstituteTypeArguments(target: item, substitutions: substitutions))
+                    .ToArray());
+
+        public int Count => _items.Value.Count;
+
+        public TypeMetadataReference this[int index] => _items.Value[index];
+
+        public IEnumerator<TypeMetadataReference> GetEnumerator() => _items.Value.GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

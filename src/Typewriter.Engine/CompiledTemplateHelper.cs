@@ -44,6 +44,9 @@ internal sealed class CompiledTemplateHelper : IDisposable
 
     public WeakReference AssemblyLoadContextReference { get; }
 
+    public TemplateCodeModelAdapterFactory AdapterFactory =>
+        _adapterFactory ?? throw new ObjectDisposedException(objectName: nameof(CompiledTemplateHelper));
+
     public bool UsesOutputFilenameFactory => _settings?.OutputFilenameFactory is not null;
 
     public Typewriter.Configuration.Settings Settings =>

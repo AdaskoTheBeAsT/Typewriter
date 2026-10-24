@@ -420,6 +420,78 @@ public sealed class CliIntegrationTests
     }
 
     [Fact]
+    public async Task RunAsyncGenerateSupportsDirectInterfacesTokenAndConstructedGenericHierarchy()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                templateContent: """
+                                 // output: generated/models.ts
+                                 ${
+                                     string DescribeBase(Class model)
+                                     {
+                                         var first = model.BaseClass;
+                                         var second = first?.BaseClass;
+                                         var firstIface = first?.Interfaces.FirstOrDefault();
+                                         return $"{first?.Name}<{string.Join(",", first?.TypeArguments.Select(a => a.Name) ?? [])}>[{firstIface?.Name}<{string.Join(",", firstIface?.TypeArguments.Select(a => a.Name) ?? [])}>]->{second?.Name}<{string.Join(",", second?.TypeArguments.Select(a => a.Name) ?? [])}>";
+                                     }
+                                 }
+                                 $Classes(c => c.Name == "Factory" && !c.IsGeneric)[Base:$DescribeBase;Props:$Properties[$Name=$Type[$Interfaces[$Name$TypeArguments][,]]][;]]
+                                 """,
+                sourceContent: """
+                               namespace Sample.Models;
+
+                               public interface IBaseContract<T>
+                               {
+                               }
+
+                               public interface IFactoryContract<T> : IBaseContract<T>
+                               {
+                               }
+
+                               public class Factory<T> : Factory<T, int>, IFactoryContract<T>
+                               {
+                               }
+
+                               public class Factory<T, TResult>
+                               {
+                               }
+
+                               public class Factory : Factory<string>
+                               {
+                                   public IFactoryContract<string> Contract { get; set; } = default!;
+                               }
+                               """);
+
+            var result = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+
+            result.ExitCode.Should().Be(0);
+            result.Success.Should().BeTrue(because: result.StandardError);
+            result.Diagnostics.Should().BeEmpty();
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            var generatedContent = await File.ReadAllTextAsync(path: generatedFile.Path);
+            generatedContent.Should().Contain("Base:Factory<string>[IFactoryContract<string>]->Factory<string,number>;Props:Contract=IBaseContract<string>");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task RunAsyncGenerateWithDiffIncludesUnifiedDiffInJsonOutput()
     {
         var directory = CreateProjectDirectory();
