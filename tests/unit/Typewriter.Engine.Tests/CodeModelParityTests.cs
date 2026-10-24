@@ -122,11 +122,48 @@ public sealed class CodeModelParityTests
     {
         var @class = new Class { Name = "URLValue2Model" };
 
-        @class.name.Should().Be("uRLValue2Model");
+        @class.name.Should().Be("urlValue2Model");
+        new Property { Name = string.Empty }.name.Should().BeEmpty();
         @class.GetName(nameCase: NameCase.UpperSnakeCase).Should().Be("URL_VALUE_2_MODEL");
         @class.GetName(nameCase: NameCase.LowerKebabCase).Should().Be("url-value-2-model");
         @class.GetName(nameCase: NameCase.PascalCase).Should().Be("UrlValue2Model");
         @class.GetName(nameCase: NameCase.CamelCase).Should().Be("urlValue2Model");
         "URLValue2Model".ToNameCase(nameCase: NameCase.LowerDotCase).Should().Be("url.value.2.model");
+    }
+
+    [Theory]
+    [InlineData(data: ["UPN", "upn"])]
+    [InlineData(data: ["ADExtendedAttribute1", "adExtendedAttribute1"])]
+    [InlineData(data: ["LastADLogin", "lastADLogin"])]
+    [InlineData(data: ["URLValue", "urlValue"])]
+    [InlineData(data: ["URL", "url"])]
+    [InlineData(data: ["ID", "id"])]
+    [InlineData(data: ["I", "i"])]
+    [InlineData(data: ["Person", "person"])]
+    [InlineData(data: ["iPhone", "iPhone"])]
+    [InlineData(data: ["IPhone", "iPhone"])]
+    [InlineData(data: ["I Phone", "i Phone"])]
+    [InlineData(data: ["I  Phone", "i  Phone"])]
+    [InlineData(data: [" IPhone", " IPhone"])]
+    [InlineData(data: [" IPhone ", " IPhone "])]
+    [InlineData(data: ["IsCIA", "isCIA"])]
+    [InlineData(data: ["VmQ", "vmQ"])]
+    [InlineData(data: ["Xml2Json", "xml2Json"])]
+    [InlineData(data: ["SnAkEcAsE", "snAkEcAsE"])]
+    [InlineData(data: ["SnA__kEcAsE", "snA__kEcAsE"])]
+    [InlineData(data: ["SnA__ kEcAsE", "snA__ kEcAsE"])]
+    [InlineData(data: ["already_snake_case_ ", "already_snake_case_ "])]
+    [InlineData(data: ["IsJSONProperty", "isJSONProperty"])]
+    [InlineData(data: ["SHOUTING_CASE", "shoutinG_CASE"])]
+    [InlineData(data: ["9999-12-31T23:59:59.9999999Z", "9999-12-31T23:59:59.9999999Z"])]
+    [InlineData(data: ["Hi!! This is text. Time to test.", "hi!! This is text. Time to test."])]
+    public void ItemNameAndLegacyCamelCaseMatchLegacyTypewriterBehavior(
+        string input,
+        string expected)
+    {
+        var property = new Property { Name = input };
+
+        property.name.Should().Be(expected);
+        NameCaseFormatter.Format(value: input, nameCase: NameCase.LegacyCamelCase).Should().Be(expected);
     }
 }

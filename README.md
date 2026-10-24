@@ -911,7 +911,7 @@ Templates are `.tst` files using the original Typewriter dialect — existing te
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `$Classes(filter)[...]`                              | Render block for every matching class (also `$Records`, `$Structs`, `$Interfaces`, `$Enums`, `$Delegates`)          |
 | `$Properties[...][separator]`                        | Iterate members, including indexers (also `$Methods`, `$Parameters`, `$Fields`, `$Constants`, `$Events`, `$Values`) |
-| `$Name`, `$name`, `$FullName`, `$Namespace`, `$Type` | Scalar substitutions (lowercase first letter via `$name`)                                                           |
+| `$Name`, `$name`, `$FullName`, `$Namespace`, `$Type` | Scalar substitutions (legacy acronym-aware camelCase via `$name`)                                                   |
 | `$$`                                                 | Render one literal `$`, for example `$$type` outputs `$type` without treating it as a template member               |
 | `(*Model)`, `([Attribute])`, `(c => c.IsPublic)`     | Wildcard, attribute, and lambda filters                                                                             |
 | `$IsNullable[yes][no]`                               | Conditional true/false blocks                                                                                       |
@@ -1296,6 +1296,7 @@ Issue regression samples:
 | [`issue112`](samples/issue112)     | Same-name generic inheritance hierarchy without stack overflow         |
 | [`issue112v2`](samples/issue112v2) | Direct `$Interfaces` tokens and constructed generic reference parity   |
 | [`issue114`](samples/issue114)     | Escaped and string-literal braces inside `${ ... }` C# helper blocks   |
+| [`issue115`](samples/issue115)     | Legacy acronym-aware camelCase for `$name` (`UPN`, `ADExtended...`)    |
 
 ---
 

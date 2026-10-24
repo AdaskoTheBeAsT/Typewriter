@@ -955,6 +955,7 @@ public sealed class TemplateRenderer
         return identifier switch
         {
             "Name" => parameterComment.Name,
+            "name" => ToCamelCase(value: parameterComment.Name),
             "Description" => parameterComment.Description,
             _ => Unresolved.Value,
         };
@@ -1427,6 +1428,7 @@ public sealed class TemplateRenderer
         return identifier switch
         {
             "Name" => parameterComment.Name,
+            "name" => parameterComment.name,
             "Description" => parameterComment.Description,
             "Parent" => parameterComment.Parent,
             _ => Unresolved.Value,
@@ -1495,6 +1497,7 @@ public sealed class TemplateRenderer
         return identifier switch
         {
             "Name" => argument.Name ?? string.Empty,
+            "name" => ToCamelCase(value: argument.Name ?? string.Empty),
             "AssemblyName" => argument.AssemblyName,
             "Value" => argument.Value ?? string.Empty,
             "Type" => argument.Type,
@@ -1668,17 +1671,8 @@ public sealed class TemplateRenderer
         };
     }
 
-    private static string ToCamelCase(string value)
-    {
-        if (string.IsNullOrEmpty(value: value) || char.IsLower(c: value[index: 0]))
-        {
-            return value;
-        }
-
-        return value.Length == 1
-            ? value.ToLowerInvariant()
-            : char.ToLowerInvariant(c: value[index: 0]) + value[1..];
-    }
+    private static string ToCamelCase(string value) =>
+        Typewriter.CodeModel.NameCaseFormatter.Format(value: value, nameCase: NameCase.LegacyCamelCase);
 
     private static string NormalizeRenderedWhitespace(string value)
     {
@@ -3040,13 +3034,14 @@ public sealed class TemplateRenderer
                 guidType: guidType,
                 decimalType: decimalType,
                 runtimeType: runtimeType),
-            "name" => GetLegacyTypeName(
-                type: type,
-                strictNull: strictNull,
-                dateMapping: ResolveDateMapping(settings: settings, state: state),
-                guidType: guidType,
-                decimalType: decimalType,
-                runtimeType: runtimeType),
+            "name" => ToCamelCase(
+                value: GetLegacyTypeName(
+                    type: type,
+                    strictNull: strictNull,
+                    dateMapping: ResolveDateMapping(settings: settings, state: state),
+                    guidType: guidType,
+                    decimalType: decimalType,
+                    runtimeType: runtimeType)),
             "FullName" => type.FullName,
             "AssemblyName" => type.AssemblyName,
             "Namespace" => type.Namespace,
