@@ -1,3 +1,5 @@
+using Typewriter.Engine;
+
 namespace Typewriter.LanguageServer;
 
 internal static class TemplateEmbeddedLanguage
@@ -43,7 +45,7 @@ internal static class TemplateEmbeddedLanguage
             return false;
         }
 
-        var end = FindBalancedEnd(content: text, openIndex: dollarIndex + 1, open: '{', close: '}');
+        var end = TemplateCodeBlockScanner.FindBalancedEnd(content: text, openIndex: dollarIndex + 1);
         if (end < 0 && !allowUnclosed)
         {
             return false;
@@ -51,7 +53,7 @@ internal static class TemplateEmbeddedLanguage
 
         var contentStart = dollarIndex + 2;
         var contentEnd = end < 0 ? text.Length : end;
-        if (!IsCompatibilityCodeBlock(
+        if (!TemplateCodeBlockScanner.IsCompatibilityCodeBlock(
                 block: text[contentStart..contentEnd],
                 allowPartial: IsStandaloneBlockStart(text: text, dollarIndex: dollarIndex)))
         {
@@ -156,88 +158,6 @@ internal static class TemplateEmbeddedLanguage
         }
 
         return true;
-    }
-
-    private static bool IsCompatibilityCodeBlock(
-        string block,
-        bool allowPartial)
-    {
-        var trimmed = block.TrimStart();
-        if (trimmed.Length == 0)
-        {
-            return false;
-        }
-
-        var firstLineEnd = trimmed.IndexOfAny(anyOf: ['\r', '\n']);
-        var firstLine = firstLineEnd < 0 ? trimmed : trimmed[..firstLineEnd];
-        return firstLine.StartsWith(value: "using ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "#r ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "#reference ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "Template", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "public ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "private ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "internal ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "protected ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "static ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "const ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "bool ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "string ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "char ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "int ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "long ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "void ", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "List<", comparisonType: StringComparison.Ordinal)
-            || firstLine.StartsWith(value: "IEnumerable<", comparisonType: StringComparison.Ordinal)
-            || (allowPartial && IsPartialCompatibilityStart(firstLine: firstLine));
-    }
-
-    private static bool IsPartialCompatibilityStart(string firstLine)
-    {
-#pragma warning disable CC0001 // You should use 'var' whenever possible.
-        string[] prefixes =
-        [
-            "boo",
-            "cha",
-            "con",
-            "int",
-            "lon",
-            "pri",
-            "pro",
-            "pub",
-            "sta",
-            "str",
-            "usi",
-            "voi",
-        ];
-#pragma warning restore CC0001 // You should use 'var' whenever possible.
-
-        return prefixes.Any(predicate: prefix => firstLine.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal));
-    }
-
-    private static int FindBalancedEnd(
-        string content,
-        int openIndex,
-        char open,
-        char close)
-    {
-        var depth = 0;
-        for (var index = openIndex; index < content.Length; index++)
-        {
-            if (content[index: index] == open)
-            {
-                depth++;
-            }
-            else if (content[index: index] == close)
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    return index;
-                }
-            }
-        }
-
-        return -1;
     }
 
     private static bool IsIdentifierStart(char value) =>

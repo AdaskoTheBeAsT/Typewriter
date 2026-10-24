@@ -67,6 +67,33 @@ public sealed class TypewriterCommandServiceTests
         shouldSkip.Should().BeFalse();
     }
 
+    [Fact]
+    public void CSharpBlockScannerFindsBalancedEndWithEscapedAndStringBracesIssue114()
+    {
+        const string template =
+            "${\n"
+            + "    string ModelName(Class model) => model.Name;\n\n"
+            + "    string Foo(Class model)\n"
+            + "    {\n"
+            + "        var methodName = \"foo\";\n"
+            + "        var sb = new StringBuilder();\n"
+            + "        sb.AppendLine($\"public {methodName}() {{\");\n"
+            + "        sb.AppendLine(\"}\");\n"
+            + "        return sb.ToString();\n"
+            + "    }\n"
+            + "}\n"
+            + "$Classes[export class $ModelName {\n"
+            + "    $Foo\n"
+            + "}]";
+
+        var closeIndex = CSharpBlockScanner.FindBalancedEnd(content: template, openIndex: 1);
+
+        closeIndex.Should().BeGreaterThan(2);
+        var blockContent = template.Substring(startIndex: 2, length: closeIndex - 2);
+        CSharpBlockScanner.IsCSharpBlock(block: blockContent, allowPartial: false).Should().BeTrue();
+        template.Substring(startIndex: closeIndex + 1).TrimStart().Should().StartWith("$Classes[export class $ModelName");
+    }
+
     private static string CreateDirectory()
     {
         var directory = Path.Combine(

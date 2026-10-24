@@ -1290,8 +1290,12 @@ Issue regression samples:
 | [`issue74`](samples/issue74)     | Types from transitively referenced projects                            |
 | [`issue75`](samples/issue75)     | Localized resources and satellite assemblies                           |
 | [`issue81`](samples/issue81)     | Cyclic metadata graphs without stack overflow                          |
-| [`issue90`](samples/issue90)     | Closed generic arguments in properties and collections                 |
-| [`issue96`](samples/issue96)     | Cross-file record inheritance                                          |
+| [`issue90`](samples/issue90)       | Closed generic arguments in properties and collections                 |
+| [`issue96`](samples/issue96)       | Cross-file record inheritance                                          |
+| [`issue98`](samples/issue98)       | Generic base classes with different type-parameter arities             |
+| [`issue112`](samples/issue112)     | Same-name generic inheritance hierarchy without stack overflow         |
+| [`issue112v2`](samples/issue112v2) | Direct `$Interfaces` tokens and constructed generic reference parity   |
+| [`issue114`](samples/issue114)     | Escaped and string-literal braces inside `${ ... }` C# helper blocks   |
 
 ---
 

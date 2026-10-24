@@ -1277,8 +1277,44 @@ function isStandaloneBlockStart(text, dollarIndex) {
     return true;
 }
 
+function skipLeadingCSharpTrivia(block) {
+    let index = 0;
+    while (index < block.length) {
+        if (/\s/.test(block[index])) {
+            index++;
+            continue;
+        }
+
+        if (block.startsWith("//", index)) {
+            index += 2;
+            while (index < block.length && block[index] !== "\r" && block[index] !== "\n") {
+                index++;
+            }
+            continue;
+        }
+
+        if (block.startsWith("/*", index)) {
+            const closeIndex = block.indexOf("*/", index + 2);
+            if (closeIndex < 0) {
+                return block.length;
+            }
+            index = closeIndex + 2;
+            continue;
+        }
+
+        break;
+    }
+
+    return index;
+}
+
 function isCSharpHelperBlock(block, allowPartial) {
-    const firstLine = block.trimStart().split(/\r?\n/, 1)[0] ?? "";
+    const startIndex = skipLeadingCSharpTrivia(block);
+    if (startIndex >= block.length) {
+        return false;
+    }
+
+    const firstLine = block.slice(startIndex).split(/\r?\n/, 1)[0] ?? "";
     if (!firstLine) {
         return false;
     }
@@ -1287,6 +1323,7 @@ function isCSharpHelperBlock(block, allowPartial) {
         "using ",
         "#r ",
         "#reference ",
+        "#load ",
         "Template",
         "public ",
         "private ",
@@ -1312,19 +1349,252 @@ function isCSharpHelperBlock(block, allowPartial) {
 }
 
 function findBalancedEnd(text, openIndex, open, close) {
+    if (openIndex < 0 || openIndex >= text.length || text[openIndex] !== open) {
+        return -1;
+    }
+
+    if (open !== "{" || close !== "}") {
+        let depth = 0;
+        for (let index = openIndex; index < text.length; index++) {
+            if (text[index] === open) {
+                depth++;
+            } else if (text[index] === close) {
+                depth--;
+                if (depth === 0) {
+                    return index;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    return scanCSharpBalancedBraces(text, openIndex);
+}
+
+function scanCSharpBalancedBraces(text, openIndex) {
     let depth = 0;
-    for (let index = openIndex; index < text.length; index++) {
-        if (text[index] === open) {
+    let index = openIndex;
+    while (index < text.length) {
+        const nextIndex = trySkipCSharpNonCode(text, index);
+        if (nextIndex > index) {
+            index = nextIndex;
+            continue;
+        }
+
+        const ch = text[index];
+        if (ch === "{") {
             depth++;
-        } else if (text[index] === close) {
+        } else if (ch === "}") {
             depth--;
             if (depth === 0) {
                 return index;
             }
         }
+
+        index++;
     }
 
     return -1;
+}
+
+function trySkipCSharpNonCode(text, index) {
+    if (text.startsWith("//", index)) {
+        let next = index + 2;
+        while (next < text.length && text[next] !== "\r" && text[next] !== "\n") {
+            next++;
+        }
+        return next;
+    }
+
+    if (text.startsWith("/*", index)) {
+        const closeIndex = text.indexOf("*/", index + 2);
+        return closeIndex < 0 ? text.length : closeIndex + 2;
+    }
+
+    if (text[index] === "'") {
+        let next = index + 1;
+        while (next < text.length) {
+            const ch = text[next++];
+            if (ch === "\\") {
+                if (next < text.length) {
+                    next++;
+                }
+                continue;
+            }
+            if (ch === "'" || ch === "\r" || ch === "\n") {
+                break;
+            }
+        }
+        return next;
+    }
+
+    return trySkipCSharpString(text, index);
+}
+
+function trySkipCSharpString(text, index) {
+    if (text[index] === "@") {
+        if (text.startsWith('@$"', index)) {
+            return skipCSharpVerbatimString(text, index + 3, true);
+        }
+        if (text.startsWith('@"', index)) {
+            return skipCSharpVerbatimString(text, index + 2, false);
+        }
+        return index;
+    }
+
+    if (text[index] === "$") {
+        const dollarCount = countConsecutiveChar(text, index, "$");
+        const afterDollars = index + dollarCount;
+        if (afterDollars < text.length && text[afterDollars] === "@" && dollarCount === 1) {
+            if (afterDollars + 1 < text.length && text[afterDollars + 1] === '"') {
+                return skipCSharpVerbatimString(text, afterDollars + 2, true);
+            }
+            return index;
+        }
+
+        if (afterDollars < text.length && text[afterDollars] === '"') {
+            const quoteCount = countConsecutiveChar(text, afterDollars, '"');
+            if (quoteCount >= 3) {
+                return skipCSharpInterpolatedRawString(text, afterDollars + quoteCount, quoteCount, dollarCount);
+            }
+            if (dollarCount === 1) {
+                return skipCSharpRegularString(text, afterDollars + 1, true);
+            }
+        }
+
+        return index;
+    }
+
+    if (text[index] === '"') {
+        const quoteCount = countConsecutiveChar(text, index, '"');
+        if (quoteCount >= 3) {
+            return skipCSharpRawString(text, index + quoteCount, quoteCount);
+        }
+        return skipCSharpRegularString(text, index + 1, false);
+    }
+
+    return index;
+}
+
+function skipCSharpRegularString(text, index, interpolated) {
+    while (index < text.length) {
+        const ch = text[index];
+        if (ch === "\\") {
+            index += index + 1 < text.length ? 2 : 1;
+            continue;
+        }
+        if (ch === '"' || ch === "\r" || ch === "\n") {
+            return index + 1;
+        }
+        if (interpolated && (ch === "{" || ch === "}")) {
+            if (index + 1 < text.length && text[index + 1] === ch) {
+                index += 2;
+                continue;
+            }
+            if (ch === "{") {
+                const holeEnd = scanCSharpBalancedBraces(text, index);
+                if (holeEnd < 0) {
+                    return text.length;
+                }
+                index = holeEnd + 1;
+                continue;
+            }
+        }
+        index++;
+    }
+
+    return text.length;
+}
+
+function skipCSharpVerbatimString(text, index, interpolated) {
+    while (index < text.length) {
+        const ch = text[index];
+        if (ch === '"') {
+            if (index + 1 < text.length && text[index + 1] === '"') {
+                index += 2;
+                continue;
+            }
+            return index + 1;
+        }
+        if (interpolated && (ch === "{" || ch === "}")) {
+            if (index + 1 < text.length && text[index + 1] === ch) {
+                index += 2;
+                continue;
+            }
+            if (ch === "{") {
+                const holeEnd = scanCSharpBalancedBraces(text, index);
+                if (holeEnd < 0) {
+                    return text.length;
+                }
+                index = holeEnd + 1;
+                continue;
+            }
+        }
+        index++;
+    }
+
+    return text.length;
+}
+
+function skipCSharpRawString(text, index, quoteCount) {
+    while (index < text.length) {
+        if (text[index] === '"') {
+            const run = countConsecutiveChar(text, index, '"');
+            if (run >= quoteCount) {
+                return index + run;
+            }
+            index += run;
+            continue;
+        }
+        index++;
+    }
+
+    return text.length;
+}
+
+function skipCSharpInterpolatedRawString(text, index, quoteCount, dollarCount) {
+    while (index < text.length) {
+        const ch = text[index];
+        if (ch === '"') {
+            const run = countConsecutiveChar(text, index, '"');
+            if (run >= quoteCount) {
+                return index + run;
+            }
+            index += run;
+            continue;
+        }
+        if (ch === "{") {
+            const braceRun = countConsecutiveChar(text, index, "{");
+            if (braceRun < dollarCount) {
+                index += braceRun;
+                continue;
+            }
+            const holeOpenIndex = index + braceRun - 1;
+            const holeEnd = scanCSharpBalancedBraces(text, holeOpenIndex);
+            if (holeEnd < 0) {
+                return text.length;
+            }
+            const consumedClose = Math.min(dollarCount - 1, countConsecutiveChar(text, holeEnd + 1, "}"));
+            index = holeEnd + 1 + consumedClose;
+            continue;
+        }
+        if (ch === "}") {
+            index += countConsecutiveChar(text, index, "}");
+            continue;
+        }
+        index++;
+    }
+
+    return text.length;
+}
+
+function countConsecutiveChar(text, startIndex, target) {
+    let index = startIndex;
+    while (index < text.length && text[index] === target) {
+        index++;
+    }
+    return index - startIndex;
 }
 
 function createTemplateFallbackCompletions(includeDollar) {

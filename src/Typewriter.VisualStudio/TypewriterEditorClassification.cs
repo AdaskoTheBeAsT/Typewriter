@@ -175,28 +175,6 @@ internal sealed class TypewriterClassifier : IClassifier
         "while",
     };
 
-    private static readonly string[] CSharpBlockPrefixes =
-    [
-        "using",
-        "#r",
-        "#reference",
-        "Template",
-        "public",
-        "private",
-        "internal",
-        "protected",
-        "static",
-        "const",
-        "bool",
-        "string",
-        "char",
-        "int",
-        "long",
-        "void",
-        "List<",
-        "IEnumerable<",
-    ];
-
     private readonly IClassificationType _directive;
     private readonly IClassificationType _collection;
     private readonly IClassificationType _member;
@@ -231,22 +209,31 @@ internal sealed class TypewriterClassifier : IClassifier
         }
 
         var endPosition = span.End.Position;
-        var text = span.Snapshot.GetText(startIndex: 0, length: endPosition);
+        var text = span.Snapshot.GetText();
         var position = 0;
         var inCSharpBlock = false;
+        var csharpBlockEnd = -1;
 
-        while (position < text.Length)
+        while (position < endPosition && position < text.Length)
         {
             if (inCSharpBlock)
             {
-                if (position < text.Length && text[index: position] == '}')
+                if (position >= csharpBlockEnd)
                 {
-                    AddClassification(classifications: classifications, requestedSpan: span, start: position, end: position + 1, classificationType: _blockDelimiter);
-                    position++;
+                    if (position == csharpBlockEnd && position < text.Length)
+                    {
+                        AddClassification(classifications: classifications, requestedSpan: span, start: position, end: position + 1, classificationType: _blockDelimiter);
+                        position++;
+                    }
+
                     inCSharpBlock = false;
+                    csharpBlockEnd = -1;
+                    continue;
                 }
 
-                position = ClassifyCSharpBlock(text: text, position: position, span: span, classifications: classifications);
+                position = Math.Min(
+                    val1: csharpBlockEnd,
+                    val2: ClassifyCSharpBlock(text: text, position: position, span: span, classifications: classifications));
                 continue;
             }
 
@@ -274,12 +261,20 @@ internal sealed class TypewriterClassifier : IClassifier
                 continue;
             }
 
-            if (StartsWith(text: text, position: position, value: "${") && IsCSharpBlockStart(text: text, position: position + 2))
+            if (StartsWith(text: text, position: position, value: "${"))
             {
-                AddClassification(classifications: classifications, requestedSpan: span, start: position, end: position + 2, classificationType: _blockDelimiter);
-                position += 2;
-                inCSharpBlock = true;
-                continue;
+                var balancedEnd = CSharpBlockScanner.FindBalancedEnd(content: text, openIndex: position + 1);
+                var blockContent = balancedEnd < 0
+                    ? text.Substring(startIndex: position + 2)
+                    : text.Substring(startIndex: position + 2, length: balancedEnd - (position + 2));
+                if (CSharpBlockScanner.IsCSharpBlock(block: blockContent, allowPartial: false))
+                {
+                    AddClassification(classifications: classifications, requestedSpan: span, start: position, end: position + 2, classificationType: _blockDelimiter);
+                    position += 2;
+                    inCSharpBlock = true;
+                    csharpBlockEnd = balancedEnd < 0 ? text.Length : balancedEnd;
+                    continue;
+                }
             }
 
             if (text[index: position] == '$'
@@ -411,26 +406,6 @@ internal sealed class TypewriterClassifier : IClassifier
         }
 
         end = position;
-        return false;
-    }
-
-    private static bool IsCSharpBlockStart(
-        string text,
-        int position)
-    {
-        while (position < text.Length && char.IsWhiteSpace(c: text[index: position]))
-        {
-            position++;
-        }
-
-        foreach (var prefix in CSharpBlockPrefixes)
-        {
-            if (StartsWith(text: text, position: position, value: prefix))
-            {
-                return true;
-            }
-        }
-
         return false;
     }
 

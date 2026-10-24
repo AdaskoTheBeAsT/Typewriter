@@ -148,6 +148,40 @@ public sealed class EmbeddedDocumentServiceTests
         mapped.Should().BeNull();
     }
 
+    [Fact]
+    public void GetSnapshotHandlesHelperBlockWithEscapedAndStringBracesIssue114()
+    {
+        const string issue114Template = """
+            ${
+                string ModelName(Class model) => model.Name;
+
+                string Foo(Class model)
+                {
+                    var methodName = "foo";
+                    var sb = new StringBuilder();
+                    sb.AppendLine($"public {methodName}() {{");
+                    sb.AppendLine("}");
+                    return sb.ToString();
+                }
+            }
+            $Classes[export class $ModelName {
+                $Foo
+            }]
+            """;
+        var document = CreateDocument(text: issue114Template);
+
+        var csharpSnapshot = EmbeddedDocumentService.GetSnapshot(document: document, kind: "csharp");
+        var typescriptSnapshot = EmbeddedDocumentService.GetSnapshot(document: document, kind: "typescript");
+
+        csharpSnapshot.Should().NotBeNull();
+        csharpSnapshot.Content.Should().Contain("sb.AppendLine($\"public {methodName}() {{\");");
+        csharpSnapshot.Content.Should().Contain("return sb.ToString();");
+
+        typescriptSnapshot.Should().NotBeNull();
+        typescriptSnapshot.Content.Should().NotContain("StringBuilder");
+        typescriptSnapshot.Content.Should().Contain("export class $ModelName");
+    }
+
     private static TextDocumentState CreateDocument(string text) =>
         new(
             Uri: "file:///c%3A/templates/Models.tst",

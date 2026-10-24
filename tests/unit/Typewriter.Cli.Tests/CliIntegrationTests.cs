@@ -492,6 +492,60 @@ public sealed class CliIntegrationTests
     }
 
     [Fact]
+    public async Task RunAsyncGenerateSupportsHelperBlocksWithEscapedAndStringBracesIssue114()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                templateContent: """
+                                 // output: generated/models.ts
+                                 ${
+                                     string ModelName(Class model) => model.Name;
+
+                                     string Foo(Class model)
+                                     {
+                                         var methodName = "foo";
+                                         var sb = new StringBuilder();
+                                         sb.AppendLine($"public {methodName}() {{");
+                                         sb.AppendLine("}");
+                                         return sb.ToString();
+                                     }
+                                 }
+                                 $Classes[export class $ModelName {
+                                     $Foo
+                                 }]
+                                 """);
+
+            var result = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+
+            result.ExitCode.Should().Be(0);
+            result.Success.Should().BeTrue(because: result.StandardError);
+            result.Diagnostics.Should().BeEmpty();
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            var generatedContent = await File.ReadAllTextAsync(path: generatedFile.Path);
+            generatedContent.Should().Contain("export class Customer {");
+            generatedContent.Should().Contain("public foo() {");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task RunAsyncGenerateWithDiffIncludesUnifiedDiffInJsonOutput()
     {
         var directory = CreateProjectDirectory();
