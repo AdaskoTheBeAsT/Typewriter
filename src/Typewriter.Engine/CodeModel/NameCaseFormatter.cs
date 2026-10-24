@@ -121,14 +121,29 @@ public static class NameCaseFormatter
 
     private static string ToLegacyCamelCase(string value)
     {
-        if (string.IsNullOrEmpty(value: value) || char.IsLower(c: value[index: 0]))
+        if (string.IsNullOrEmpty(value: value) || !char.IsUpper(c: value[index: 0]))
         {
             return value;
         }
 
-        return value.Length == 1
-            ? value.ToLowerInvariant()
-            : char.ToLowerInvariant(c: value[index: 0]) + value[1..];
+        var chars = value.ToCharArray();
+        for (var index = 0; index < chars.Length; index++)
+        {
+            if (index == 1 && !char.IsUpper(c: chars[index]))
+            {
+                break;
+            }
+
+            var hasNext = (index + 1) < chars.Length;
+            if (index > 0 && hasNext && !char.IsUpper(c: chars[index + 1]))
+            {
+                break;
+            }
+
+            chars[index] = char.ToLowerInvariant(c: chars[index]);
+        }
+
+        return new string(value: chars);
     }
 
     private static string ToCamelCase(IReadOnlyList<string> words)

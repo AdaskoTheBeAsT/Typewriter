@@ -546,6 +546,64 @@ public sealed class CliIntegrationTests
     }
 
     [Fact]
+    public async Task RunAsyncGenerateFormatsLeadingAcronymPropertyNamesWithLegacyCamelCaseIssue115()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                templateContent: """
+                                 // output: generated/models.ts
+                                 $Classes(*Model)[
+                                 export class $Name { $Properties[
+                                     public $name: $Type;]
+                                 }]
+                                 """,
+                sourceContent: """
+                               using System;
+
+                               namespace Sample.Models;
+
+                               public class TestModel
+                               {
+                                   public string UPN { get; set; } = string.Empty;
+
+                                   public string ADExtendedAttribute1 { get; set; } = string.Empty;
+
+                                   public DateTime LastADLogin { get; set; }
+                               }
+                               """);
+
+            var result = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+
+            result.ExitCode.Should().Be(0);
+            result.Success.Should().BeTrue(because: result.StandardError);
+            result.Diagnostics.Should().BeEmpty();
+            var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
+            var generatedContent = await File.ReadAllTextAsync(path: generatedFile.Path);
+            generatedContent.Should().Contain("public upn: string;");
+            generatedContent.Should().Contain("public adExtendedAttribute1: string;");
+            generatedContent.Should().Contain("public lastADLogin: Date;");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task RunAsyncGenerateWithDiffIncludesUnifiedDiffInJsonOutput()
     {
         var directory = CreateProjectDirectory();

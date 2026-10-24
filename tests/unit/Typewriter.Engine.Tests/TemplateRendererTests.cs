@@ -2824,6 +2824,75 @@ public sealed class TemplateRendererTests
         normalized.Should().Be("export class Model {\n    public foo() {\n}\n}");
     }
 
+    [Fact]
+    public void RenderFormatsLeadingAcronymPropertyNamesWithLegacyCamelCaseIssue115()
+    {
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "TestModel",
+                    FullName: "Repro.TestModel",
+                    Namespace: "Repro",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties:
+                    [
+                        new PropertyMetadata(
+                            Name: "UPN",
+                            FullName: "Repro.TestModel.UPN",
+                            Type: TypeReference(name: "String", fullName: "System.String", isNullable: false),
+                            Accessibility: MetadataAccessibility.Public,
+                            HasGetter: true,
+                            HasSetter: true,
+                            IsRequired: false,
+                            Attributes: []),
+                        new PropertyMetadata(
+                            Name: "ADExtendedAttribute1",
+                            FullName: "Repro.TestModel.ADExtendedAttribute1",
+                            Type: TypeReference(name: "String", fullName: "System.String", isNullable: false),
+                            Accessibility: MetadataAccessibility.Public,
+                            HasGetter: true,
+                            HasSetter: true,
+                            IsRequired: false,
+                            Attributes: []),
+                        new PropertyMetadata(
+                            Name: "LastADLogin",
+                            FullName: "Repro.TestModel.LastADLogin",
+                            Type: TypeReference(name: "DateTime", fullName: "System.DateTime", isNullable: false, isPrimitive: false, isDateLike: true),
+                            Accessibility: MetadataAccessibility.Public,
+                            HasGetter: true,
+                            HasSetter: true,
+                            IsRequired: false,
+                            Attributes: []),
+                    ],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+            ],
+            Diagnostics: []);
+
+        const string template = """
+            $Classes(*Model)[
+            export class $Name { $Properties[
+                public $name: $Type;]
+            }]
+            """;
+
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "Models.tst", Content: template), diagnostics: diagnostics);
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        var normalized = output.Replace(oldValue: "\r\n", newValue: "\n", comparisonType: StringComparison.Ordinal).Trim();
+        normalized.Should().Be("export class TestModel { \n    public upn: string;\n    public adExtendedAttribute1: string;\n    public lastADLogin: Date;\n}");
+    }
+
 #pragma warning disable S107
     private static TypeMetadataReference TypeReference(
         string name,
