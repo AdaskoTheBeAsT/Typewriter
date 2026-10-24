@@ -75,6 +75,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.12.0](#4120)
     - [4.11.0](#4110)
     - [4.10.0](#4100)
     - [4.9.0](#490)
@@ -1518,22 +1519,32 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 
 ## Changelog
 
+### 4.12.0
+
+- Fixed generic base-type recursion (`StackOverflowException`) when base classes or interfaces share the same name with different generic arities (for example, `Factory : Factory<string> : Factory<T, int>`), indexing project types by `(FullName, Arity)` (`TypeParameterCount`) and preserving arity on truncated generic type references (`samples/issue112`, #112, #116).
+- Fixed missing `Interfaces` on property, field, parameter, return, and type-argument `Type` references (`$Type[$Interfaces[...]]` and `property.Type.Interfaces`), including nested and containing generic type interface resolution, incremental dependency tracking, and weak-keyed mapping caches so obsolete Roslyn compilations can be collected (#113, #117).
+- Aligned direct template `$Interfaces` tokens (`$Classes[$Interfaces[...]]`, `$Properties[$Type[$Interfaces[...]]]`) and inline compatibility predicates (`$Properties(p => p.Type.Interfaces.Any(...))`) with compiled C# helpers, and preserved constructed generic type arguments across inherited `Interfaces`, `BaseClass`, and `BaseRecord` hierarchies (`samples/issue112v2`, [`docs/adr/0002-interface-resolution-and-generic-reference-parity.md`](docs/adr/0002-interface-resolution-and-generic-reference-parity.md), #112, #118).
+- Fixed false-positive `TW0002: Template code block is not closed.` diagnostics and premature C# helper-method truncation when `${ ... }` code blocks contain `{` or `}` inside regular, verbatim, interpolated (`{{` / `}}`), or raw string literals, character literals, or comments across the engine, language server, Visual Studio extension, VS Code extension, and Rider plugin (`samples/issue114`, [`docs/adr/0003-csharp-lexical-scanning-for-template-code-blocks.md`](docs/adr/0003-csharp-lexical-scanning-for-template-code-blocks.md), #114, #119).
+- Restored legacy Typewriter's acronym-aware `camelCase` algorithm for `$name` and `Item.name` (`NameCase.LegacyCamelCase`), lowercasing leading multi-letter uppercase acronyms (`UPN` -> `upn`, `ADExtendedAttribute1` -> `adExtendedAttribute1`) while preserving interior acronyms (`LastADLogin` -> `lastADLogin`), and unified `TemplateRenderer.ToCamelCase` with `NameCaseFormatter` (`samples/issue115`, [`docs/adr/0004-legacy-acronym-aware-camel-case-for-item-name.md`](docs/adr/0004-legacy-acronym-aware-camel-case-for-item-name.md), #115, #120).
+- Updated the bundled Buildalyzer fork and refreshed runtime, analyzer, and test dependencies, including System.CommandLine 2.0.12, Meziantou.Analyzer 3.0.316, Microsoft.CodeAnalysis.NetAnalyzers 10.0.402, Microsoft.VisualStudio.Threading.Analyzers 18.12.1, Roslynator 5.0.1, SonarAnalyzer.CSharp 10.35.0.4138, StyleCop.Analyzers 1.3.151-beta, AwesomeAssertions 9.7.0, Moq 4.20.82, Microsoft.NET.Test.Sdk 18.9.1, and xUnit v3 4.0.2 (#116).
+- Synchronized tool, language-server, editor-package, and release-artifact versions to 4.12.0.
+
 ### 4.11.0
 
 - Fixed Visual Studio VSIX packaging to include required in-process runtime dependencies, addressing startup `FileNotFoundException` failures after installation (#108).
-- Updated Buildalyzer integration for analyzer-config paths and added a `TW0003` diagnostic when a project analyzer cannot be created.
-- Updated the source-build SDK to 10.0.401 and migrated all test projects to xUnit v3 4.0.1 with Microsoft.Testing.Platform, including the Visual Studio .NET Framework tests.
-- Added nine licensed, versioned recipe fixtures under `tests/fixtures/ExternalRecipes`; compatibility and snapshot tests now run without a sibling recipe checkout and fail when a fixture is missing.
-- Refreshed Angular recipe snapshots while retaining `Date` and `string` GUID mappings. Recipe-specific discriminator and runtime-schema changes are documented in the [4.11.0 migration guide](#migrating-from-410x-to-4110).
-- Fixed the NuGet-reference restore test to use the same package version in its template and assertions.
+- Updated Buildalyzer integration for analyzer-config paths and added a `TW0003` diagnostic when a project analyzer cannot be created (#108, #109).
+- Updated the source-build SDK to 10.0.401 and migrated all test projects to xUnit v3 4.0.1 with Microsoft.Testing.Platform, including the Visual Studio .NET Framework tests (#109).
+- Added nine licensed, versioned recipe fixtures under `tests/fixtures/ExternalRecipes`; compatibility and snapshot tests now run without a sibling recipe checkout and fail when a fixture is missing (#109).
+- Refreshed Angular recipe snapshots while retaining `Date` and `string` GUID mappings. Recipe-specific discriminator and runtime-schema changes are documented in the [4.11.0 migration guide](#migrating-from-410x-to-4110) (#109).
+- Fixed the NuGet-reference restore test to use the same package version in its template and assertions, and stabilized CLI integration test execution under Microsoft.Testing.Platform (`--max-parallel-test-modules 1`) (#109, #110).
 - Synchronized tool, editor-package, and release-artifact versions to 4.11.0.
 
 ### 4.10.0
 
-- Updated the build and compiler toolchain to .NET SDK 10.0.400 and Roslyn 5.9.0 across the engine, CLI, language server, and tests.
-- Updated the bundled Buildalyzer fork to ignore MSBuild restore-pass evaluations, preventing spurious successful project results with an empty target framework.
-- Refreshed runtime, command-line, analyzer, and test dependencies, including System.CommandLine 2.0.11, System.Text.Json 10.0.11, Roslynator 5.0.0, xUnit.net 4.0.0, and Microsoft.NET.Test.Sdk 18.9.0.
-- Updated version metadata and release artifact names for the CLI, language server, Visual Studio extension, VS Code extension, and Rider plugin.
+- Updated the build and compiler toolchain to .NET SDK 10.0.400 and Roslyn 5.9.0 across the engine, CLI, language server, and tests (#105).
+- Updated the bundled Buildalyzer fork to ignore MSBuild restore-pass evaluations, preventing spurious successful project results with an empty target framework (#105).
+- Refreshed runtime, command-line, analyzer, and test dependencies, including System.CommandLine 2.0.11, System.Text.Json 10.0.11, Roslynator 5.0.0, xUnit.net 4.0.0, and Microsoft.NET.Test.Sdk 18.9.0 (#105).
+- Updated version metadata and release artifact names for the CLI, language server, Visual Studio extension, VS Code extension, and Rider plugin (#105).
 
 ### 4.9.0
 

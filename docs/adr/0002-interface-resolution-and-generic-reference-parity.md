@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for Typewriter 4.8.0.
+Accepted for Typewriter 4.12.0.
 
 ## Context
 
