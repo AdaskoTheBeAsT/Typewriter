@@ -161,6 +161,7 @@ public static class TypewriterConfigurationLoader
     {
         return configuration with
         {
+            Exclude = ReadPatternListEnvironment(name: "TYPEWRITER_EXCLUDE") ?? configuration.Exclude,
             InputExtensions = ReadStringListEnvironment(name: "TYPEWRITER_INPUT_EXTENSIONS") ?? configuration.InputExtensions,
             DefaultTargetFramework = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_DEFAULT_TARGET_FRAMEWORK")
                 ?? configuration.DefaultTargetFramework,
@@ -219,6 +220,19 @@ public static class TypewriterConfigurationLoader
         return Enum.TryParse<TEnum>(value: value, ignoreCase: true, result: out var parsed)
             ? parsed
             : null;
+    }
+
+    private static IReadOnlyList<string>? ReadPatternListEnvironment(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(variable: name);
+        if (string.IsNullOrWhiteSpace(value: value))
+        {
+            return null;
+        }
+
+        return value.Split(
+            separator: [',', ';', ' '],
+            options: StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
     private static IReadOnlyList<string>? ReadStringListEnvironment(string name)

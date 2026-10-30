@@ -11,7 +11,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
     <ErrorLog>$(MSBuildThisFileDirectory).sarif\$(MSBuildProjectName).json</ErrorLog>
-    <Version>4.12.0</Version>
+    <Version>4.13.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,13 +24,13 @@
     <PackageReference Include="AdaskoTheBeAsT.Puma.Security.Rules.2022" Version="2.3.1.250" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="AdaskoTheBeAsT.ReflectionAnalyzer" Version="0.3.1.250" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="AdaskoTheBeAsT.SecurityCodeScan.VS2022" Version="5.6.7.250" PrivateAssets="all" ExcludeAssets="runtime" />
-    <PackageReference Include="Meziantou.Analyzer" Version="3.0.316" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Meziantou.Analyzer" Version="3.0.318" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis" Version="5.9.0" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="5.9.0" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.9.0" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" PrivateAssets="all" ExcludeAssets="runtime" />
-    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.402" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.403" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="5.9.0" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="18.12.1" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Roslynator.Analyzers" Version="5.0.1" PrivateAssets="all" ExcludeAssets="runtime" />

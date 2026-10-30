@@ -37,7 +37,8 @@ internal static class WorkspaceProjectResolver
     public static IReadOnlyList<string> ResolveProjectPaths(
         GenerationRequest request,
         string workspacePath,
-        ICollection<GenerationDiagnostic> diagnostics)
+        ICollection<GenerationDiagnostic> diagnostics,
+        bool checkForTemplates = true)
     {
         if (!string.IsNullOrWhiteSpace(value: request.ProjectPath))
         {
@@ -51,9 +52,9 @@ internal static class WorkspaceProjectResolver
         }
 
         string[] projects;
-        if (IsSolutionFile(path: root) && File.Exists(path: root))
+        if (TryResolveSolutionFile(workspacePath: root, solutionPath: out var solutionPath))
         {
-            projects = GetProjectsFromSolution(solutionPath: root);
+            projects = GetProjectsFromSolution(solutionPath: solutionPath);
         }
         else
         {
@@ -87,6 +88,14 @@ internal static class WorkspaceProjectResolver
             {
                 return [nearestProjectPath];
             }
+        }
+
+        if (checkForTemplates
+            && !FileSystemTemplateDiscovery.HasTemplates(
+                workspace: new WorkspaceContext(RootPath: workspacePath),
+                request: request))
+        {
+            return [];
         }
 #pragma warning restore MA0051 // Method is too long
 
@@ -139,6 +148,46 @@ internal static class WorkspaceProjectResolver
         return resolvedPaths;
     }
 
+    internal static bool TryResolveSolutionFile(
+        string? workspacePath,
+        out string solutionPath)
+    {
+        solutionPath = string.Empty;
+        if (string.IsNullOrWhiteSpace(value: workspacePath))
+        {
+            return false;
+        }
+
+        var root = Path.GetFullPath(path: workspacePath);
+        if (IsSolutionFile(path: root) && File.Exists(path: root))
+        {
+            solutionPath = root;
+            return true;
+        }
+
+        if (!Directory.Exists(path: root))
+        {
+            return false;
+        }
+
+        var singleSolution = GetSingleTopLevelSolutionFile(workspaceRoot: root);
+        if (singleSolution is null)
+        {
+            return false;
+        }
+
+        solutionPath = singleSolution;
+        return true;
+    }
+
+    internal static IReadOnlyList<string> GetProjectsFromSolutionFile(string solutionPath) =>
+        GetProjectsFromSolution(solutionPath: solutionPath);
+
+    internal static IReadOnlyList<string> GetSolutionItemsFromSolutionFile(string solutionPath) =>
+        solutionPath.EndsWith(value: ".slnx", comparisonType: StringComparison.OrdinalIgnoreCase)
+            ? GetSolutionItemsFromSlnx(solutionPath: solutionPath)
+            : GetSolutionItemsFromSln(solutionPath: solutionPath);
+
     private static string? ResolveProjectPathByName(
         string workspacePath,
         IReadOnlyList<string> workspaceProjects,
@@ -179,9 +228,9 @@ internal static class WorkspaceProjectResolver
     private static string[] GetWorkspaceProjects(string workspacePath)
     {
         var root = Path.GetFullPath(path: workspacePath);
-        if (IsSolutionFile(path: root) && File.Exists(path: root))
+        if (TryResolveSolutionFile(workspacePath: root, solutionPath: out var solutionPath))
         {
-            return GetProjectsFromSolution(solutionPath: root);
+            return GetProjectsFromSolution(solutionPath: solutionPath);
         }
 
         if (File.Exists(path: root))
@@ -198,6 +247,29 @@ internal static class WorkspaceProjectResolver
             .Select(selector: Path.GetFullPath)
             .Order(comparer: StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static string? GetSingleTopLevelSolutionFile(string workspaceRoot)
+    {
+        try
+        {
+            var solutions = Directory
+                .EnumerateFiles(path: workspaceRoot, searchPattern: "*", searchOption: SearchOption.TopDirectoryOnly)
+                .Where(predicate: IsSolutionFile)
+                .Select(selector: Path.GetFullPath)
+                .ToArray();
+            return solutions.Length == 1
+                ? solutions[0]
+                : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static string[] GetProjectsFromSolution(string solutionPath) =>
@@ -330,6 +402,68 @@ internal static class WorkspaceProjectResolver
             .Order(comparer: StringComparer.OrdinalIgnoreCase)
             .ToArray();
 #pragma warning restore SCS0018,SEC0116
+    }
+
+    private static string[] GetSolutionItemsFromSlnx(string solutionPath)
+    {
+        var solutionDirectory = Path.GetDirectoryName(path: solutionPath) ?? Environment.CurrentDirectory;
+        var document = XDocument.Load(uri: solutionPath);
+        return document
+            .Descendants()
+            .Where(predicate: element => element.Name.LocalName.Equals(value: "File", comparisonType: StringComparison.Ordinal))
+            .Select(selector: element => element.Attribute(name: "Path")?.Value)
+            .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
+            .Select(selector: path => ResolveSolutionProjectPath(solutionDirectory: solutionDirectory, projectPath: path!))
+            .Where(predicate: path => File.Exists(path: path) || Directory.Exists(path: path))
+            .Order(comparer: StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static string[] GetSolutionItemsFromSln(string solutionPath)
+    {
+        var solutionDirectory = Path.GetDirectoryName(path: solutionPath) ?? Environment.CurrentDirectory;
+        var items = new List<string>();
+        var inSolutionItemsSection = false;
+#pragma warning disable SCS0018,SEC0116
+        foreach (var rawLine in File.ReadLines(path: solutionPath))
+        {
+            var line = rawLine.Trim();
+            if (line.StartsWith(value: "ProjectSection(SolutionItems)", comparisonType: StringComparison.Ordinal))
+            {
+                inSolutionItemsSection = true;
+                continue;
+            }
+
+            if (inSolutionItemsSection && line.StartsWith(value: "EndProjectSection", comparisonType: StringComparison.Ordinal))
+            {
+                inSolutionItemsSection = false;
+                continue;
+            }
+
+            if (!inSolutionItemsSection)
+            {
+                continue;
+            }
+
+            var separatorIndex = line.IndexOf(value: '=', comparisonType: StringComparison.Ordinal);
+            var candidate = (separatorIndex >= 0 ? line[..separatorIndex] : line).Trim().Trim(trimChar: '"');
+            if (string.IsNullOrWhiteSpace(value: candidate))
+            {
+                continue;
+            }
+
+            var resolved = ResolveSolutionProjectPath(solutionDirectory: solutionDirectory, projectPath: candidate);
+            if (File.Exists(path: resolved) || Directory.Exists(path: resolved))
+            {
+                items.Add(item: resolved);
+            }
+        }
+#pragma warning restore SCS0018,SEC0116
+
+        return items
+            .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
+            .Order(comparer: StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static string? TryReadSlnProjectPath(string line)

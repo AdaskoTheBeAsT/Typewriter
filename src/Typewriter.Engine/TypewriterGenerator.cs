@@ -58,7 +58,11 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
 
         var resolutionStopwatch = Stopwatch.StartNew();
         var workspace = new WorkspaceContext(RootPath: WorkspaceProjectResolver.ResolveWorkspacePath(request: request));
-        var projectPaths = WorkspaceProjectResolver.ResolveProjectPaths(request: request, workspacePath: workspace.RootPath, diagnostics: diagnostics);
+        var projectPaths = WorkspaceProjectResolver.ResolveProjectPaths(
+            request: request,
+            workspacePath: workspace.RootPath,
+            diagnostics: diagnostics,
+            checkForTemplates: _templateDiscovery is FileSystemTemplateDiscovery);
         performanceTrace.Add(stage: "Workspace/project resolution", elapsed: resolutionStopwatch.Elapsed);
         if (projectPaths.Count == 0)
         {
@@ -466,14 +470,6 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
 
         if (templates.Count == 0)
         {
-            diagnostics.Add(
-                item: new GenerationDiagnostic(
-                    File: workspace.RootPath,
-                    Line: null,
-                    Column: null,
-                    Severity: DiagnosticSeverity.Warning,
-                    Message: $"No .tst templates were found for project: {projectPath}.",
-                    Code: null));
             return;
         }
 

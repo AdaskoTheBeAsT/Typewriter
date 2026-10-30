@@ -53,9 +53,29 @@ class TypewriterCliService(private val project: Project) {
         scheduleSaveRequest(request)
     }
 
+    fun isIgnoredInputPath(filePath: String): Boolean {
+        if (filePath.isBlank()) {
+            return true
+        }
+
+        val fullPath = try {
+            Paths.get(filePath).toAbsolutePath().normalize()
+        } catch (_: InvalidPathException) {
+            return true
+        }
+
+        val rootDirectory = resolveInputRootDirectory(fullPath)
+        val excludePatterns = readConfiguredExcludePatterns(fullPath.toString())
+        return isPathExcluded(rootDirectory, fullPath, excludePatterns)
+    }
+
     private fun createSaveRequest(file: VirtualFile): SaveRequest? {
         val settings = project.service<TypewriterSettingsState>().settings
         if (!settings.generateOnSave && !settings.validateOnSave) {
+            return null
+        }
+
+        if (isIgnoredInputPath(file.path)) {
             return null
         }
 
@@ -184,6 +204,13 @@ class TypewriterCliService(private val project: Project) {
             val workingDirectory = getPathBase(workspacePath).toString()
             val projectPath = resolveOptionalPath(settings.projectPath, getPathBase(workspacePath).toString()) ?: projectPathOverride
             val templateSearchPath = if (projectScoped) resolveProjectTemplateSearchPath(projectPath) else null
+            if (allTemplates && templatePath.isNullOrBlank() && templateSearchPath == null && shouldSkipWithoutTemplates(projectPath, workspacePath)) {
+                if (!projectScoped) {
+                    notify("Typewriter", "No .tst templates were found in the current solution or workspace.", NotificationType.INFORMATION)
+                }
+                return
+            }
+
             val persistentResult = project.service<TypewriterLanguageServerClient>().tryGenerate(
                 request = PersistentGenerationRequest(
                     command = command,
@@ -379,12 +406,179 @@ class TypewriterCliService(private val project: Project) {
         return if (containsTemplateFile(projectDirectory)) projectDirectory.toString() else null
     }
 
-    private fun containsTemplateFile(root: Path): Boolean {
+    private fun shouldSkipWithoutTemplates(projectPath: String?, workspacePath: String?): Boolean {
+        val checkedScopes = mutableSetOf<String>()
+        for (candidatePath in listOf(projectPath, workspacePath)) {
+            val (scopeKey, containsTemplates) = tryGetScopeAndContainsTemplates(candidatePath) ?: continue
+            if (!checkedScopes.add(scopeKey.lowercase())) {
+                continue
+            }
+
+            if (containsTemplates) {
+                return false
+            }
+        }
+
+        return checkedScopes.isNotEmpty()
+    }
+
+    private fun tryGetScopeAndContainsTemplates(candidatePath: String?): Pair<String, Boolean>? {
+        val solutionPath = tryResolveSolutionFile(candidatePath)
+        if (solutionPath != null) {
+            return solutionPath.toString() to containsSolutionTemplateFile(solutionPath)
+        }
+
+        val searchDirectory = tryGetSearchDirectory(candidatePath) ?: return null
+        return searchDirectory.toString() to containsTemplateFile(searchDirectory)
+    }
+
+    private fun tryGetSearchDirectory(candidatePath: String?): Path? {
+        if (candidatePath.isNullOrBlank()) {
+            return null
+        }
+
+        val fullPath = try {
+            Paths.get(candidatePath).toAbsolutePath().normalize()
+        } catch (_: InvalidPathException) {
+            return null
+        }
+
+        val directory = if (Files.isDirectory(fullPath)) fullPath else fullPath.parent
+        return directory?.takeIf { Files.isDirectory(it) }
+    }
+
+    private fun tryResolveSolutionFile(candidatePath: String?): Path? {
+        if (candidatePath.isNullOrBlank()) {
+            return null
+        }
+
+        val fullPath = try {
+            Paths.get(candidatePath).toAbsolutePath().normalize()
+        } catch (_: InvalidPathException) {
+            return null
+        }
+
+        if (isSolutionFileName(fullPath.fileName?.toString().orEmpty()) && Files.isRegularFile(fullPath)) {
+            return fullPath
+        }
+
+        if (!Files.isDirectory(fullPath)) {
+            return null
+        }
+
+        val solutions = fullPath.toFile()
+            .listFiles { file -> file.isFile && isSolutionFileName(file.name) }
+            ?: return null
+        return if (solutions.size == 1) solutions[0].toPath().toAbsolutePath().normalize() else null
+    }
+
+    private fun isSolutionFileName(fileName: String): Boolean =
+        fileName.endsWith(".sln", ignoreCase = true) || fileName.endsWith(".slnx", ignoreCase = true)
+
+    private fun containsSolutionTemplateFile(solutionPath: Path): Boolean {
+        val solutionDirectory = solutionPath.parent ?: return false
+        if (!Files.isDirectory(solutionDirectory)) {
+            return false
+        }
+
+        val excludePatterns = readConfiguredExcludePatterns(solutionDirectory.toString())
+        val topLevelTemplates = solutionDirectory.toFile()
+            .listFiles { file ->
+                file.isFile &&
+                    file.name.endsWith(".tst", ignoreCase = true) &&
+                    !isPathExcluded(solutionDirectory, file.toPath(), excludePatterns)
+            }
+        if (!topLevelTemplates.isNullOrEmpty()) {
+            return true
+        }
+
+        for (referencedPath in getSolutionReferencedPaths(solutionPath)) {
+            if (!Files.exists(referencedPath)) {
+                continue
+            }
+
+            if (Files.isDirectory(referencedPath)) {
+                if (!isExcludedDirectory(solutionDirectory, referencedPath, excludePatterns) &&
+                    containsTemplateFile(referencedPath, solutionDirectory, excludePatterns)
+                ) {
+                    return true
+                }
+                continue
+            }
+
+            val fileName = referencedPath.fileName?.toString().orEmpty()
+            if (fileName.endsWith(".tst", ignoreCase = true) &&
+                !isPathExcluded(solutionDirectory, referencedPath, excludePatterns)
+            ) {
+                return true
+            }
+
+            if (fileName.endsWith(".csproj", ignoreCase = true)) {
+                val projectDirectory = referencedPath.parent
+                if (projectDirectory != null &&
+                    Files.isDirectory(projectDirectory) &&
+                    !isExcludedDirectory(solutionDirectory, projectDirectory, excludePatterns) &&
+                    containsTemplateFile(projectDirectory, solutionDirectory, excludePatterns)
+                ) {
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
+    private fun getSolutionReferencedPaths(solutionPath: Path): List<Path> {
+        val solutionDirectory = solutionPath.parent ?: return emptyList()
+        val results = linkedSetOf<Path>()
+        try {
+            val content = Files.readString(solutionPath, StandardCharsets.UTF_8)
+            if (solutionPath.fileName.toString().endsWith(".slnx", ignoreCase = true)) {
+                for (match in SlnxPathRegex.findAll(content)) {
+                    val candidate = match.groupValues.getOrNull(1)?.trim().orEmpty()
+                    if (candidate.isNotBlank()) {
+                        results.add(solutionDirectory.resolve(candidate.replace('\\', '/')).normalize())
+                    }
+                }
+            } else {
+                var inSolutionItems = false
+                for (rawLine in content.lineSequence()) {
+                    val line = rawLine.trim()
+                    when {
+                        line.startsWith("Project(") -> {
+                            val parts = line.split('"')
+                            if (parts.size > 5 && parts[5].isNotBlank()) {
+                                results.add(solutionDirectory.resolve(parts[5].trim().replace('\\', '/')).normalize())
+                            }
+                        }
+                        line.startsWith("ProjectSection(SolutionItems)") -> inSolutionItems = true
+                        inSolutionItems && line.startsWith("EndProjectSection") -> inSolutionItems = false
+                        inSolutionItems -> {
+                            val candidate = line.substringBefore('=').trim().trim('"')
+                            if (candidate.isNotBlank()) {
+                                results.add(solutionDirectory.resolve(candidate.replace('\\', '/')).normalize())
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (_: IOException) {
+        } catch (_: InvalidPathException) {
+        }
+
+        return results.toList()
+    }
+
+    private fun containsTemplateFile(
+        root: Path,
+        excludeRoot: Path = root,
+        excludePatterns: List<String> = readConfiguredExcludePatterns(excludeRoot.toString()),
+    ): Boolean {
         var found = false
         return try {
             Files.walkFileTree(root, object : SimpleFileVisitor<Path>() {
                 override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
-                    if (dir != root && dir.fileName.toString().lowercase() in IgnoredInputDirectories) {
+                    if (dir != root && isExcludedDirectory(excludeRoot, dir, excludePatterns)) {
                         return FileVisitResult.SKIP_SUBTREE
                     }
 
@@ -392,7 +586,9 @@ class TypewriterCliService(private val project: Project) {
                 }
 
                 override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                    if (file.fileName.toString().endsWith(".tst", ignoreCase = true)) {
+                    if (file.fileName.toString().endsWith(".tst", ignoreCase = true) &&
+                        !isPathExcluded(excludeRoot, file, excludePatterns)
+                    ) {
                         found = true
                         return FileVisitResult.TERMINATE
                     }
@@ -409,6 +605,220 @@ class TypewriterCliService(private val project: Project) {
             false
         } catch (_: SecurityException) {
             false
+        }
+    }
+
+    private fun resolveInputRootDirectory(fullPath: Path): Path {
+        val basePath = project.basePath
+        if (!basePath.isNullOrBlank()) {
+            try {
+                val baseDir = Paths.get(basePath).toAbsolutePath().normalize()
+                if (fullPath.startsWith(baseDir)) {
+                    return baseDir
+                }
+            } catch (_: InvalidPathException) {
+            }
+        }
+
+        var current: Path? = if (Files.isDirectory(fullPath)) fullPath else fullPath.parent
+        var nearestProjectDirectory: Path? = null
+        var nearestWorkspaceDirectory: Path? = null
+        while (current != null) {
+            val directoryFile = current.toFile()
+            val files = directoryFile.listFiles()
+            if (files != null) {
+                if (nearestProjectDirectory == null && files.any { it.isFile && it.name.endsWith(".csproj", ignoreCase = true) }) {
+                    nearestProjectDirectory = current
+                }
+
+                val hasConfig = ConfigurationFileNames.any { Files.exists(current.resolve(it)) }
+                val hasSolution = files.any { it.isFile && isSolutionFileName(it.name) }
+                val hasGit = Files.exists(current.resolve(".git"))
+                if (hasConfig || hasSolution || hasGit) {
+                    nearestWorkspaceDirectory = current
+                    if (hasSolution || hasGit) {
+                        break
+                    }
+                }
+            }
+
+            current = current.parent
+        }
+
+        return nearestWorkspaceDirectory
+            ?: nearestProjectDirectory
+            ?: fullPath.root
+            ?: fullPath.parent
+            ?: fullPath
+    }
+
+    private fun isExcludedDirectory(
+        rootDirectory: Path,
+        directory: Path,
+        excludePatterns: List<String>,
+    ): Boolean {
+        val name = directory.fileName?.toString()?.lowercase().orEmpty()
+        if (name in AlwaysIgnoredDirectories) {
+            return true
+        }
+
+        return isPathExcluded(rootDirectory, directory.resolve("_"), excludePatterns)
+    }
+
+    private fun isPathExcluded(
+        rootDirectory: Path,
+        targetPath: Path,
+        excludePatterns: List<String>,
+    ): Boolean {
+        val relativePath = tryGetRelativePath(rootDirectory, targetPath) ?: return false
+        if (relativePath == ".") {
+            return false
+        }
+
+        val segments = relativePath.split('/').filter { it.isNotEmpty() }
+        if (segments.any { it.lowercase() in AlwaysIgnoredDirectories }) {
+            return true
+        }
+
+        for (pattern in excludePatterns) {
+            val normalizedPattern = normalizeExcludePattern(pattern)
+            if (normalizedPattern.isNotEmpty() && isGlobMatch(relativePath, normalizedPattern)) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private fun tryGetRelativePath(rootDirectory: Path, targetPath: Path): String? {
+        val fullRoot = rootDirectory.toAbsolutePath().normalize()
+        val fullTarget = targetPath.toAbsolutePath().normalize()
+        if (fullTarget == fullRoot) {
+            return "."
+        }
+
+        if (!fullTarget.startsWith(fullRoot)) {
+            return null
+        }
+
+        return fullRoot.relativize(fullTarget).toString().replace('\\', '/')
+    }
+
+    private fun normalizeExcludePattern(pattern: String): String {
+        val trimmed = pattern.trim()
+        if (trimmed.isEmpty()) {
+            return ""
+        }
+
+        val endsWithSeparator = trimmed.endsWith("/") || trimmed.endsWith("\\")
+        val normalized = trimmed.replace('\\', '/').trimEnd('/')
+        if (normalized.isEmpty()) {
+            return ""
+        }
+
+        if ('/' !in normalized) {
+            return if (isDirectorySegmentPattern(normalized)) "**/$normalized/**" else normalized
+        }
+
+        if (endsWithSeparator) {
+            return if (normalized.endsWith("/**")) normalized else "$normalized/**"
+        }
+
+        val lastSegment = normalized.substringAfterLast('/')
+        return if (isDirectorySegmentPattern(lastSegment)) "$normalized/**" else normalized
+    }
+
+    private fun isDirectorySegmentPattern(segment: String): Boolean =
+        segment.isNotEmpty() &&
+            '*' !in segment &&
+            '?' !in segment &&
+            segment.indexOf('.', startIndex = 1) < 0
+
+    private fun isGlobMatch(relativePath: String, normalizedPattern: String): Boolean {
+        val regexBuilder = StringBuilder("^")
+        var index = 0
+        while (index < normalizedPattern.length) {
+            val current = normalizedPattern[index]
+            if (current == '*') {
+                val isDoubleStar = index + 1 < normalizedPattern.length && normalizedPattern[index + 1] == '*'
+                if (isDoubleStar) {
+                    val hasSlashAfter = index + 2 < normalizedPattern.length && normalizedPattern[index + 2] == '/'
+                    if (hasSlashAfter) {
+                        regexBuilder.append("(?:.*/)?")
+                        index += 3
+                        continue
+                    }
+
+                    regexBuilder.append(".*")
+                    index += 2
+                    continue
+                }
+
+                regexBuilder.append("[^/]*")
+                index += 1
+                continue
+            }
+
+            if (current == '?') {
+                regexBuilder.append("[^/]")
+                index += 1
+                continue
+            }
+
+            regexBuilder.append(Regex.escape(current.toString()))
+            index += 1
+        }
+
+        regexBuilder.append("$")
+        return Regex(regexBuilder.toString(), RegexOption.IGNORE_CASE).matches(relativePath)
+    }
+
+    private fun readConfiguredExcludePatterns(filePath: String): List<String> {
+        var patterns = DefaultExcludePatterns
+        for (configurationPath in findConfigurationFiles(filePath)) {
+            val configuredPatterns = readExcludePatterns(configurationPath)
+            if (configuredPatterns != null) {
+                patterns = configuredPatterns
+            }
+        }
+
+        val envExclude = System.getenv("TYPEWRITER_EXCLUDE")
+        if (!envExclude.isNullOrBlank()) {
+            val envPatterns = envExclude
+                .split(',', ';', ' ')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+            if (envPatterns.isNotEmpty()) {
+                patterns = envPatterns
+            }
+        }
+
+        return patterns
+    }
+
+    private fun readExcludePatterns(configurationPath: Path): List<String>? {
+        return try {
+            val root = Files.newBufferedReader(configurationPath).use(JsonParser::parseReader)
+            if (!root.isJsonObject) {
+                return null
+            }
+
+            val excludeArray = root.asJsonObject
+                .entrySet()
+                .firstOrNull { it.key.equals("exclude", ignoreCase = true) }
+                ?.value
+                ?.takeIf { it.isJsonArray }
+                ?: return null
+            excludeArray.asJsonArray
+                .asSequence()
+                .filter { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                .map { it.asString.trim() }
+                .filter { it.isNotEmpty() }
+                .toList()
+        } catch (_: IOException) {
+            null
+        } catch (_: JsonParseException) {
+            null
         }
     }
 
@@ -547,6 +957,8 @@ class TypewriterCliService(private val project: Project) {
         const val SaveDebounceMillis = 300
         val ConfigurationFileNames = listOf("typewriter.json", "typewriter.config.json", ".typewriterrc.json")
         val DefaultInputExtensions = setOf(".cs", ".csproj", ".json", ".props", ".sln", ".slnx", ".targets", ".tst")
-        val IgnoredInputDirectories = setOf(".git", ".gradle", ".idea", ".vs", ".vscode", "bin", "obj", "node_modules", "generated")
+        val DefaultExcludePatterns = listOf("**/bin/**", "**/obj/**", "**/node_modules/**")
+        val AlwaysIgnoredDirectories = setOf(".git", ".gradle", ".idea", ".vs", ".vscode")
+        val SlnxPathRegex = Regex("""<\s*(?:Project|File)\b[^>]*\bPath\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
     }
 }

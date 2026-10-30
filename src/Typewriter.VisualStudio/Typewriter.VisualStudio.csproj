@@ -73,7 +73,7 @@
     <PackageReference Include="Microsoft.VisualStudio.LanguageServer.Client" Version="[17.14.60,18.0.0)" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="[17.14.40265,18.0.0)" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="[18.9.820,19.0.0)" PrivateAssets="all" />
-    <PackageReference Include="System.Text.Json" Version="10.0.13" />
+    <PackageReference Include="System.Text.Json" Version="[10.0.14,11.0.0)" />
   </ItemGroup>
 
   <ItemGroup>
