@@ -183,6 +183,45 @@ public sealed class TypewriterConfigurationLoaderTests
         }
     }
 
+    [Fact]
+    public async Task LoadAsyncReadsExcludeAndAppliesEnvironmentOverrideIssue121()
+    {
+        var root = CreateProjectDirectory();
+        var originalExclude = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_EXCLUDE");
+        try
+        {
+            Environment.SetEnvironmentVariable(variable: "TYPEWRITER_EXCLUDE", value: null);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: root, path2: "typewriter.json"),
+                contents: """
+                          {
+                            "exclude": [ "**/bin/**", "**/obj/**", "**/Generated/**" ]
+                          }
+                          """);
+
+            var fromConfig = await TypewriterConfigurationLoader.LoadAsync(
+                workspacePath: root,
+                projectPath: null,
+                cancellationToken: CancellationToken.None);
+
+            fromConfig.Exclude.Should().Equal("**/bin/**", "**/obj/**", "**/Generated/**");
+
+            Environment.SetEnvironmentVariable(variable: "TYPEWRITER_EXCLUDE", value: "**/custom-ignored/**;Generated");
+
+            var fromEnvironment = await TypewriterConfigurationLoader.LoadAsync(
+                workspacePath: root,
+                projectPath: null,
+                cancellationToken: CancellationToken.None);
+
+            fromEnvironment.Exclude.Should().Equal("**/custom-ignored/**", "Generated");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable: "TYPEWRITER_EXCLUDE", value: originalExclude);
+            Directory.Delete(path: root, recursive: true);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(

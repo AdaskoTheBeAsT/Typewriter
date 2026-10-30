@@ -1004,6 +1004,73 @@ public sealed class TypewriterGeneratorWorkspaceTests
         }
     }
 
+    [Fact]
+    public async Task GenerateAsyncReturnsEarlyWithNoDiagnosticsWhenSolutionHasNoTemplatesEvenIfUnrelatedSubdirectoriesHaveTemplates()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectADirectory = Path.Combine(path1: directory, path2: "src", path3: "ProjectA");
+            var projectBDirectory = Path.Combine(path1: directory, path2: "src", path3: "ProjectB");
+            var samplesDirectory = Path.Combine(path1: directory, path2: "samples", path3: "SampleApp");
+            Directory.CreateDirectory(path: projectADirectory);
+            Directory.CreateDirectory(path: projectBDirectory);
+            Directory.CreateDirectory(path: samplesDirectory);
+
+            var solutionPath = Path.Combine(path1: directory, path2: "Workspace.slnx");
+            await File.WriteAllTextAsync(
+                path: solutionPath,
+                contents: """
+                          <Solution>
+                            <Project Path="src/ProjectA/ProjectA.csproj" />
+                            <Project Path="src/ProjectB/ProjectB.csproj" />
+                          </Solution>
+                          """);
+            await File.WriteAllTextAsync(path: Path.Combine(path1: projectADirectory, path2: "ProjectA.csproj"), contents: "<Project />");
+            await File.WriteAllTextAsync(path: Path.Combine(path1: projectBDirectory, path2: "ProjectB.csproj"), contents: "<Project />");
+            await File.WriteAllTextAsync(path: Path.Combine(path1: samplesDirectory, path2: "SampleApp.csproj"), contents: "<Project />");
+            await File.WriteAllTextAsync(path: Path.Combine(path1: samplesDirectory, path2: "Sample.tst"), contents: "$Classes[$Name]");
+
+            var metadataProvider = new CapturingMetadataProvider();
+            var generator = new TypewriterGenerator(
+                templateDiscovery: new FileSystemTemplateDiscovery(),
+                metadataProvider: metadataProvider,
+                fileWriter: new PassthroughFileWriter());
+
+            var withoutAllProjects = await generator.GenerateAsync(
+                request: new GenerationRequest(
+                    WorkspacePath: solutionPath,
+                    ProjectPath: null,
+                    TemplatePath: null,
+                    Mode: GenerationMode.Generate,
+                    Configuration: TypewriterConfiguration.Default,
+                    AllProjects: false),
+                cancellationToken: CancellationToken.None);
+
+            withoutAllProjects.Success.Should().BeTrue();
+            withoutAllProjects.Diagnostics.Should().BeEmpty();
+            metadataProvider.Projects.Should().BeEmpty();
+
+            var withAllProjects = await generator.GenerateAsync(
+                request: new GenerationRequest(
+                    WorkspacePath: solutionPath,
+                    ProjectPath: null,
+                    TemplatePath: null,
+                    Mode: GenerationMode.Generate,
+                    Configuration: TypewriterConfiguration.Default,
+                    AllProjects: true),
+                cancellationToken: CancellationToken.None);
+
+            withAllProjects.Success.Should().BeTrue();
+            withAllProjects.Diagnostics.Should().BeEmpty();
+            metadataProvider.Projects.Should().BeEmpty();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static async Task<string> CreateProjectWithTemplateAsync(
         string directory,
         string projectName)

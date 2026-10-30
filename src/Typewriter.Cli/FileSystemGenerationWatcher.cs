@@ -1,4 +1,5 @@
 using Typewriter.Abstractions;
+using Typewriter.Engine;
 
 namespace Typewriter.Cli;
 
@@ -6,6 +7,8 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
 {
     private const int MaxTrackedChangedInputs = 4096;
     private readonly Lock _sync = new();
+    private readonly string[] _roots;
+    private readonly string[] _excludePatterns;
     private readonly FileSystemWatcher[] _watchers;
     private readonly HashSet<string> _watchedExtensions;
     private readonly Dictionary<string, ChangedInputKind> _changedInputs = new(comparer: StringComparer.OrdinalIgnoreCase);
@@ -14,16 +17,22 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
 
     private FileSystemGenerationWatcher(
         IEnumerable<string> roots,
-        IEnumerable<string> watchedExtensions)
+        IEnumerable<string> watchedExtensions,
+        IEnumerable<string> excludePatterns)
     {
+        _roots = roots.Select(selector: Path.GetFullPath).ToArray();
+        _excludePatterns = excludePatterns.ToArray();
         _watchedExtensions = new HashSet<string>(collection: watchedExtensions, comparer: StringComparer.OrdinalIgnoreCase);
-        _watchers = roots.Select(selector: CreateWatcher).ToArray();
+        _watchers = _roots.Select(selector: CreateWatcher).ToArray();
     }
 
     public static FileSystemGenerationWatcher Create(
         CliOptions options,
         TypewriterConfiguration configuration) =>
-        new(roots: ResolveWatchRoots(options: options), watchedExtensions: configuration.InputExtensions);
+        new(
+            roots: ResolveWatchRoots(options: options),
+            watchedExtensions: configuration.InputExtensions,
+            excludePatterns: configuration.Exclude);
 
     public void Dispose()
     {
@@ -119,12 +128,6 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
             : fullPath;
     }
 
-    private static bool IsIgnoredDirectory(string segment) =>
-        segment.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || segment.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || segment.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || segment.Equals(value: "generated", comparisonType: StringComparison.OrdinalIgnoreCase);
-
     private static TaskCompletionSource CreateSignal() =>
         new(creationOptions: TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -148,16 +151,31 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
             return false;
         }
 
+        return !IsExcludedPath(path: path);
+    }
+
+    private bool IsExcludedPath(string path)
+    {
         var fullPath = Path.GetFullPath(path: path);
-        var segments = fullPath.Split(
-            separator: [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
-            options: StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Any(predicate: IsIgnoredDirectory))
+        foreach (var root in _roots)
         {
-            return false;
+            var relativePath = Path.GetRelativePath(relativeTo: root, path: fullPath);
+            if (relativePath.StartsWith(value: "..", comparisonType: StringComparison.Ordinal)
+                || Path.IsPathRooted(path: relativePath))
+            {
+                continue;
+            }
+
+            if (FileSystemTemplateDiscovery.IsPathExcluded(
+                    rootDirectory: root,
+                    path: fullPath,
+                    excludePatterns: _excludePatterns))
+            {
+                return true;
+            }
         }
 
-        return true;
+        return false;
     }
 
     private FileSystemWatcher CreateWatcher(string root)

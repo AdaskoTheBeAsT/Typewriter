@@ -29,14 +29,10 @@ class TypewriterSaveListener(private val project: Project) : BulkFileListener {
     }
 
     private fun isGenerationInputFile(file: VirtualFile): Boolean {
-        if (file.path.split('/', '\\').any { it.lowercase() in ignoredDirectories }) {
+        if (file.extension.isNullOrBlank()) {
             return false
         }
 
-        return !file.extension.isNullOrBlank()
-    }
-
-    private companion object {
-        val ignoredDirectories = setOf("bin", "obj", "node_modules", "generated")
+        return !project.service<TypewriterCliService>().isIgnoredInputPath(file.path)
     }
 }

@@ -302,14 +302,15 @@ internal sealed class TypewriterCommandService
         }
 
         var resolvedWorkspacePath = workspacePath ?? string.Empty;
-        var templateSearchPath = inputPath is not null && !string.IsNullOrWhiteSpace(value: projectPath)
+        var templateSearchPath = !includeTemplate && !solutionWide && !string.IsNullOrWhiteSpace(value: projectPath)
             ? ResolveProjectTemplateSearchPath(projectPath: projectPath)
             : null;
         if (!includeTemplate
-            && !solutionWide
-            && inputPath is not null
             && templateSearchPath is null
-            && TrySkipSavedInputWithoutTemplates(projectPath: projectPath, workspacePath: workspacePath))
+            && TrySkipGenerationWithoutTemplates(
+                projectPath: projectPath,
+                workspacePath: workspacePath,
+                isSaveTriggered: inputPath is not null))
         {
             return null;
         }
@@ -320,7 +321,7 @@ internal sealed class TypewriterCommandService
             templatePath: templatePath,
             templateSearchPath: templateSearchPath,
             framework: options.Framework.Trim(),
-            allProjects: solutionWide || options.AllProjects,
+            allProjects: solutionWide || options.AllProjects || (!includeTemplate && string.IsNullOrWhiteSpace(value: projectPath)),
             workingDirectory: GetWorkingDirectory(workspacePath: resolvedWorkspacePath),
             cliInvocation: ResolveCliInvocation(options: options, workspacePath: resolvedWorkspacePath));
     }
@@ -589,16 +590,21 @@ internal sealed class TypewriterCommandService
             ? null
             : Path.GetFullPath(path: inputPath);
 
-    private bool TrySkipSavedInputWithoutTemplates(
+    private bool TrySkipGenerationWithoutTemplates(
         string? projectPath,
-        string? workspacePath = null)
+        string? workspacePath = null,
+        bool isSaveTriggered = true)
     {
         if (!ShouldSkipSavedInputWithoutTemplates(projectPath: projectPath, workspacePath: workspacePath))
         {
             return false;
         }
 
-        _outputPane.WriteLine(message: "No .tst templates were found for the saved file's project. Skipping Typewriter generate-on-save.");
+        _diagnosticReporter.Clear();
+        _outputPane.WriteLine(
+            message: isSaveTriggered
+                ? "No .tst templates were found for the saved file's project. Skipping Typewriter generate-on-save."
+                : "No .tst templates were found in the current solution or workspace. Skipping Typewriter generation.");
         return true;
     }
 
@@ -606,22 +612,25 @@ internal sealed class TypewriterCommandService
         string? projectPath,
         string? workspacePath)
     {
-        var searchDirectories = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+        var checkedScopes = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
         foreach (var path in new[] { projectPath, workspacePath })
         {
-            if (!TryGetTemplateSearchDirectory(path: path, directory: out var searchDirectory)
-                || !searchDirectories.Add(item: searchDirectory))
+            if (!TypewriterPathFilter.TryGetScopeKeyAndContainsTemplates(
+                    path: path,
+                    scopeKey: out var scopeKey,
+                    containsTemplates: out var containsTemplates)
+                || !checkedScopes.Add(item: scopeKey))
             {
                 continue;
             }
 
-            if (ContainsTemplateFile(directory: searchDirectory))
+            if (containsTemplates)
             {
                 return false;
             }
         }
 
-        return searchDirectories.Count > 0;
+        return checkedScopes.Count > 0;
     }
 
     private static string? FindProjectPathForInputPath(string? inputPath)
@@ -1116,97 +1125,11 @@ internal sealed class TypewriterCommandService
 
     private static string? ResolveProjectTemplateSearchPath(string? projectPath)
     {
-        return TryGetTemplateSearchDirectory(path: projectPath, directory: out var projectDirectory)
-               && ContainsTemplateFile(directory: projectDirectory)
+        return TypewriterPathFilter.TryGetTemplateSearchDirectory(path: projectPath, directory: out var projectDirectory)
+               && TypewriterPathFilter.ContainsTemplateFile(directory: projectDirectory)
             ? projectDirectory
             : null;
     }
-
-    private static bool TryGetTemplateSearchDirectory(
-        string? path,
-        out string directory)
-    {
-        directory = string.Empty;
-        if (string.IsNullOrWhiteSpace(value: path))
-        {
-            return false;
-        }
-
-        string fullPath;
-        try
-        {
-            fullPath = Path.GetFullPath(path: path);
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (NotSupportedException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
-        }
-
-        var candidateDirectory = Directory.Exists(path: fullPath)
-            ? fullPath
-            : Path.GetDirectoryName(path: fullPath);
-        if (string.IsNullOrWhiteSpace(value: candidateDirectory) || !Directory.Exists(path: candidateDirectory))
-        {
-            return false;
-        }
-
-        directory = candidateDirectory;
-        return true;
-    }
-
-    private static bool ContainsTemplateFile(string directory)
-    {
-        var pending = new Stack<string>();
-        pending.Push(item: directory);
-        while (pending.Count > 0)
-        {
-            var current = pending.Pop();
-            try
-            {
-                if (Directory.EnumerateFiles(path: current, searchPattern: "*.tst", searchOption: SearchOption.TopDirectoryOnly).Any())
-                {
-                    return true;
-                }
-
-                foreach (var childDirectory in Directory.EnumerateDirectories(path: current)
-                             .Where(predicate: childDirectory => !IsIgnoredTemplateDirectory(name: Path.GetFileName(path: childDirectory))))
-                {
-                    pending.Push(item: childDirectory);
-                }
-            }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsIgnoredTemplateDirectory(string name) =>
-        name.Equals(value: ".git", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || name.Equals(value: ".gradle", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || name.Equals(value: ".idea", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || name.Equals(value: ".vs", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || name.Equals(value: ".vscode", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || name.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || name.Equals(value: "obj", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || name.Equals(value: "node_modules", comparisonType: StringComparison.OrdinalIgnoreCase)
-        || name.Equals(value: "generated", comparisonType: StringComparison.OrdinalIgnoreCase);
 
     private static IEnumerable<Project> EnumerateProjects(Projects projects)
     {

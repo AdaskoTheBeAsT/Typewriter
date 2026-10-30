@@ -185,6 +185,66 @@ public sealed class WorkspaceGenerationServiceTests
         }
     }
 
+    [Fact]
+    public async Task GenerateAsyncDoesNotUseSettingsProjectPathWhenAllProjectsIsRequestedAndSucceedsWhenSolutionHasNoTemplates()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var brokenProjectDirectory = Directory.CreateDirectory(path: Path.Combine(path1: directory, path2: "src", path3: "VisualStudioExt")).FullName;
+            var samplesDirectory = Directory.CreateDirectory(path: Path.Combine(path1: directory, path2: "samples", path3: "SampleApp")).FullName;
+            var solutionPath = Path.Combine(path1: directory, path2: "SolutionWithoutTemplates.slnx");
+            var brokenProjectPath = Path.Combine(path1: brokenProjectDirectory, path2: "VisualStudioExt.csproj");
+
+            await File.WriteAllTextAsync(
+                path: solutionPath,
+                contents: """
+                    <Solution>
+                      <Project Path="src/VisualStudioExt/VisualStudioExt.csproj" />
+                    </Solution>
+                    """);
+            await File.WriteAllTextAsync(
+                path: brokenProjectPath,
+                contents: """
+                    <Project Sdk="Microsoft.NET.Sdk">
+                      <PropertyGroup>
+                        <TargetFramework>net10.0</TargetFramework>
+                      </PropertyGroup>
+                      <Target Name="FailBeforeCompile" BeforeTargets="CoreCompile">
+                        <Error Text="MSB3823 Non-string resources require System.Resources.Extensions." />
+                      </Target>
+                    </Project>
+                    """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: samplesDirectory, path2: "SampleModels.tst"),
+                contents: "$Classes[$Name]");
+
+            using var service = new WorkspaceGenerationService();
+            var settings = new LanguageServerSettings(
+                WorkspacePath: solutionPath,
+                RootPath: directory,
+                ProjectPath: brokenProjectPath,
+                Framework: null,
+                AllProjects: false);
+            var request = new WorkspaceGenerationRequest(
+                Command: "generate",
+                WorkspacePath: solutionPath,
+                ProjectPath: null,
+                TemplatePath: null,
+                Framework: null,
+                AllProjects: true);
+
+            var result = await service.GenerateAsync(request: request, settings: settings, cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeTrue();
+            result.Diagnostics.Should().BeEmpty();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(

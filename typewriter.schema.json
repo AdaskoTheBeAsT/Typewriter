@@ -23,7 +23,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Glob patterns excluded from discovery.",
+      "description": "Glob patterns or directory names excluded from template discovery, 'typewriter watch', and editor generate-on-save (evaluated relative to the workspace/project root).",
       "default": ["**/bin/**", "**/obj/**", "**/node_modules/**"]
     },
     "inputExtensions": {

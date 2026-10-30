@@ -174,8 +174,7 @@ internal sealed class TypewriterLanguageClient : ILanguageClient, ILanguageClien
             ?? Environment.CurrentDirectory;
         var resolvedWorkspacePath = Path.GetFullPath(path: workspacePath);
         var projectPath = ResolveConfiguredPath(value: options.ProjectPath)
-            ?? FindProjectPathForTemplate(dte: dte, templatePath: templatePath)
-            ?? GetActiveProjectPath(dte: dte);
+            ?? FindProjectPathForTemplate(dte: dte, templatePath: templatePath);
         var workingDirectory = GetWorkingDirectory(workspacePath: resolvedWorkspacePath);
         var framework = options.Framework.Trim();
         return new TypewriterLanguageServerContext(
@@ -347,12 +346,6 @@ internal sealed class TypewriterLanguageClient : ILanguageClient, ILanguageClien
         ThreadHelper.ThrowIfNotOnUIThread();
         var solutionPath = dte?.Solution?.FullName;
         return string.IsNullOrWhiteSpace(value: solutionPath) ? null : solutionPath;
-    }
-
-    private static string? GetActiveProjectPath(DTE2? dte)
-    {
-        ThreadHelper.ThrowIfNotOnUIThread();
-        return dte?.ActiveDocument?.ProjectItem?.ContainingProject?.FullName;
     }
 
     private static string? FindProjectPathForTemplate(

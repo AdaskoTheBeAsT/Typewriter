@@ -36,8 +36,7 @@ internal sealed class WorkspaceGenerationService : IWorkspaceGenerationService, 
         try
         {
             var workspacePath = ResolveWorkspacePath(request: request, settings: settings);
-            var projectPath = ResolveOptionalPath(value: request.ProjectPath, basePath: GetPathBase(path: workspacePath))
-                ?? settings.ResolveProjectPath(workspacePath: workspacePath);
+            var projectPath = ResolveProjectPath(request: request, settings: settings, workspacePath: workspacePath);
             var configuration = await TypewriterConfigurationLoader.LoadAsync(
                 workspacePath: workspacePath,
                 projectPath: projectPath,
@@ -132,6 +131,13 @@ internal sealed class WorkspaceGenerationService : IWorkspaceGenerationService, 
             MetadataCacheInvalidation.MarkDirty(fullPath: changedInput.FullPath);
         }
     }
+
+    private static string? ResolveProjectPath(
+        WorkspaceGenerationRequest request,
+        LanguageServerSettings settings,
+        string workspacePath) =>
+        ResolveOptionalPath(value: request.ProjectPath, basePath: GetPathBase(path: workspacePath))
+        ?? ((request.AllProjects ?? settings.AllProjects) ? null : settings.ResolveProjectPath(workspacePath: workspacePath));
 
     private static string ResolveWorkspacePath(
         WorkspaceGenerationRequest request,

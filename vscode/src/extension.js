@@ -11,8 +11,10 @@ let outputChannel;
 const saveDebounceDelayMs = 300;
 const configurationFileNames = ["typewriter.json", "typewriter.config.json", ".typewriterrc.json"];
 const defaultInputExtensions = [".cs", ".csproj", ".json", ".props", ".sln", ".slnx", ".targets", ".tst"];
+const defaultExcludePatterns = ["**/bin/**", "**/obj/**", "**/node_modules/**"];
 const templateExtensions = new Set([".tst"]);
-const ignoredInputDirectories = new Set([".git", ".gradle", ".idea", ".vs", ".vscode", "bin", "obj", "node_modules", "generated"]);
+const alwaysIgnoredDirectories = new Set([".git", ".gradle", ".idea", ".vs", ".vscode"]);
+const slnxPathRegex = /<\s*(?:Project|File)\b[^>]*\bPath\s*=\s*["']([^"']+)["']/gi;
 const saveQueue = {
     pending: [],
     timer: undefined,
@@ -357,6 +359,17 @@ async function executeCliCommand(context, command, templatePath, options = {}) {
 
     const workingDirectory = getWorkingDirectory(workspacePath);
     const configuration = getConfiguration(templatePath ? vscode.Uri.file(templatePath) : options.resourceUri);
+    const projectPath = resolveOptionalPath(configuration.get("projectPath"), getPathBase(workspacePath)) || options.projectPath;
+    const templateSearchPath = options.projectScoped ? resolveProjectTemplateSearchPath(projectPath) : undefined;
+    if (options.allTemplates && !templatePath && !templateSearchPath && shouldSkipWithoutTemplates(projectPath, workspacePath)) {
+        diagnostics?.clear();
+        outputChannel?.appendLine(
+            options.projectScoped
+                ? "No .tst templates were found for the saved file's project. Skipping Typewriter generate-on-save."
+                : "No .tst templates were found in the current workspace. Skipping Typewriter generation.");
+        return;
+    }
+
     const args = buildTypewriterArguments(command, workspacePath, templatePath, configuration, options);
     const invocation = resolveCliInvocation(context, workingDirectory, configuration);
     const generationRequest = buildGenerationRequest(command, workspacePath, templatePath, configuration, options);
@@ -666,9 +679,163 @@ function getGenerationInputScope(document, inputExtensions) {
 }
 
 function isIgnoredInputPath(filePath) {
-    return filePath
-        .split(/[\\/]+/)
-        .some(segment => ignoredInputDirectories.has(segment.toLowerCase()));
+    if (typeof filePath !== "string" || !filePath.trim()) {
+        return true;
+    }
+
+    const fullPath = path.resolve(filePath);
+    const rootDirectory = resolveInputRootDirectory(fullPath);
+    const excludePatterns = readConfiguredExcludePatterns(fullPath);
+    return isPathExcluded(rootDirectory, fullPath, excludePatterns);
+}
+
+function resolveInputRootDirectory(fullPath) {
+    try {
+        const workspaceFolder = vscode.workspace?.getWorkspaceFolder?.(vscode.Uri.file(fullPath));
+        if (workspaceFolder?.uri?.fsPath) {
+            return path.resolve(workspaceFolder.uri.fsPath);
+        }
+    } catch {
+        // Ignore URI resolution failures and fall back to filesystem markers.
+    }
+
+    let current = safeIsDirectory(fullPath) ? fullPath : path.dirname(fullPath);
+    let nearestProjectDirectory;
+    let nearestWorkspaceDirectory;
+    while (current && current !== path.dirname(current)) {
+        const entries = safeReadDirectory(current);
+        if (!nearestProjectDirectory && entries.some(name => name.toLowerCase().endsWith(".csproj"))) {
+            nearestProjectDirectory = current;
+        }
+
+        const hasConfig = configurationFileNames.some(name => fs.existsSync(path.join(current, name)));
+        const hasSolution = entries.some(isSolutionFileName);
+        const hasGit = fs.existsSync(path.join(current, ".git"));
+        if (hasConfig || hasSolution || hasGit) {
+            nearestWorkspaceDirectory = current;
+            if (hasSolution || hasGit) {
+                break;
+            }
+        }
+
+        current = path.dirname(current);
+    }
+
+    return nearestWorkspaceDirectory
+        ?? nearestProjectDirectory
+        ?? path.parse(fullPath).root
+        ?? path.dirname(fullPath);
+}
+
+function isPathExcluded(rootDirectory, targetPath, excludePatterns) {
+    const relativePath = tryGetRelativePath(rootDirectory, targetPath);
+    if (!relativePath || relativePath === ".") {
+        return false;
+    }
+
+    const segments = relativePath.split("/").filter(Boolean);
+    if (segments.some(segment => alwaysIgnoredDirectories.has(segment.toLowerCase()))) {
+        return true;
+    }
+
+    for (const pattern of excludePatterns) {
+        const normalizedPattern = normalizeExcludePattern(pattern);
+        if (normalizedPattern && isGlobMatch(relativePath, normalizedPattern)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function tryGetRelativePath(rootDirectory, targetPath) {
+    if (!rootDirectory || !targetPath) {
+        return undefined;
+    }
+
+    const fullRoot = path.resolve(rootDirectory);
+    const fullTarget = path.resolve(targetPath);
+    const relative = path.relative(fullRoot, fullTarget);
+    if (!relative) {
+        return ".";
+    }
+
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+        return undefined;
+    }
+
+    return relative.replace(/\\/g, "/");
+}
+
+function normalizeExcludePattern(pattern) {
+    if (typeof pattern !== "string" || !pattern.trim()) {
+        return "";
+    }
+
+    const trimmed = pattern.trim();
+    const endsWithSeparator = trimmed.endsWith("/") || trimmed.endsWith("\\");
+    const normalized = trimmed.replace(/\\/g, "/").replace(/\/+$/, "");
+    if (!normalized) {
+        return "";
+    }
+
+    if (!normalized.includes("/")) {
+        return isDirectorySegmentPattern(normalized)
+            ? `**/${normalized}/**`
+            : normalized;
+    }
+
+    if (endsWithSeparator) {
+        return normalized.endsWith("/**") ? normalized : `${normalized}/**`;
+    }
+
+    const lastSlashIndex = normalized.lastIndexOf("/");
+    const lastSegment = normalized.slice(lastSlashIndex + 1);
+    return isDirectorySegmentPattern(lastSegment)
+        ? `${normalized}/**`
+        : normalized;
+}
+
+function isDirectorySegmentPattern(segment) {
+    return Boolean(segment)
+        && !segment.includes("*")
+        && !segment.includes("?")
+        && segment.indexOf(".", 1) < 0;
+}
+
+function isGlobMatch(relativePath, normalizedPattern) {
+    let regexSource = "^";
+    for (let index = 0; index < normalizedPattern.length; index += 1) {
+        const current = normalizedPattern[index];
+        if (current === "*") {
+            const isDoubleStar = index + 1 < normalizedPattern.length && normalizedPattern[index + 1] === "*";
+            if (isDoubleStar) {
+                const hasSlashAfter = index + 2 < normalizedPattern.length && normalizedPattern[index + 2] === "/";
+                if (hasSlashAfter) {
+                    regexSource += "(?:.*/)?";
+                    index += 2;
+                    continue;
+                }
+
+                regexSource += ".*";
+                index += 1;
+                continue;
+            }
+
+            regexSource += "[^/]*";
+            continue;
+        }
+
+        if (current === "?") {
+            regexSource += "[^/]";
+            continue;
+        }
+
+        regexSource += current.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+    }
+
+    regexSource += "$";
+    return new RegExp(regexSource, "i").test(relativePath);
 }
 
 function findNearestProjectPathForInput(filePath) {
@@ -704,7 +871,181 @@ function resolveProjectTemplateSearchPath(projectPath) {
     return containsTemplateFile(projectDirectory) ? projectDirectory : undefined;
 }
 
-function containsTemplateFile(directory) {
+function shouldSkipWithoutTemplates(projectPath, workspacePath) {
+    const checkedScopes = new Set();
+    for (const candidatePath of [projectPath, workspacePath]) {
+        const scope = tryGetScopeAndContainsTemplates(candidatePath);
+        if (!scope) {
+            continue;
+        }
+
+        const normalizedScopeKey = normalizeRequestPath(scope.scopeKey);
+        if (!normalizedScopeKey || checkedScopes.has(normalizedScopeKey)) {
+            continue;
+        }
+
+        checkedScopes.add(normalizedScopeKey);
+        if (scope.containsTemplates) {
+            return false;
+        }
+    }
+
+    return checkedScopes.size > 0;
+}
+
+function tryGetScopeAndContainsTemplates(candidatePath) {
+    const solutionPath = tryResolveSolutionFile(candidatePath);
+    if (solutionPath) {
+        return {
+            scopeKey: solutionPath,
+            containsTemplates: containsSolutionTemplateFile(solutionPath),
+        };
+    }
+
+    const searchDirectory = tryGetSearchDirectory(candidatePath);
+    if (!searchDirectory) {
+        return undefined;
+    }
+
+    return {
+        scopeKey: searchDirectory,
+        containsTemplates: containsTemplateFile(searchDirectory),
+    };
+}
+
+function tryGetSearchDirectory(candidatePath) {
+    if (typeof candidatePath !== "string" || !candidatePath.trim()) {
+        return undefined;
+    }
+
+    const fullPath = path.resolve(candidatePath);
+    const directory = safeIsDirectory(fullPath) ? fullPath : path.dirname(fullPath);
+    return safeIsDirectory(directory) ? directory : undefined;
+}
+
+function tryResolveSolutionFile(candidatePath) {
+    if (typeof candidatePath !== "string" || !candidatePath.trim()) {
+        return undefined;
+    }
+
+    const fullPath = path.resolve(candidatePath);
+    if (isSolutionFileName(fullPath) && fs.existsSync(fullPath)) {
+        return fullPath;
+    }
+
+    if (!safeIsDirectory(fullPath)) {
+        return undefined;
+    }
+
+    const solutions = safeReadDirectory(fullPath)
+        .filter(isSolutionFileName)
+        .map(name => path.join(fullPath, name));
+    return solutions.length === 1 ? solutions[0] : undefined;
+}
+
+function isSolutionFileName(filePath) {
+    const lower = filePath.toLowerCase();
+    return lower.endsWith(".sln") || lower.endsWith(".slnx");
+}
+
+function containsSolutionTemplateFile(solutionPath) {
+    const solutionDirectory = path.dirname(solutionPath);
+    if (!safeIsDirectory(solutionDirectory)) {
+        return false;
+    }
+
+    const excludePatterns = readConfiguredExcludePatterns(solutionDirectory);
+    for (const entryName of safeReadDirectory(solutionDirectory)) {
+        const candidateFile = path.join(solutionDirectory, entryName);
+        if (templateExtensions.has(path.extname(entryName).toLowerCase())
+            && !safeIsDirectory(candidateFile)
+            && !isPathExcluded(solutionDirectory, candidateFile, excludePatterns)) {
+            return true;
+        }
+    }
+
+    for (const referencedPath of getSolutionReferencedPaths(solutionPath)) {
+        if (!fs.existsSync(referencedPath)) {
+            continue;
+        }
+
+        if (safeIsDirectory(referencedPath)) {
+            if (!isExcludedDirectory(solutionDirectory, referencedPath, excludePatterns)
+                && containsTemplateFile(referencedPath, solutionDirectory, excludePatterns)) {
+                return true;
+            }
+
+            continue;
+        }
+
+        const extension = path.extname(referencedPath).toLowerCase();
+        if (templateExtensions.has(extension) && !isPathExcluded(solutionDirectory, referencedPath, excludePatterns)) {
+            return true;
+        }
+
+        if (extension === ".csproj") {
+            const projectDirectory = path.dirname(referencedPath);
+            if (safeIsDirectory(projectDirectory)
+                && !isExcludedDirectory(solutionDirectory, projectDirectory, excludePatterns)
+                && containsTemplateFile(projectDirectory, solutionDirectory, excludePatterns)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+function getSolutionReferencedPaths(solutionPath) {
+    const solutionDirectory = path.dirname(solutionPath);
+    const results = new Set();
+    try {
+        const content = fs.readFileSync(solutionPath, "utf8");
+        if (solutionPath.toLowerCase().endsWith(".slnx")) {
+            for (const match of content.matchAll(slnxPathRegex)) {
+                if (match[1]?.trim()) {
+                    results.add(path.resolve(solutionDirectory, match[1].trim().replace(/[\\/]/g, path.sep)));
+                }
+            }
+        } else {
+            let inSolutionItems = false;
+            for (const rawLine of content.split(/\r?\n/)) {
+                const line = rawLine.trim();
+                if (line.startsWith("Project(")) {
+                    const parts = line.split("\"");
+                    if (parts.length > 5 && parts[5].trim()) {
+                        results.add(path.resolve(solutionDirectory, parts[5].trim().replace(/[\\/]/g, path.sep)));
+                    }
+                } else if (line.startsWith("ProjectSection(SolutionItems)")) {
+                    inSolutionItems = true;
+                } else if (inSolutionItems && line.startsWith("EndProjectSection")) {
+                    inSolutionItems = false;
+                } else if (inSolutionItems) {
+                    const eqIndex = line.indexOf("=");
+                    const candidate = (eqIndex >= 0 ? line.slice(0, eqIndex) : line).trim().replace(/^"+|"+$/g, "");
+                    if (candidate) {
+                        results.add(path.resolve(solutionDirectory, candidate.replace(/[\\/]/g, path.sep)));
+                    }
+                }
+            }
+        }
+    } catch {
+        // Ignore solution read failures.
+    }
+
+    return Array.from(results);
+}
+
+function isExcludedDirectory(rootDirectory, directory, excludePatterns) {
+    const name = path.basename(directory).toLowerCase();
+    if (alwaysIgnoredDirectories.has(name)) {
+        return true;
+    }
+
+    return isPathExcluded(rootDirectory, path.join(directory, "_"), excludePatterns);
+}
+
+function containsTemplateFile(directory, rootDirectory = directory, excludePatterns = readConfiguredExcludePatterns(rootDirectory)) {
     const pending = [directory];
     while (pending.length > 0) {
         const current = pending.pop();
@@ -716,21 +1057,65 @@ function containsTemplateFile(directory) {
         }
 
         for (const entry of entries) {
+            const candidatePath = path.join(current, entry.name);
             if (entry.isDirectory()) {
-                if (!ignoredInputDirectories.has(entry.name.toLowerCase())) {
-                    pending.push(path.join(current, entry.name));
+                if (!isExcludedDirectory(rootDirectory, candidatePath, excludePatterns)) {
+                    pending.push(candidatePath);
                 }
 
                 continue;
             }
 
-            if (entry.isFile() && templateExtensions.has(path.extname(entry.name).toLowerCase())) {
+            if (entry.isFile()
+                && templateExtensions.has(path.extname(entry.name).toLowerCase())
+                && !isPathExcluded(rootDirectory, candidatePath, excludePatterns)) {
                 return true;
             }
         }
     }
 
     return false;
+}
+
+function readConfiguredExcludePatterns(filePath) {
+    let patterns = defaultExcludePatterns;
+    for (const configurationPath of findConfigurationFiles(filePath)) {
+        const configuredPatterns = readExcludePatterns(configurationPath);
+        if (configuredPatterns) {
+            patterns = configuredPatterns;
+        }
+    }
+
+    const envExclude = process.env.TYPEWRITER_EXCLUDE;
+    if (typeof envExclude === "string" && envExclude.trim()) {
+        const envPatterns = envExclude
+            .split(/[,;\s]+/)
+            .map(item => item.trim())
+            .filter(Boolean);
+        if (envPatterns.length > 0) {
+            patterns = envPatterns;
+        }
+    }
+
+    return patterns;
+}
+
+function readExcludePatterns(configurationPath) {
+    try {
+        const configuration = JSON.parse(fs.readFileSync(configurationPath, "utf8"));
+        const propertyName = Object.keys(configuration)
+            .find(key => key.toLowerCase() === "exclude");
+        if (!propertyName || !Array.isArray(configuration[propertyName])) {
+            return undefined;
+        }
+
+        return configuration[propertyName]
+            .filter(value => typeof value === "string")
+            .map(value => value.trim())
+            .filter(Boolean);
+    } catch {
+        return undefined;
+    }
 }
 
 function readConfiguredInputExtensions(filePath) {
