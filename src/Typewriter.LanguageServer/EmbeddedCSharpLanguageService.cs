@@ -17,6 +17,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
 {
     private const int MaxCompletionItems = 2000;
 
+    private static readonly string? RuntimeAssemblyDirectory = Path.GetDirectoryName(path: typeof(object).Assembly.Location);
     private static readonly Lazy<IReadOnlyList<MetadataReference>> SharedReferences = new(valueFactory: CreateMetadataReferences);
 
     private readonly Lock _gate = new();
@@ -251,24 +252,22 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
             return null;
         }
 
-        var token = root.FindToken(position: Math.Min(val1: virtualOffset, val2: root.FullSpan.End - 1));
-        for (var node = token.Parent; node is not null; node = node.Parent)
+        // An unresolved member must not bind to an enclosing lambda or helper declaration.
+        var node = root.FindToken(position: Math.Min(val1: virtualOffset, val2: root.FullSpan.End - 1)).Parent;
+        if (node is null)
         {
-            var declared = semanticModel.GetDeclaredSymbol(declaration: node, cancellationToken: cancellationToken);
-            if (declared is not null)
-            {
-                return UnwrapAlias(symbol: declared);
-            }
-
-            var symbolInfo = semanticModel.GetSymbolInfo(node: node, cancellationToken: cancellationToken);
-            var resolved = symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
-            if (resolved is not null)
-            {
-                return UnwrapAlias(symbol: resolved);
-            }
+            return null;
         }
 
-        return null;
+        var declared = semanticModel.GetDeclaredSymbol(declaration: node, cancellationToken: cancellationToken);
+        if (declared is not null)
+        {
+            return UnwrapAlias(symbol: declared);
+        }
+
+        var symbolInfo = semanticModel.GetSymbolInfo(node: node, cancellationToken: cancellationToken);
+        var resolved = symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
+        return resolved is null ? null : UnwrapAlias(symbol: resolved);
     }
 
     private static ISymbol UnwrapAlias(ISymbol symbol) =>
@@ -339,7 +338,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
             {
                 var key = GetReferenceKey(reference: reference);
                 if (key is null
-                    || (key.StartsWith(value: "Typewriter.", comparisonType: StringComparison.OrdinalIgnoreCase) && references.ContainsKey(key: key)))
+                    || (references.TryGetValue(key: key, value: out var existingReference) && IsHostReference(key: key, reference: existingReference)))
                 {
                     continue;
                 }
@@ -356,6 +355,17 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
 
         return references.Values.ToArray();
     }
+
+    private static bool IsHostReference(
+        string key,
+        MetadataReference reference) =>
+        key.StartsWith(value: "Typewriter.", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || (RuntimeAssemblyDirectory is not null
+            && reference is PortableExecutableReference executableReference
+            && string.Equals(
+                a: Path.GetDirectoryName(path: executableReference.FilePath),
+                b: RuntimeAssemblyDirectory,
+                comparisonType: StringComparison.OrdinalIgnoreCase));
 
     private static string? GetReferenceKey(MetadataReference reference) =>
         reference switch

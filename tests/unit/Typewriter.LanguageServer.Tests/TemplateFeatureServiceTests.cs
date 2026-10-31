@@ -5,6 +5,20 @@ namespace Typewriter.LanguageServer.Tests;
 
 public sealed class TemplateFeatureServiceTests
 {
+    private const string NestedLambdaTemplate = """
+        ${
+            IEnumerable<string> InjectImports(IEnumerable<Property> props) {
+                return props
+                    .Select(p => p.Attributes.FirstOrDefault(a => a.Name.StartsWith("JsonInject"))?.Arguments)
+                    .Where(argz => (bool)argz[1].Value)
+                    .Select(argz => (String)argz[0].Value)
+                    .Select(s => $"import {{ {s} }} from '../Special/{s}';");
+            }
+
+            string CustomerName(Sample.Customer customer) => customer.DisplayName;
+        }
+        """;
+
     [Fact]
     public async Task GetCompletionsAsyncReturnsTemplateHelpersAndMetadata()
     {
@@ -423,6 +437,106 @@ public sealed class TemplateFeatureServiceTests
             hover.Should().NotBeNull();
             hover.Contents.Value.Should().NotContain("Record=Record");
             hover.Contents.Value.Should().Contain("$Records[...]");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task EmbeddedCSharpHoverResolvesNestedLambdaMembersWhenProjectIsLoaded()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            var document = CreateDocument(path: project.TemplatePath, text: NestedLambdaTemplate);
+            var settings = CreateSettings(directory: directory, projectPath: project.ProjectPath);
+            var members = new[]
+            {
+                (Marker: "Attributes.FirstOrDefault", Signature: "Property.Attributes"),
+                (Marker: "FirstOrDefault(", Signature: "FirstOrDefault"),
+                (Marker: "Name.StartsWith", Signature: "Item.Name"),
+                (Marker: "Arguments)", Signature: "Attribute.Arguments"),
+                (Marker: "Value)", Signature: "AttributeArgument.Value"),
+                (Marker: "DisplayName;", Signature: "Customer.DisplayName"),
+            };
+
+            using var service = new TemplateFeatureService();
+            foreach (var member in members)
+            {
+                var hover = await service.GetHoverAsync(
+                    document: document,
+                    settings: settings,
+                    position: PositionOf(text: NestedLambdaTemplate, marker: member.Marker),
+                    cancellationToken: CancellationToken.None);
+
+                hover.Should().NotBeNull();
+                hover.Contents.Value.Should().Contain(member.Signature);
+                hover.Contents.Value.Should().NotContain("lambda expression");
+            }
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task EmbeddedCSharpCompletionsResolveNestedLambdaParameterWhenProjectIsLoaded()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            var document = CreateDocument(path: project.TemplatePath, text: NestedLambdaTemplate);
+            var settings = CreateSettings(directory: directory, projectPath: project.ProjectPath);
+            var position = PositionOf(text: NestedLambdaTemplate, marker: "a.Name");
+
+            using var service = new TemplateFeatureService();
+            var completions = await service.GetCompletionsAsync(
+                document: document,
+                settings: settings,
+                position: position with { Character = position.Character + 2 },
+                cancellationToken: CancellationToken.None);
+
+            completions.Items.Should().Contain(item => item.Label == "Name");
+            completions.Items.Should().Contain(item => item.Label == "Arguments");
+            completions.Items.Should().Contain(item => item.Label == "Type");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Theory]
+    [InlineData("string Broken(Class item) => item.MissingMember;")]
+    [InlineData("IEnumerable<string> Broken(IEnumerable<Class> items) => items.Select(item => item.MissingMember);")]
+    [InlineData("object Broken() { return MissingMember; }")]
+    [InlineData("object brokenField = MissingMember;")]
+    public async Task EmbeddedCSharpUnresolvedMembersDoNotResolveToEnclosingSymbols(string helperSource)
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var template = "${\n" + helperSource + "\n}";
+            var document = CreateDocument(path: Path.Combine(path1: directory, path2: "Test.tst"), text: template);
+            var offset = template.IndexOf(value: "MissingMember", comparisonType: StringComparison.Ordinal);
+
+            using var service = new EmbeddedCSharpLanguageService();
+            var hover = await service.GetHoverAsync(
+                document: document,
+                templateOffset: offset,
+                cancellationToken: CancellationToken.None);
+            var definitions = await service.GetDefinitionsAsync(
+                document: document,
+                templateOffset: offset,
+                cancellationToken: CancellationToken.None);
+
+            hover.Should().BeNull();
+            definitions.Should().BeEmpty();
         }
         finally
         {
