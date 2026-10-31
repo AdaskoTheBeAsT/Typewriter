@@ -75,6 +75,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.14.0](#4140)
     - [4.13.0](#4130)
     - [4.12.0](#4120)
     - [4.11.0](#4110)
@@ -1520,6 +1521,14 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.14.0
+
+- Fixed nested lambda IntelliSense inside C# template helpers when project references are loaded (#122).
+- Mapped compiler diagnostics back to the correct template and loaded-helper source locations, including Windows paths and LF/CRLF line endings (#123).
+- Restored `Type.OriginalName` for declarations and shallow containing types (#124).
+- Preserved Boolean, numeric, character, and null attribute argument values instead of exposing them as strings, with culture-independent numeric metadata (#125).
+- Synchronized tool, language-server, editor-package, and release-artifact versions to 4.14.0.
 
 ### 4.13.0
 

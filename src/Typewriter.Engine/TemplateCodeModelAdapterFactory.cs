@@ -871,7 +871,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             Name = argument.Name ?? string.Empty,
             Type = argument.Type is null ? null : CreateType(type: argument.Type),
             TypeValue = argument.TypeValue is null ? null : CreateType(type: argument.TypeValue),
-            Value = argument.Value ?? string.Empty,
+            Value = TemplateAttributeArgumentValueResolver.Resolve(argument: argument),
         };
     }
 
@@ -891,7 +891,7 @@ internal sealed class TemplateCodeModelAdapterFactory
                             {
                                 AssemblyName = ResolveAssemblyName(assemblyName: argument.AssemblyName),
                                 Name = argument.Name ?? string.Empty,
-                                Value = argument.Value ?? string.Empty,
+                                Value = TemplateAttributeArgumentValueResolver.Resolve(argument: argument),
                             })),
                     Value = TemplateAttributeValueFormatter.Format(attribute: attribute),
                 }));

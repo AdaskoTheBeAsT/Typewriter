@@ -29,14 +29,59 @@ public sealed class SampleSnapshotTests
     [InlineData(data: ["issue96", "App/App.csproj", "App/Models.tst", "App/DerivedRecordVm.ts"])]
     [InlineData(data: ["issue114", "Issue114.csproj", "Models.tst", "Model.ts"])]
     [InlineData(data: ["issue115", "Issue115.csproj", "Models.tst", "TestModel.ts"])]
-    public async Task GenerateAsyncMatchesModelsSnapshot(
+    public Task GenerateAsyncMatchesModelsSnapshot(
         string sampleName,
         string projectPath,
         string templatePath,
-        string outputPath)
+        string outputPath) =>
+        AssertGeneratedSnapshotAsync(sampleName: sampleName, projectPath: projectPath, templatePath: templatePath, outputPath: outputPath);
+
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("pl-PL")]
+    [InlineData("fr-FR")]
+    public async Task GenerateAsyncPreservesAttributeArgumentValueTypes(string cultureName)
     {
-        var repositoryRoot = FindRepositoryRoot();
-        var sampleDirectory = Path.Combine(path1: repositoryRoot, path2: "samples", path3: sampleName);
+        var originalCulture = CultureInfo.CurrentCulture;
+        var workspace = Directory.CreateTempSubdirectory(prefix: "TypewriterIssue125SnapshotTests-");
+        try
+        {
+            // Separate workspaces prevent metadata cached under one culture from masking another.
+            var fixture = Path.Combine(path1: FindRepositoryRoot(), path2: "samples", path3: "issue125");
+            string[] fileNames = ["Issue125.csproj", "Models.cs", "Models.tst", "Models.ts"];
+            foreach (var fileName in fileNames)
+            {
+#pragma warning disable SEC0116
+                File.Copy(
+                    sourceFileName: Path.Combine(path1: fixture, path2: fileName),
+                    destFileName: Path.Combine(path1: workspace.FullName, path2: fileName));
+#pragma warning restore SEC0116
+            }
+
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(name: cultureName);
+
+            await AssertGeneratedSnapshotAsync(
+                sampleName: "issue125",
+                projectPath: "Issue125.csproj",
+                templatePath: "Models.tst",
+                outputPath: "Models.ts",
+                sampleDirectory: workspace.FullName);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            await DeleteDirectoryWithRetryAsync(directory: workspace.FullName);
+        }
+    }
+
+    private static async Task AssertGeneratedSnapshotAsync(
+        string sampleName,
+        string projectPath,
+        string templatePath,
+        string outputPath,
+        string? sampleDirectory = null)
+    {
+        sampleDirectory ??= Path.Combine(path1: FindRepositoryRoot(), path2: "samples", path3: sampleName);
         var absoluteProjectPath = ResolveSamplePath(sampleDirectory: sampleDirectory, relativePath: projectPath);
         var absoluteTemplatePath = ResolveSamplePath(sampleDirectory: sampleDirectory, relativePath: templatePath);
         var expectedOutputPath = ResolveSamplePath(sampleDirectory: sampleDirectory, relativePath: outputPath);
@@ -62,7 +107,7 @@ public sealed class SampleSnapshotTests
                 TemplatePath: absoluteTemplatePath,
                 Mode: GenerationMode.Generate,
                 Configuration: configuration),
-            cancellationToken: CancellationToken.None);
+            cancellationToken: CancellationToken.None).ConfigureAwait(continueOnCapturedContext: false);
 
         result.Success.Should().BeTrue(because: FormatDiagnostics(diagnostics: result.Diagnostics));
 
@@ -71,8 +116,34 @@ public sealed class SampleSnapshotTests
         generatedFile.Content.Should().StartWith(GeneratedFileHeader.Value);
         generatedFile.Content.Should().NotContain("\r\n");
 
-        var expected = await File.ReadAllTextAsync(path: expectedOutputPath);
+        var expected = await File.ReadAllTextAsync(path: expectedOutputPath).ConfigureAwait(continueOnCapturedContext: false);
         generatedFile.Content.Should().Be(expected);
+    }
+
+    private static async Task DeleteDirectoryWithRetryAsync(string directory)
+    {
+        const int MaxAttempts = 10;
+
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(path: directory))
+                {
+                    Directory.Delete(path: directory, recursive: true);
+                }
+
+                return;
+            }
+            catch (IOException) when (attempt < MaxAttempts)
+            {
+                await Task.Delay(millisecondsDelay: 100).ConfigureAwait(continueOnCapturedContext: false);
+            }
+            catch (UnauthorizedAccessException) when (attempt < MaxAttempts)
+            {
+                await Task.Delay(millisecondsDelay: 100).ConfigureAwait(continueOnCapturedContext: false);
+            }
+        }
     }
 
     private static string FindRepositoryRoot()
