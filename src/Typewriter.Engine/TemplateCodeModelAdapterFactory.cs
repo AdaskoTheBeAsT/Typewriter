@@ -597,6 +597,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
+            OriginalName = type.Name,
             FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
@@ -1128,6 +1129,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
+            OriginalName = type.Name,
             FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),

@@ -9,6 +9,109 @@ namespace Typewriter.Engine.Tests;
 public sealed class TemplateCodeModelAdapterFactoryTests
 {
     [Theory]
+    [InlineData(TypeMetadataKind.Class, 0)]
+    [InlineData(TypeMetadataKind.Class, 1)]
+    [InlineData(TypeMetadataKind.Record, 0)]
+    [InlineData(TypeMetadataKind.Record, 1)]
+    [InlineData(TypeMetadataKind.Struct, 0)]
+    [InlineData(TypeMetadataKind.Struct, 1)]
+    [InlineData(TypeMetadataKind.Interface, 0)]
+    [InlineData(TypeMetadataKind.Interface, 1)]
+    [InlineData(TypeMetadataKind.Enum, 0)]
+    public void CreateFilePreservesOriginalNameForDeclarations(TypeMetadataKind kind, int arity)
+    {
+        var declaration = CreateType(kind: kind, arity: arity);
+        var metadata = new ProjectMetadata(ProjectPath: "Sample.csproj", SourceFiles: [], Types: [declaration], Diagnostics: []);
+        var factory = new TemplateCodeModelAdapterFactory(metadata: metadata, templatePath: "models.tst");
+
+        var file = factory.CreateFile(project: metadata);
+
+        var type = file.Types.Should().ContainSingle().Which;
+        type.OriginalName.Should().Be("Factory");
+        type.ToString().Should().Be("Factory");
+        file.Types.ItemFilterSelector(type).Should().Contain("Factory");
+
+        Typewriter.CodeModel.Type? declarationType = kind switch
+        {
+            TypeMetadataKind.Class => file.Classes.Single(),
+            TypeMetadataKind.Record => file.Records.Single(),
+            TypeMetadataKind.Struct => file.Structs.Single(),
+            TypeMetadataKind.Interface => file.Interfaces.Single(),
+            TypeMetadataKind.Enum => file.Enums.Single(),
+            _ => throw new ArgumentOutOfRangeException(paramName: nameof(kind), actualValue: kind, message: null),
+        };
+        declarationType.Should().NotBeNull();
+        declarationType.OriginalName.Should().Be("Factory");
+
+        factory.TryAdapt(context: declaration, targetType: typeof(Typewriter.CodeModel.Type), adapted: out var adapted).Should().BeTrue();
+        adapted.Should().BeAssignableTo<Typewriter.CodeModel.Type>().Which.OriginalName.Should().Be("Factory");
+    }
+
+    [Fact]
+    public void CreateFilePreservesOriginalNameForContainingTypes()
+    {
+        var nested = CreateType(kind: TypeMetadataKind.Class, arity: 0) with
+        {
+            Name = "Nested",
+            FullName = "Sample.Factory.Nested",
+            ContainingTypeFullName = "Sample.Factory",
+        };
+        var declaration = CreateType(kind: TypeMetadataKind.Class, arity: 1) with
+        {
+            NestedClasses = [nested],
+        };
+        var metadata = new ProjectMetadata(ProjectPath: "Sample.csproj", SourceFiles: [], Types: [declaration, nested], Diagnostics: []);
+        var factory = new TemplateCodeModelAdapterFactory(metadata: metadata, templatePath: "models.tst");
+
+        var file = factory.CreateFile(project: metadata);
+
+        var nestedClass = file.Classes.Should().ContainSingle().Which.NestedClasses.Should().ContainSingle().Which;
+        nestedClass.ContainingClass.Should().NotBeNull();
+        nestedClass.ContainingClass.Type.OriginalName.Should().Be("Factory");
+        nestedClass.Type.ContainingClass.Should().NotBeNull();
+        nestedClass.Type.ContainingClass.Type.OriginalName.Should().Be("Factory");
+    }
+
+    [Theory]
+    [InlineData("String", "System.String", "string")]
+    [InlineData("Int32", "System.Int32", "number")]
+    public void TryAdaptPreservesOriginalNameBeforeTypeScriptMapping(string name, string fullName, string mappedName)
+    {
+        var metadata = new ProjectMetadata(ProjectPath: "Sample.csproj", SourceFiles: [], Types: [], Diagnostics: []);
+        var factory = new TemplateCodeModelAdapterFactory(metadata: metadata, templatePath: "models.tst");
+        var reference = CreateReference(name: name, fullName: fullName) with { IsPrimitive = true };
+
+        factory.TryAdapt(context: reference, targetType: typeof(Typewriter.CodeModel.Type), adapted: out var adapted).Should().BeTrue();
+
+        var type = adapted.Should().BeAssignableTo<Typewriter.CodeModel.Type>().Which;
+        type.OriginalName.Should().Be(name);
+        type.Name.Should().Be(mappedName);
+        type.ToString().Should().Be(mappedName);
+    }
+
+    [Fact]
+    public void RenderCompilesHelpersUsingDeclarationOriginalName()
+    {
+        var declaration = CreateType(kind: TypeMetadataKind.Class, arity: 0);
+        var metadata = new ProjectMetadata(ProjectPath: "Sample.csproj", SourceFiles: [], Types: [declaration], Diagnostics: []);
+        const string Template = """
+            ${
+                string DescribeType(Type type) => $"{type.OriginalName}:{type}";
+            }
+            $Types[$DescribeType]
+            $Classes[$DescribeType]
+            """;
+        var diagnostics = new List<GenerationDiagnostic>();
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "models.tst", Content: Template), diagnostics: diagnostics);
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.ReplaceLineEndings(replacementText: "\n").Trim().Should().Be("Factory:Factory\nFactory:Factory");
+    }
+
+    [Theory]
     [InlineData(0, 1, true)]
     [InlineData(0, 1, false)]
     [InlineData(1, 2, true)]
