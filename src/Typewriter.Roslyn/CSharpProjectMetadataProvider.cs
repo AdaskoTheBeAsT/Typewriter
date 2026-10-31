@@ -1381,7 +1381,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 values: constant.Values.Select(selector: FormatTypedConstant));
         }
 
-        return constant.Value?.ToString();
+        return Convert.ToString(value: constant.Value, provider: CultureInfo.InvariantCulture);
     }
 
     private static string GetTypeFullName(ITypeSymbol symbol)

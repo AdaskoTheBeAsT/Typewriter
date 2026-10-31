@@ -1499,7 +1499,7 @@ public sealed class TemplateRenderer
             "Name" => argument.Name ?? string.Empty,
             "name" => ToCamelCase(value: argument.Name ?? string.Empty),
             "AssemblyName" => argument.AssemblyName,
-            "Value" => argument.Value ?? string.Empty,
+            "Value" => TemplateAttributeArgumentValueResolver.Resolve(argument: argument),
             "Type" => argument.Type,
             "TypeValue" => argument.TypeValue,
             _ => Unresolved.Value,

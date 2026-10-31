@@ -9,6 +9,57 @@ namespace Typewriter.Engine.Tests;
 public sealed class TemplateCodeModelAdapterFactoryTests
 {
     [Theory]
+    [InlineData("Boolean", "False", false)]
+    [InlineData("Boolean", "True", true)]
+    [InlineData("Byte", "255", byte.MaxValue)]
+    [InlineData("SByte", "-128", sbyte.MinValue)]
+    [InlineData("Int16", "-32768", short.MinValue)]
+    [InlineData("UInt16", "65535", ushort.MaxValue)]
+    [InlineData("Int32", "2147483647", int.MaxValue)]
+    [InlineData("UInt32", "4294967295", uint.MaxValue)]
+    [InlineData("Int64", "-9223372036854775808", long.MinValue)]
+    [InlineData("UInt64", "18446744073709551615", ulong.MaxValue)]
+    [InlineData("Single", "1.25", 1.25f)]
+    [InlineData("Double", "1.25", 1.25d)]
+    [InlineData("Char", "x", 'x')]
+    [InlineData("String", "false", "false")]
+    [InlineData("String", "123", "123")]
+    [InlineData("String", null, null)]
+    [InlineData("Type", "typeof(Sample.Factory)", "typeof(Sample.Factory)")]
+    [InlineData(null, "False", "False")]
+    [InlineData("Boolean", "invalid", "invalid")]
+    [InlineData("Byte", "256", "256")]
+    public void TryAdaptPreservesAttributeArgumentValueTypes(string? typeName, string? value, object? expected)
+    {
+        var argument = new AttributeArgumentMetadata(Name: "Value", Value: value)
+        {
+            Type = typeName is null ? null : CreateReference(name: typeName, fullName: "System." + typeName),
+        };
+        var declaration = CreateType(kind: TypeMetadataKind.Class, arity: 0) with
+        {
+            Attributes = [new AttributeMetadata(Name: "Example", FullName: "Sample.ExampleAttribute", Arguments: [argument])],
+        };
+        var metadata = new ProjectMetadata(ProjectPath: "Sample.csproj", SourceFiles: [], Types: [declaration], Diagnostics: []);
+        var factory = new TemplateCodeModelAdapterFactory(metadata: metadata, templatePath: "models.tst");
+
+        factory.TryAdapt(context: argument, targetType: typeof(Typewriter.CodeModel.AttributeArgument), adapted: out var adaptedArgument).Should().BeTrue();
+        var direct = adaptedArgument.Should().BeAssignableTo<Typewriter.CodeModel.AttributeArgument>().Which;
+        var declared = factory.CreateFile(project: metadata).Classes.Single().Attributes.Single().Arguments.Single();
+        var reference = CreateReference(name: declaration.Name, fullName: declaration.FullName);
+        factory.TryAdapt(context: reference, targetType: typeof(Typewriter.CodeModel.Type), adapted: out var adaptedType).Should().BeTrue();
+        var referenced = adaptedType.Should().BeAssignableTo<Typewriter.CodeModel.Type>().Which.Attributes.Single().Arguments.Single();
+
+        foreach (var actual in new[] { direct.Value, declared.Value, referenced.Value })
+        {
+            actual.Should().Be(expected);
+            if (expected is not null)
+            {
+                actual.Should().BeOfType(expected.GetType());
+            }
+        }
+    }
+
+    [Theory]
     [InlineData(TypeMetadataKind.Class, 0)]
     [InlineData(TypeMetadataKind.Class, 1)]
     [InlineData(TypeMetadataKind.Record, 0)]
