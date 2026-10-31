@@ -1027,6 +1027,90 @@ public sealed class TemplateRendererTests
         output.Should().NotContain("Ignored;");
     }
 
+    [Theory]
+    [InlineData("\n", "models.tst")]
+    [InlineData("\r\n", "models.tst")]
+    [InlineData("\n", @"C:\Templates With Spaces\models.tst")]
+    [InlineData("\r\n", @"C:\Templates With Spaces\models.tst")]
+    public void RenderReportsCompileErrorAtTemplateLocation(string lineEnding, string templatePath)
+    {
+        var metadata = SampleUserMetadata();
+        var template = """
+            // output: generated/models.ts
+            // Header before the helper blocks.
+            ${
+                using System.Linq;
+
+                string InterfaceNames(IInterfaceCollection interfaces) => "";
+            }
+            export const generated = true;
+            ${
+                string MemberTypes(IEnumerable<Interface> interfaces)
+                {
+                    return InterfaceNames(interfaces);
+                }
+            }
+            $Classes[$Name]
+            """.ReplaceLineEndings(replacementText: lineEnding);
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: templatePath, Content: template), diagnostics: diagnostics);
+
+        _ = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        var diagnostic = diagnostics.Should().ContainSingle().Which;
+        diagnostic.Code.Should().Be("TW0002");
+        diagnostic.Message.Should().Contain("CS1503");
+        diagnostic.File.Should().Be(templatePath);
+        diagnostic.Line.Should().Be(12);
+        diagnostic.Column.Should().Be(31);
+    }
+
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public async Task RenderReportsCompileErrorAtLoadedHelperLocation(string lineEnding)
+    {
+        var metadata = SampleUserMetadata();
+        var directory = Directory.CreateTempSubdirectory(prefix: "typewriter-diagnostic-test");
+        try
+        {
+            var helperPath = Path.Combine(path1: directory.FullName, path2: "shared helpers.cs");
+            await File.WriteAllTextAsync(
+                path: helperPath,
+                contents: """
+                          string Shared(Class c)
+                          {
+                              return 42;
+                          }
+                          """.ReplaceLineEndings(replacementText: lineEnding));
+            var template = """
+                ${
+                    #load "shared helpers.cs"
+                }
+                $Classes[$Name]
+                """.ReplaceLineEndings(replacementText: lineEnding);
+            var diagnostics = new List<GenerationDiagnostic>();
+            var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+            var document = TemplateDocument.Parse(
+                template: new TemplateFile(Path: Path.Combine(path1: directory.FullName, path2: "models.tst"), Content: template),
+                diagnostics: diagnostics);
+
+            _ = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+            var diagnostic = diagnostics.Should().ContainSingle().Which;
+            diagnostic.Code.Should().Be("TW0002");
+            diagnostic.Message.Should().Contain("CS0029");
+            diagnostic.File.Should().Be(helperPath);
+            diagnostic.Line.Should().Be(3);
+            diagnostic.Column.Should().Be(12);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
     [Fact]
     public void RenderReportsTemplateFrameForThrowingHelpers()
     {

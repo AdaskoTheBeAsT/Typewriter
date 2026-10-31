@@ -84,6 +84,65 @@ public sealed class TemplateDiagnosticServiceTests
         }
     }
 
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public async Task ValidateAsyncMapsCompileErrorsToOpenDocumentPositions(string lineEnding)
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            var template = """
+                // Output before the helper block.
+                // Another output line.
+                ${
+                    string MemberTypes(IEnumerable<Interface> interfaces)
+                    {
+                        return InterfaceNames(interfaces);
+                    }
+
+                    string InterfaceNames(IInterfaceCollection interfaces) => "";
+                }
+                // Output between helper blocks.
+                ${
+                    string FileSpecificImports(File f) => "";
+                }
+                """.ReplaceLineEndings(replacementText: lineEnding);
+            var document = new TextDocumentState(
+                Uri: UriFromPath(path: project.TemplatePath),
+                Path: project.TemplatePath,
+                Text: template,
+                Version: 2);
+            var settings = new LanguageServerSettings(
+                RootPath: directory,
+                WorkspacePath: directory,
+                ProjectPath: project.ProjectPath,
+                Framework: "net10.0",
+                AllProjects: false);
+
+            var diagnostics = await new TemplateDiagnosticService()
+                .ValidateAsync(document: document, settings: settings, cancellationToken: CancellationToken.None);
+
+            var diagnostic = diagnostics.Should().ContainSingle().Which;
+            diagnostic.Code.Should().Be("TW0002");
+            diagnostic.Message.Should().Contain("CS1503");
+            diagnostic.File.Should().Be(project.TemplatePath);
+            diagnostic.Line.Should().Be(6);
+            diagnostic.Column.Should().Be(31);
+
+            var mapped = LspDiagnosticMapper.Map(document: document, diagnostics: diagnostics).Should().ContainSingle().Which;
+            mapped.Range.Start.Line.Should().Be(5);
+            mapped.Range.Start.Character.Should().Be(30);
+            mapped.Range.End.Line.Should().Be(5);
+            mapped.Range.End.Character.Should().Be(31);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     [Fact]
     public void MapUsesZeroBasedLspRanges()
     {

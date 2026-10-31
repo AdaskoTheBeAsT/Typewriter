@@ -842,9 +842,8 @@ internal static class TemplateRuntimeCompiler
         int line,
         string templatePath)
     {
-        var escapedPath = templatePath
-            .Replace(oldValue: "\\", newValue: "\\\\", comparisonType: StringComparison.Ordinal)
-            .Replace(oldValue: "\"", newValue: "\\\"", comparisonType: StringComparison.Ordinal);
+        // #line filenames use literal backslashes rather than C# string escaping.
+        var escapedPath = templatePath.Replace(oldValue: "\"", newValue: "\\\"", comparisonType: StringComparison.Ordinal);
         return $"#line {line.ToString(provider: CultureInfo.InvariantCulture)} \"{escapedPath}\"";
     }
 
@@ -955,7 +954,7 @@ internal static class TemplateRuntimeCompiler
     {
         foreach (var diagnostic in compileDiagnostics.Where(predicate: diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error))
         {
-            var lineSpan = diagnostic.Location.GetLineSpan();
+            var lineSpan = diagnostic.Location.GetMappedLineSpan();
             var hasLocation = diagnostic.Location != Location.None && lineSpan.IsValid;
             diagnostics.Add(
                 item: new GenerationDiagnostic(
