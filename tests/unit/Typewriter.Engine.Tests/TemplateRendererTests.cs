@@ -2996,6 +2996,7 @@ public sealed class TemplateRendererTests
             EnumValues: [],
             IsNullableAware: true)
         {
+            AssemblyName = "ProjectA",
             FileLocations = [requestLocation],
         };
 
@@ -3010,7 +3011,10 @@ public sealed class TemplateRendererTests
                 new PropertyMetadata(
                     Name: "Request",
                     FullName: "Sample.Models.OrderModel.Request",
-                    Type: TypeReference(name: "CreateOrderRequest", fullName: "Sample.Requests.CreateOrderRequest", isNullable: false),
+                    Type: TypeReference(name: "CreateOrderRequest", fullName: "Sample.Requests.CreateOrderRequest", isNullable: false) with
+                    {
+                        AssemblyName = "ProjectA",
+                    },
                     Accessibility: MetadataAccessibility.Public,
                     HasGetter: true,
                     HasSetter: true,
@@ -3021,7 +3025,20 @@ public sealed class TemplateRendererTests
                     FullName: "Sample.Models.OrderModel.SpecificRequest",
                     Type: TypeReference(name: "CreateOrderRequest", fullName: "Sample.Requests.CreateOrderRequest", isNullable: false) with
                     {
+                        AssemblyName = "ProjectB",
                         FileLocations = [specificRequestLocation],
+                    },
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+                new PropertyMetadata(
+                    Name: "ExternalRequest",
+                    FullName: "Sample.Models.OrderModel.ExternalRequest",
+                    Type: TypeReference(name: "CreateOrderRequest", fullName: "Sample.Requests.CreateOrderRequest", isNullable: false) with
+                    {
+                        AssemblyName = "ExternalLibrary",
                     },
                     Accessibility: MetadataAccessibility.Public,
                     HasGetter: true,
@@ -3074,6 +3091,7 @@ public sealed class TemplateRendererTests
             "OrderModel:True:Models/OrderModel.cs|defined\n" +
             "Request:True:Requests/CreateOrderRequest.cs|defined\n" +
             "SpecificRequest:True:ProjectB/Requests/CreateOrderRequest.cs|defined\n" +
+            "ExternalRequest:False:|external\n" +
             "Title:False:|external\n" +
             "ProjectBOnly:SpecificRequest");
     }

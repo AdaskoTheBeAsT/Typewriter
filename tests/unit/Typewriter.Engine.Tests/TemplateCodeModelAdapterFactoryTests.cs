@@ -912,6 +912,119 @@ public sealed class TemplateCodeModelAdapterFactoryTests
         fromGeneric.Type.FileLocations.Should().Equal(genericInnerPath);
     }
 
+    [Fact]
+    public void CreateFileRejectsIndexedMetadataWhenReferencedAssemblyIsNotIndexed()
+    {
+        var sourcePath = Path.Combine(path1: "ProjectA", path2: "Models", path3: "SharedDto.cs");
+        var nestedSourcePath = Path.Combine(path1: "ProjectA", path2: "Models", path3: "Outer.cs");
+
+        var indexedDto = new TypeMetadata(
+            Name: "SharedDto",
+            FullName: "Sample.Models.SharedDto",
+            Namespace: "Sample.Models",
+            Kind: TypeMetadataKind.Class,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes: [],
+            BaseTypes: [],
+            EnumValues: [],
+            IsNullableAware: true)
+        {
+            AssemblyName = "ProjectA",
+            FileLocations = [sourcePath],
+        };
+
+        var indexedNested = new TypeMetadata(
+            Name: "Inner",
+            FullName: "Sample.Models.Outer.Inner",
+            Namespace: "Sample.Models",
+            Kind: TypeMetadataKind.Class,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes: [],
+            BaseTypes: [],
+            EnumValues: [],
+            IsNullableAware: true)
+        {
+            AssemblyName = "ProjectA",
+            ContainingTypeFullName = "Sample.Models.Outer",
+            FileLocations = [nestedSourcePath],
+        };
+
+        var indexedOuter = new TypeMetadata(
+            Name: "Outer",
+            FullName: "Sample.Models.Outer",
+            Namespace: "Sample.Models",
+            Kind: TypeMetadataKind.Class,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes: [],
+            BaseTypes: [],
+            EnumValues: [],
+            IsNullableAware: true)
+        {
+            AssemblyName = "ProjectA",
+            FileLocations = [nestedSourcePath],
+            NestedClasses = [indexedNested],
+        };
+
+        var holder = new TypeMetadata(
+            Name: "Holder",
+            FullName: "Sample.Models.Holder",
+            Namespace: "Sample.Models",
+            Kind: TypeMetadataKind.Class,
+            Accessibility: MetadataAccessibility.Public,
+            Properties:
+            [
+                new PropertyMetadata(
+                    Name: "ExternalDto",
+                    FullName: "Sample.Models.Holder.ExternalDto",
+                    Type: CreateReference(name: "SharedDto", fullName: "Sample.Models.SharedDto") with
+                    {
+                        AssemblyName = "ExternalLibrary",
+                    },
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+                new PropertyMetadata(
+                    Name: "ExternalNestedWithoutContainingType",
+                    FullName: "Sample.Models.Holder.ExternalNestedWithoutContainingType",
+                    Type: CreateReference(name: "Inner", fullName: "Sample.Models.Outer.Inner") with
+                    {
+                        AssemblyName = "ExternalLibrary",
+                    },
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+            ],
+            Attributes: [],
+            BaseTypes: [],
+            EnumValues: [],
+            IsNullableAware: true);
+
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types: [indexedDto, indexedOuter, holder],
+            Diagnostics: []);
+        var factory = new TemplateCodeModelAdapterFactory(metadata: metadata, templatePath: "models.tst");
+
+        var file = factory.CreateFile(project: metadata);
+
+        var holderClass = file.Classes.Single(predicate: c => c.Name == "Holder");
+        var externalDto = holderClass.Properties.Single(predicate: p => p.Name == "ExternalDto");
+        externalDto.Type.FileLocations.Should().BeEmpty();
+        externalDto.Type.IsDefined.Should().BeFalse();
+
+        var externalNested = holderClass.Properties.Single(predicate: p => p.Name == "ExternalNestedWithoutContainingType");
+        externalNested.Type.FileLocations.Should().BeEmpty();
+        externalNested.Type.IsDefined.Should().BeFalse();
+    }
+
     private static ProjectMetadata CreateMetadata(
         TypeMetadataKind kind,
         int derivedArity,

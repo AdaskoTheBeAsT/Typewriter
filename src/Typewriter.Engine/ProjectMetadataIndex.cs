@@ -74,15 +74,17 @@ internal sealed class ProjectMetadataIndex
         ArgumentNullException.ThrowIfNull(argument: reference);
 
         var hierarchyKey = GetHierarchyKey(reference: reference);
-        if (_typesByHierarchyKey.TryGetValue(key: hierarchyKey, value: out var candidates))
+        if (_typesByHierarchyKey.TryGetValue(key: hierarchyKey, value: out var candidates)
+            && TrySelectCandidate(candidates: candidates, assemblyName: reference.AssemblyName, metadata: out metadata))
         {
-            metadata = SelectCandidate(candidates: candidates, assemblyName: reference.AssemblyName);
             return true;
         }
 
         if (reference.ContainingType is null
-            && _unambiguousNestedTypesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out metadata))
+            && _unambiguousNestedTypesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out var nestedCandidate)
+            && IsAssemblyCompatible(candidate: nestedCandidate, assemblyName: reference.AssemblyName))
         {
+            metadata = nestedCandidate;
             return true;
         }
 
@@ -104,22 +106,40 @@ internal sealed class ProjectMetadataIndex
         return _dependencyIndex.Value.GetAffectedSourceFiles(changedSourcePaths: changedSourcePaths);
     }
 
-    private static TypeMetadata SelectCandidate(
+    private static bool TrySelectCandidate(
         IReadOnlyList<TypeMetadata> candidates,
-        string assemblyName)
+        string assemblyName,
+        [NotNullWhen(returnValue: true)] out TypeMetadata? metadata)
     {
-        if (candidates.Count > 1 && !string.IsNullOrWhiteSpace(value: assemblyName))
+        if (!string.IsNullOrWhiteSpace(value: assemblyName))
         {
-            var assemblyMatch = candidates.FirstOrDefault(
+            var exactMatch = candidates.FirstOrDefault(
                 predicate: candidate => candidate.AssemblyName.Equals(value: assemblyName, comparisonType: StringComparison.Ordinal));
-            if (assemblyMatch is not null)
+            if (exactMatch is not null)
             {
-                return assemblyMatch;
+                metadata = exactMatch;
+                return true;
             }
         }
 
-        return candidates[index: 0];
+        var compatibleCandidate = candidates.FirstOrDefault(
+            predicate: candidate => IsAssemblyCompatible(candidate: candidate, assemblyName: assemblyName));
+        if (compatibleCandidate is not null)
+        {
+            metadata = compatibleCandidate;
+            return true;
+        }
+
+        metadata = null;
+        return false;
     }
+
+    private static bool IsAssemblyCompatible(
+        TypeMetadata candidate,
+        string assemblyName) =>
+        string.IsNullOrWhiteSpace(value: assemblyName)
+        || string.IsNullOrWhiteSpace(value: candidate.AssemblyName)
+        || candidate.AssemblyName.Equals(value: assemblyName, comparisonType: StringComparison.Ordinal);
 
     private static string GetHierarchyKey(TypeMetadataReference reference)
     {
