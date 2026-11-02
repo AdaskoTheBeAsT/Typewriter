@@ -75,6 +75,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.15.0](#4150)
     - [4.14.0](#4140)
     - [4.13.0](#4130)
     - [4.12.0](#4120)
@@ -1521,6 +1522,12 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.15.0
+
+- Populated `Type.FileLocations` and `Type.IsDefined` on referenced types (`Property.Type`, `Method.Type`, `Parameter.Type`, `TypeArguments`, `ElementType`, nullable value types, nested types, and delegates) across Roslyn metadata extraction, `ProjectMetadataIndex`, `TemplateCodeModelAdapterFactory`, and `TemplateRenderer` (#132).
+- Updated the release workflow to use NuGet OIDC trusted publishing (#131).
+- Synchronized tool, language-server, editor-package, and release-artifact versions to 4.15.0.
 
 ### 4.14.0
 

@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using Typewriter.Abstractions;
 
 namespace Typewriter.Engine;
@@ -5,16 +7,20 @@ namespace Typewriter.Engine;
 internal sealed class ProjectMetadataIndex
 {
     private readonly Lazy<SourceFileDependencyIndex> _dependencyIndex;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<TypeMetadata>> _typesByHierarchyKey;
+    private readonly IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> _unambiguousNestedTypesByFullNameAndArity;
 
     private ProjectMetadataIndex(
         ProjectMetadata metadata,
         IReadOnlyDictionary<string, TypeMetadata> typesByFullName,
-        IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> typesByFullNameAndArity,
+        IReadOnlyDictionary<string, IReadOnlyList<TypeMetadata>> typesByHierarchyKey,
+        IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> unambiguousNestedTypesByFullNameAndArity,
         IReadOnlyDictionary<string, MethodMetadata> methodsByFullName,
         IReadOnlyDictionary<string, PropertyMetadata> propertiesByFullName)
     {
         TypesByFullName = typesByFullName;
-        TypesByFullNameAndArity = typesByFullNameAndArity;
+        _typesByHierarchyKey = typesByHierarchyKey;
+        _unambiguousNestedTypesByFullNameAndArity = unambiguousNestedTypesByFullNameAndArity;
         MethodsByFullName = methodsByFullName;
         PropertiesByFullName = propertiesByFullName;
         _dependencyIndex = new Lazy<SourceFileDependencyIndex>(
@@ -24,8 +30,6 @@ internal sealed class ProjectMetadataIndex
 
     public IReadOnlyDictionary<string, TypeMetadata> TypesByFullName { get; }
 
-    public IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> TypesByFullNameAndArity { get; }
-
     public IReadOnlyDictionary<string, MethodMetadata> MethodsByFullName { get; }
 
     public IReadOnlyDictionary<string, PropertyMetadata> PropertiesByFullName { get; }
@@ -34,22 +38,58 @@ internal sealed class ProjectMetadataIndex
     {
         ArgumentNullException.ThrowIfNull(argument: metadata);
 
+        var indexedTypes = EnumerateIndexedTypes(types: metadata.Types);
+        var allTypes = indexedTypes.Select(selector: static entry => entry.Type).ToArray();
         return new ProjectMetadataIndex(
             metadata: metadata,
-            typesByFullName: metadata.Types
+            typesByFullName: allTypes
                 .GroupBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
                 .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal),
-            typesByFullNameAndArity: metadata.Types
-                .GroupBy(keySelector: type => (type.FullName, type.TypeParameters.Count))
-                .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First()),
-            methodsByFullName: metadata.Types
+            typesByHierarchyKey: indexedTypes
+                .GroupBy(keySelector: static entry => entry.HierarchyKey, comparer: StringComparer.Ordinal)
+                .ToDictionary(
+                    keySelector: static group => group.Key,
+                    elementSelector: static group => (IReadOnlyList<TypeMetadata>)group.Select(selector: static entry => entry.Type).ToArray(),
+                    comparer: StringComparer.Ordinal),
+            unambiguousNestedTypesByFullNameAndArity: indexedTypes
+                .Where(predicate: static entry => entry.IsNested)
+                .Select(selector: static entry => entry.Type)
+                .GroupBy(keySelector: static type => (type.FullName, type.TypeParameters.Count))
+                .Where(predicate: static group => group.Count() == 1)
+                .ToDictionary(keySelector: static group => group.Key, elementSelector: static group => group.First()),
+            methodsByFullName: allTypes
                 .SelectMany(selector: type => type.Methods)
                 .GroupBy(keySelector: method => method.FullName, comparer: StringComparer.Ordinal)
                 .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal),
-            propertiesByFullName: metadata.Types
+            propertiesByFullName: allTypes
                 .SelectMany(selector: type => type.Properties)
                 .GroupBy(keySelector: property => property.FullName, comparer: StringComparer.Ordinal)
                 .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal));
+    }
+
+    public bool TryResolveType(
+        TypeMetadataReference reference,
+        [NotNullWhen(returnValue: true)] out TypeMetadata? metadata)
+    {
+        ArgumentNullException.ThrowIfNull(argument: reference);
+
+        var hierarchyKey = GetHierarchyKey(reference: reference);
+        if (_typesByHierarchyKey.TryGetValue(key: hierarchyKey, value: out var candidates)
+            && TrySelectCandidate(candidates: candidates, assemblyName: reference.AssemblyName, metadata: out metadata))
+        {
+            return true;
+        }
+
+        if (reference.ContainingType is null
+            && _unambiguousNestedTypesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out var nestedCandidate)
+            && IsAssemblyCompatible(candidate: nestedCandidate, assemblyName: reference.AssemblyName))
+        {
+            metadata = nestedCandidate;
+            return true;
+        }
+
+        metadata = null;
+        return false;
     }
 
     /// <summary>
@@ -65,6 +105,122 @@ internal sealed class ProjectMetadataIndex
 
         return _dependencyIndex.Value.GetAffectedSourceFiles(changedSourcePaths: changedSourcePaths);
     }
+
+    private static bool TrySelectCandidate(
+        IReadOnlyList<TypeMetadata> candidates,
+        string assemblyName,
+        [NotNullWhen(returnValue: true)] out TypeMetadata? metadata)
+    {
+        if (!string.IsNullOrWhiteSpace(value: assemblyName))
+        {
+            var exactMatch = candidates.FirstOrDefault(
+                predicate: candidate => candidate.AssemblyName.Equals(value: assemblyName, comparisonType: StringComparison.Ordinal));
+            if (exactMatch is not null)
+            {
+                metadata = exactMatch;
+                return true;
+            }
+        }
+
+        var compatibleCandidate = candidates.FirstOrDefault(
+            predicate: candidate => IsAssemblyCompatible(candidate: candidate, assemblyName: assemblyName));
+        if (compatibleCandidate is not null)
+        {
+            metadata = compatibleCandidate;
+            return true;
+        }
+
+        metadata = null;
+        return false;
+    }
+
+    private static bool IsAssemblyCompatible(
+        TypeMetadata candidate,
+        string assemblyName) =>
+        string.IsNullOrWhiteSpace(value: assemblyName)
+        || string.IsNullOrWhiteSpace(value: candidate.AssemblyName)
+        || candidate.AssemblyName.Equals(value: assemblyName, comparisonType: StringComparison.Ordinal);
+
+    private static string GetHierarchyKey(TypeMetadataReference reference)
+    {
+        var prefix = reference.ContainingType is not null
+            ? $"{GetHierarchyKey(reference: reference.ContainingType)}.{reference.Name}"
+            : reference.FullName;
+        return FormatHierarchyKey(prefix: prefix, arity: reference.Arity);
+    }
+
+    private static string FormatHierarchyKey(
+        string prefix,
+        int arity) =>
+        $"{prefix}`{arity.ToString(provider: CultureInfo.InvariantCulture)}";
+
+    private static IReadOnlyList<IndexedTypeEntry> EnumerateIndexedTypes(IReadOnlyList<TypeMetadata> types)
+    {
+        var entries = new List<IndexedTypeEntry>();
+        var visitedContainingTypes = new HashSet<string>(comparer: StringComparer.Ordinal);
+
+        foreach (var type in types.Where(predicate: static type => string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)))
+        {
+            _ = visitedContainingTypes.Add(item: type.FullName);
+            var key = FormatHierarchyKey(prefix: type.FullName, arity: type.TypeParameters.Count);
+            entries.Add(item: new IndexedTypeEntry(HierarchyKey: key, Type: type, IsNested: false));
+            AddNestedTypes(
+                parentKey: key,
+                nestedTypes: EnumerateNestedTypes(type: type),
+                entries: entries,
+                visitedContainingTypes: visitedContainingTypes);
+        }
+
+        foreach (var type in types.Where(predicate: static type => !string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)))
+        {
+            if (visitedContainingTypes.Contains(item: type.ContainingTypeFullName))
+            {
+                continue;
+            }
+
+            _ = visitedContainingTypes.Add(item: type.FullName);
+            var key = FormatHierarchyKey(prefix: type.FullName, arity: type.TypeParameters.Count);
+            entries.Add(item: new IndexedTypeEntry(HierarchyKey: key, Type: type, IsNested: true));
+            AddNestedTypes(
+                parentKey: key,
+                nestedTypes: EnumerateNestedTypes(type: type),
+                entries: entries,
+                visitedContainingTypes: visitedContainingTypes);
+        }
+
+        return entries;
+    }
+
+    private static void AddNestedTypes(
+        string parentKey,
+        IEnumerable<TypeMetadata> nestedTypes,
+        ICollection<IndexedTypeEntry> entries,
+        ISet<string> visitedContainingTypes)
+    {
+        foreach (var nested in nestedTypes)
+        {
+            _ = visitedContainingTypes.Add(item: nested.FullName);
+            var nestedKey = FormatHierarchyKey(prefix: $"{parentKey}.{nested.Name}", arity: nested.TypeParameters.Count);
+            entries.Add(item: new IndexedTypeEntry(HierarchyKey: nestedKey, Type: nested, IsNested: true));
+            AddNestedTypes(
+                parentKey: nestedKey,
+                nestedTypes: EnumerateNestedTypes(type: nested),
+                entries: entries,
+                visitedContainingTypes: visitedContainingTypes);
+        }
+    }
+
+    private static IEnumerable<TypeMetadata> EnumerateNestedTypes(TypeMetadata type) =>
+        type.NestedClasses
+            .Concat(second: type.NestedRecords)
+            .Concat(second: type.NestedStructs)
+            .Concat(second: type.NestedEnums)
+            .Concat(second: type.NestedInterfaces);
+
+    private readonly record struct IndexedTypeEntry(
+        string HierarchyKey,
+        TypeMetadata Type,
+        bool IsNested);
 
     private sealed class SourceFileDependencyIndex
     {
@@ -168,13 +324,6 @@ internal sealed class ProjectMetadataIndex
                 CollectType(type: nestedType, declaredTypes: declaredTypes, referencedTypes: referencedTypes, visitedReferences: visitedReferences);
             }
         }
-
-        private static IEnumerable<TypeMetadata> EnumerateNestedTypes(TypeMetadata type) =>
-            type.NestedClasses
-                .Concat(second: type.NestedRecords)
-                .Concat(second: type.NestedStructs)
-                .Concat(second: type.NestedEnums)
-                .Concat(second: type.NestedInterfaces);
 
         private static void CollectMembers(
             TypeMetadata type,

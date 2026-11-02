@@ -23,10 +23,10 @@ internal sealed class TemplateCodeModelAdapterFactory
 {
     private readonly Typewriter.Configuration.Settings _settings;
     private readonly string _assemblyName;
+    private readonly ProjectMetadataIndex _metadataIndex;
     private readonly IReadOnlyDictionary<string, MethodMetadata> _methodsByFullName;
     private readonly IReadOnlyDictionary<string, PropertyMetadata> _propertiesByFullName;
     private readonly IReadOnlyDictionary<string, TypeMetadata> _typesByFullName;
-    private readonly IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> _typesByFullNameAndArity;
     private readonly TypeScriptTypeMapper _typeMapper = new();
     private CodeFile? _cachedFile;
     private ProjectMetadata? _cachedFileProject;
@@ -58,8 +58,8 @@ internal sealed class TemplateCodeModelAdapterFactory
         _settings = settings;
         _assemblyName = Path.GetFileNameWithoutExtension(path: metadata.ProjectPath);
         var index = metadataIndex ?? ProjectMetadataIndex.Create(metadata: metadata);
+        _metadataIndex = index;
         _typesByFullName = index.TypesByFullName;
-        _typesByFullNameAndArity = index.TypesByFullNameAndArity;
         _methodsByFullName = index.MethodsByFullName;
         _propertiesByFullName = index.PropertiesByFullName;
     }
@@ -134,8 +134,17 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     public Typewriter.CodeModel.InterfaceCollection CreateInterfaces(TypeMetadataReference reference)
     {
-        _typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out var metadata);
+        _ = TryResolveType(reference: reference, metadata: out var metadata);
         return CreateInterfaces(reference: reference, metadata: metadata);
+    }
+
+    private static IReadOnlyList<string> ResolveFileLocations(
+        TypeMetadataReference type,
+        TypeMetadata? metadata)
+    {
+        return type.FileLocations.Count > 0
+            ? type.FileLocations
+            : metadata?.FileLocations ?? [];
     }
 
     private static Typewriter.CodeModel.DocComment? CreateDocComment(
@@ -635,7 +644,8 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         var typeArguments = new Typewriter.CodeModel.TypeCollection(
             items: type.TypeArguments.Select(selector: argument => CreateType(type: argument, runtimeType: runtimeType)));
-        _typesByFullNameAndArity.TryGetValue(key: (type.FullName, type.Arity), value: out var typeMetadata);
+        _ = TryResolveType(reference: type, metadata: out var typeMetadata);
+        var fileLocations = ResolveFileLocations(type: type, metadata: typeMetadata);
         var mappedName = _typeMapper.Map(
             type: type,
             strictNull: _settings.StrictNullGeneration,
@@ -655,7 +665,9 @@ internal sealed class TemplateCodeModelAdapterFactory
                 ? new Typewriter.CodeModel.AttributeCollection()
                 : CreateTypeReferenceAttributes(attributes: typeMetadata.Attributes),
             ElementType = type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType),
+            FileLocations = fileLocations,
             IsDate = type.IsDateLike,
+            IsDefined = typeMetadata is not null || fileLocations.Count > 0,
             IsDictionary = type.IsDictionary,
             IsDynamic = IsDynamic(type: type),
             IsEnum = type.IsEnum,
@@ -676,6 +688,13 @@ internal sealed class TemplateCodeModelAdapterFactory
             UseResolvedDefault = _settings.DateLibraryGeneration != Typewriter.Configuration.DateLibrary.Legacy
                                  || runtimeType != FrontendRuntimeTypeKind.Auto,
         };
+    }
+
+    private bool TryResolveType(
+        TypeMetadataReference reference,
+        [NotNullWhen(returnValue: true)] out TypeMetadata? metadata)
+    {
+        return _metadataIndex.TryResolveType(reference: reference, metadata: out metadata);
     }
 
     private Typewriter.CodeModel.Property CreateProperty(
@@ -931,7 +950,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     private bool IsInterfaceReference(TypeMetadataReference reference)
     {
-        if (_typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out var metadata))
+        if (TryResolveType(reference: reference, metadata: out var metadata))
         {
             return metadata.Kind == TypeMetadataKind.Interface;
         }
@@ -944,7 +963,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     private CodeInterface CreateInterfaceReference(TypeMetadataReference reference)
     {
-        if (_typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out var metadata)
+        if (TryResolveType(reference: reference, metadata: out var metadata)
             && metadata.Kind == TypeMetadataKind.Interface)
         {
             return CreateInterface(type: metadata, reference: reference);
@@ -1157,7 +1176,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
         baseType = SubstituteTypeArguments(type: type, reference: reference, target: baseType);
 
-        return _typesByFullNameAndArity.TryGetValue(key: (baseType.FullName, baseType.Arity), value: out var baseMetadata)
+        return TryResolveType(reference: baseType, metadata: out var baseMetadata)
             && baseMetadata.Kind == TypeMetadataKind.Class
                 ? CreateClass(type: baseMetadata, reference: baseType)
                 : new CodeClass
@@ -1184,7 +1203,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
         baseType = SubstituteTypeArguments(type: type, reference: reference, target: baseType);
 
-        return _typesByFullNameAndArity.TryGetValue(key: (baseType.FullName, baseType.Arity), value: out var baseMetadata)
+        return TryResolveType(reference: baseType, metadata: out var baseMetadata)
             && baseMetadata.Kind == TypeMetadataKind.Record
                 ? CreateRecord(type: baseMetadata, reference: baseType)
                 : new CodeRecord
@@ -1201,7 +1220,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     private bool IsRecordBaseReference(TypeMetadataReference reference)
     {
-        if (_typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out var metadata))
+        if (TryResolveType(reference: reference, metadata: out var metadata))
         {
             return metadata.Kind == TypeMetadataKind.Record;
         }
@@ -1370,7 +1389,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             return ResolveEnumDefault(enumName: type.Name, enumValues: type.EnumValues);
         }
 
-        return _typesByFullNameAndArity.TryGetValue(key: (type.FullName, type.Arity), value: out var enumMetadata)
+        return TryResolveType(reference: type, metadata: out var enumMetadata)
             ? ResolveEnumDefault(enumName: type.Name, enumValues: enumMetadata.EnumValues)
             : null;
     }

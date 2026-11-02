@@ -25,6 +25,8 @@ public sealed record TypeMetadataReference(
 
     public TypeMetadataReference? ContainingType { get; init; }
 
+    public IReadOnlyList<string> FileLocations { get; init; } = [];
+
     public IReadOnlyList<TypeMetadataReference> Interfaces { get; init; } = [];
 
     public bool IsValueTuple { get; init; }

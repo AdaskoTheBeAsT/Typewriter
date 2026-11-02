@@ -926,13 +926,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             IsNullableAware: IsNullableAware(symbol: symbol, compilation: compilation))
         {
             Location = GetSourceLocation(symbol: symbol),
-            FileLocations = symbol.Locations
-                .Where(predicate: location => location.IsInSource)
-                .Select(selector: location => location.GetLineSpan().Path)
-                .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
-                .Select(selector: Path.GetFullPath)
-                .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
-                .ToArray(),
+            FileLocations = GetFileLocations(symbol: symbol),
             Documentation = docComment?.Summary,
             DocComment = docComment,
             AssemblyName = GetAssemblyName(symbol: symbol),
@@ -1532,6 +1526,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
             AssemblyName = GetAssemblyName(symbol: symbol),
             ContainingType = GetContainingTypeReference(symbol: symbol),
+            FileLocations = GetFileLocations(symbol: symbol),
             Interfaces = GetInterfaceReferences(symbol: symbol),
             IsValueTuple = IsValueTuple(symbol: symbol),
             TupleElements = GetTupleElements(symbol: symbol, visitedSymbols: visitedSymbols).ToArray(),
@@ -1539,6 +1534,27 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 ? GetEnumValues(symbol: enumType).ToArray()
                 : [],
         };
+    }
+
+    private static IReadOnlyList<string> GetFileLocations(ITypeSymbol symbol)
+    {
+        if (symbol is not INamedTypeSymbol { IsTupleType: false } namedSymbol
+            || namedSymbol.TypeKind is not (Microsoft.CodeAnalysis.TypeKind.Class
+                or Microsoft.CodeAnalysis.TypeKind.Struct
+                or Microsoft.CodeAnalysis.TypeKind.Interface
+                or Microsoft.CodeAnalysis.TypeKind.Enum
+                or Microsoft.CodeAnalysis.TypeKind.Delegate))
+        {
+            return [];
+        }
+
+        return namedSymbol.OriginalDefinition.Locations
+            .Where(predicate: static location => location.IsInSource)
+            .Select(selector: static location => location.GetLineSpan().Path)
+            .Where(predicate: static path => !string.IsNullOrWhiteSpace(value: path))
+            .Select(selector: Path.GetFullPath)
+            .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static IReadOnlyList<TypeMetadataReference> GetInterfaceReferences(ITypeSymbol symbol)
@@ -1577,6 +1593,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
             AssemblyName = GetAssemblyName(symbol: symbol),
             ContainingType = GetContainingTypeReference(symbol: symbol),
+            FileLocations = GetFileLocations(symbol: symbol),
             Interfaces = GetInterfaceReferences(symbol: symbol),
             IsValueTuple = IsValueTuple(symbol: symbol),
             EnumValues = symbol is INamedTypeSymbol enumType
@@ -1627,6 +1644,7 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
             AssemblyName = GetAssemblyName(symbol: symbol),
             ContainingType = GetContainingTypeReference(symbol: symbol),
+            FileLocations = GetFileLocations(symbol: symbol),
         };
     }
 

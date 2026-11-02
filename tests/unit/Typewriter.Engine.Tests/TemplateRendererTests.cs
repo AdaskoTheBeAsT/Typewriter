@@ -2977,6 +2977,125 @@ public sealed class TemplateRendererTests
         normalized.Should().Be("export class TestModel { \n    public upn: string;\n    public adExtendedAttribute1: string;\n    public lastADLogin: Date;\n}");
     }
 
+    [Fact]
+    public void RenderExposesFileLocationsOnReferencedTypesInHelperMethodsAndTokensIssue132()
+    {
+        const string requestLocation = "Requests/CreateOrderRequest.cs";
+        const string specificRequestLocation = "ProjectB/Requests/CreateOrderRequest.cs";
+        const string modelLocation = "Models/OrderModel.cs";
+
+        var requestType = new TypeMetadata(
+            Name: "CreateOrderRequest",
+            FullName: "Sample.Requests.CreateOrderRequest",
+            Namespace: "Sample.Requests",
+            Kind: TypeMetadataKind.Class,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes: [],
+            BaseTypes: [],
+            EnumValues: [],
+            IsNullableAware: true)
+        {
+            AssemblyName = "ProjectA",
+            FileLocations = [requestLocation],
+        };
+
+        var modelType = new TypeMetadata(
+            Name: "OrderModel",
+            FullName: "Sample.Models.OrderModel",
+            Namespace: "Sample.Models",
+            Kind: TypeMetadataKind.Class,
+            Accessibility: MetadataAccessibility.Public,
+            Properties:
+            [
+                new PropertyMetadata(
+                    Name: "Request",
+                    FullName: "Sample.Models.OrderModel.Request",
+                    Type: TypeReference(name: "CreateOrderRequest", fullName: "Sample.Requests.CreateOrderRequest", isNullable: false) with
+                    {
+                        AssemblyName = "ProjectA",
+                    },
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+                new PropertyMetadata(
+                    Name: "SpecificRequest",
+                    FullName: "Sample.Models.OrderModel.SpecificRequest",
+                    Type: TypeReference(name: "CreateOrderRequest", fullName: "Sample.Requests.CreateOrderRequest", isNullable: false) with
+                    {
+                        AssemblyName = "ProjectB",
+                        FileLocations = [specificRequestLocation],
+                    },
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+                new PropertyMetadata(
+                    Name: "ExternalRequest",
+                    FullName: "Sample.Models.OrderModel.ExternalRequest",
+                    Type: TypeReference(name: "CreateOrderRequest", fullName: "Sample.Requests.CreateOrderRequest", isNullable: false) with
+                    {
+                        AssemblyName = "ExternalLibrary",
+                    },
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+                new PropertyMetadata(
+                    Name: "Title",
+                    FullName: "Sample.Models.OrderModel.Title",
+                    Type: TypeReference(name: "String", fullName: "System.String", isNullable: false),
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+            ],
+            Attributes: [],
+            BaseTypes: [],
+            EnumValues: [],
+            IsNullableAware: true)
+        {
+            FileLocations = [modelLocation],
+        };
+
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types: [requestType, modelType],
+            Diagnostics: []);
+
+        const string template = """
+            ${
+                string ClassLocations(Class c) => $"{c.Name}:{c.Type.IsDefined}:{string.Join("|", c.Type.FileLocations)}";
+                string HelperLocations(Property p) => $"{p.Name}:{p.Type.IsDefined}:{string.Join("|", p.Type.FileLocations)}";
+            }$Classes(*Model)[$ClassLocations|$Type[$IsDefined[defined][external]]
+            $Properties[$HelperLocations|$Type[$IsDefined[defined][external]]][
+            ]
+            ProjectBOnly:$Properties(p => p.Type.FileLocations.Any(f => f.Contains("ProjectB")))[$Name]]
+            """;
+
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "Models.tst", Content: template), diagnostics: diagnostics);
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        var normalized = output.Replace(oldValue: "\r\n", newValue: "\n", comparisonType: StringComparison.Ordinal).Trim();
+        normalized.Should().Be(
+            "OrderModel:True:Models/OrderModel.cs|defined\n" +
+            "Request:True:Requests/CreateOrderRequest.cs|defined\n" +
+            "SpecificRequest:True:ProjectB/Requests/CreateOrderRequest.cs|defined\n" +
+            "ExternalRequest:False:|external\n" +
+            "Title:False:|external\n" +
+            "ProjectBOnly:SpecificRequest");
+    }
+
 #pragma warning disable S107
     private static TypeMetadataReference TypeReference(
         string name,
