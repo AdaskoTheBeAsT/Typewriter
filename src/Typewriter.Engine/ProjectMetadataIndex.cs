@@ -34,19 +34,20 @@ internal sealed class ProjectMetadataIndex
     {
         ArgumentNullException.ThrowIfNull(argument: metadata);
 
+        var allTypes = EnumerateAllTypes(types: metadata.Types).ToArray();
         return new ProjectMetadataIndex(
             metadata: metadata,
-            typesByFullName: metadata.Types
+            typesByFullName: allTypes
                 .GroupBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
                 .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal),
-            typesByFullNameAndArity: metadata.Types
+            typesByFullNameAndArity: allTypes
                 .GroupBy(keySelector: type => (type.FullName, type.TypeParameters.Count))
                 .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First()),
-            methodsByFullName: metadata.Types
+            methodsByFullName: allTypes
                 .SelectMany(selector: type => type.Methods)
                 .GroupBy(keySelector: method => method.FullName, comparer: StringComparer.Ordinal)
                 .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal),
-            propertiesByFullName: metadata.Types
+            propertiesByFullName: allTypes
                 .SelectMany(selector: type => type.Properties)
                 .GroupBy(keySelector: property => property.FullName, comparer: StringComparer.Ordinal)
                 .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First(), comparer: StringComparer.Ordinal));
@@ -65,6 +66,25 @@ internal sealed class ProjectMetadataIndex
 
         return _dependencyIndex.Value.GetAffectedSourceFiles(changedSourcePaths: changedSourcePaths);
     }
+
+    private static IEnumerable<TypeMetadata> EnumerateAllTypes(IEnumerable<TypeMetadata> types)
+    {
+        foreach (var type in types)
+        {
+            yield return type;
+            foreach (var nested in EnumerateAllTypes(types: EnumerateNestedTypes(type: type)))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    private static IEnumerable<TypeMetadata> EnumerateNestedTypes(TypeMetadata type) =>
+        type.NestedClasses
+            .Concat(second: type.NestedRecords)
+            .Concat(second: type.NestedStructs)
+            .Concat(second: type.NestedEnums)
+            .Concat(second: type.NestedInterfaces);
 
     private sealed class SourceFileDependencyIndex
     {
@@ -168,13 +188,6 @@ internal sealed class ProjectMetadataIndex
                 CollectType(type: nestedType, declaredTypes: declaredTypes, referencedTypes: referencedTypes, visitedReferences: visitedReferences);
             }
         }
-
-        private static IEnumerable<TypeMetadata> EnumerateNestedTypes(TypeMetadata type) =>
-            type.NestedClasses
-                .Concat(second: type.NestedRecords)
-                .Concat(second: type.NestedStructs)
-                .Concat(second: type.NestedEnums)
-                .Concat(second: type.NestedInterfaces);
 
         private static void CollectMembers(
             TypeMetadata type,

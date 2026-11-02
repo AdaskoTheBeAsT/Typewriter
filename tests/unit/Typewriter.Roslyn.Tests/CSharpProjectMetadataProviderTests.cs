@@ -1566,6 +1566,119 @@ public sealed class CSharpProjectMetadataProviderTests
         }
     }
 
+    [Fact]
+    public async Task GetMetadataPopulatesFileLocationsOnTypeReferencesIssue132()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            var requestsDirectory = Path.Combine(path1: directory, path2: "Requests");
+            var modelsDirectory = Path.Combine(path1: directory, path2: "Models");
+            Directory.CreateDirectory(path: requestsDirectory);
+            Directory.CreateDirectory(path: modelsDirectory);
+
+            var requestPath = Path.GetFullPath(path: Path.Combine(path1: requestsDirectory, path2: "CreateOrderRequest.cs"));
+            var statusPath = Path.GetFullPath(path: Path.Combine(path1: requestsDirectory, path2: "OrderStatus.cs"));
+            var modelPath = Path.GetFullPath(path: Path.Combine(path1: modelsDirectory, path2: "OrderModel.cs"));
+
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: requestPath,
+                contents: """
+                          namespace Sample.Requests;
+
+                          public class CreateOrderRequest
+                          {
+                              public string CustomerId { get; set; } = string.Empty;
+                          }
+
+                          public class PagedResponse<T>
+                          {
+                              public IReadOnlyList<T> Items { get; set; } = [];
+                          }
+                          """);
+            await File.WriteAllTextAsync(
+                path: statusPath,
+                contents: """
+                          namespace Sample.Requests;
+
+                          public enum OrderStatus
+                          {
+                              Pending = 0,
+                              Completed = 1,
+                          }
+
+                          public struct OrderAmount
+                          {
+                              public decimal Value { get; set; }
+                          }
+                          """);
+            await File.WriteAllTextAsync(
+                path: modelPath,
+                contents: """
+                          using Sample.Requests;
+
+                          namespace Sample.Models;
+
+                          public class OrderModel
+                          {
+                              public CreateOrderRequest Request { get; set; } = new();
+                              public PagedResponse<CreateOrderRequest> Response { get; set; } = new();
+                              public IReadOnlyList<CreateOrderRequest> Requests { get; set; } = [];
+                              public OrderStatus? Status { get; set; }
+                              public OrderAmount? Amount { get; set; }
+                              public string Name { get; set; } = string.Empty;
+                          }
+                          """);
+
+            var provider = new CSharpProjectMetadataProvider();
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == Typewriter.Abstractions.DiagnosticSeverity.Error);
+            var orderModel = metadata.Types.Should().ContainSingle(type => type.Name == "OrderModel").Which;
+            orderModel.FileLocations.Should().Equal(modelPath);
+
+            var requestProperty = orderModel.Properties.Single(predicate: p => p.Name == "Request");
+            requestProperty.Type.FileLocations.Should().Equal(requestPath);
+
+            var responseProperty = orderModel.Properties.Single(predicate: p => p.Name == "Response");
+            responseProperty.Type.FileLocations.Should().Equal(requestPath);
+            responseProperty.Type.TypeArguments.Should().ContainSingle().Which.FileLocations.Should().Equal(requestPath);
+
+            var requestsProperty = orderModel.Properties.Single(predicate: p => p.Name == "Requests");
+            requestsProperty.Type.FileLocations.Should().BeEmpty();
+            requestsProperty.Type.ElementType.Should().NotBeNull();
+            requestsProperty.Type.ElementType.FileLocations.Should().Equal(requestPath);
+            requestsProperty.Type.TypeArguments.Should().ContainSingle().Which.FileLocations.Should().Equal(requestPath);
+
+            var statusProperty = orderModel.Properties.Single(predicate: p => p.Name == "Status");
+            statusProperty.Type.FileLocations.Should().Equal(statusPath);
+
+            var amountProperty = orderModel.Properties.Single(predicate: p => p.Name == "Amount");
+            amountProperty.Type.FileLocations.Should().Equal(statusPath);
+
+            var nameProperty = orderModel.Properties.Single(predicate: p => p.Name == "Name");
+            nameProperty.Type.FileLocations.Should().BeEmpty();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(
