@@ -23,10 +23,10 @@ internal sealed class TemplateCodeModelAdapterFactory
 {
     private readonly Typewriter.Configuration.Settings _settings;
     private readonly string _assemblyName;
+    private readonly ProjectMetadataIndex _metadataIndex;
     private readonly IReadOnlyDictionary<string, MethodMetadata> _methodsByFullName;
     private readonly IReadOnlyDictionary<string, PropertyMetadata> _propertiesByFullName;
     private readonly IReadOnlyDictionary<string, TypeMetadata> _typesByFullName;
-    private readonly IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> _typesByFullNameAndArity;
     private readonly TypeScriptTypeMapper _typeMapper = new();
     private CodeFile? _cachedFile;
     private ProjectMetadata? _cachedFileProject;
@@ -58,8 +58,8 @@ internal sealed class TemplateCodeModelAdapterFactory
         _settings = settings;
         _assemblyName = Path.GetFileNameWithoutExtension(path: metadata.ProjectPath);
         var index = metadataIndex ?? ProjectMetadataIndex.Create(metadata: metadata);
+        _metadataIndex = index;
         _typesByFullName = index.TypesByFullName;
-        _typesByFullNameAndArity = index.TypesByFullNameAndArity;
         _methodsByFullName = index.MethodsByFullName;
         _propertiesByFullName = index.PropertiesByFullName;
     }
@@ -142,9 +142,9 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference type,
         TypeMetadata? metadata)
     {
-        return metadata is { FileLocations.Count: > 0 }
-            ? metadata.FileLocations
-            : type.FileLocations;
+        return type.FileLocations.Count > 0
+            ? type.FileLocations
+            : metadata?.FileLocations ?? [];
     }
 
     private static Typewriter.CodeModel.DocComment? CreateDocComment(
@@ -694,8 +694,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference reference,
         [NotNullWhen(returnValue: true)] out TypeMetadata? metadata)
     {
-        return _typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out metadata)
-            || (reference.Arity == 0 && _typesByFullName.TryGetValue(key: reference.FullName, value: out metadata));
+        return _metadataIndex.TryResolveType(reference: reference, metadata: out metadata);
     }
 
     private Typewriter.CodeModel.Property CreateProperty(

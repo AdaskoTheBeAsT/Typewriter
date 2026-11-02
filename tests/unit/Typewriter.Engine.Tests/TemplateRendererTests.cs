@@ -2981,6 +2981,7 @@ public sealed class TemplateRendererTests
     public void RenderExposesFileLocationsOnReferencedTypesInHelperMethodsAndTokensIssue132()
     {
         const string requestLocation = "Requests/CreateOrderRequest.cs";
+        const string specificRequestLocation = "ProjectB/Requests/CreateOrderRequest.cs";
         const string modelLocation = "Models/OrderModel.cs";
 
         var requestType = new TypeMetadata(
@@ -3010,6 +3011,18 @@ public sealed class TemplateRendererTests
                     Name: "Request",
                     FullName: "Sample.Models.OrderModel.Request",
                     Type: TypeReference(name: "CreateOrderRequest", fullName: "Sample.Requests.CreateOrderRequest", isNullable: false),
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+                new PropertyMetadata(
+                    Name: "SpecificRequest",
+                    FullName: "Sample.Models.OrderModel.SpecificRequest",
+                    Type: TypeReference(name: "CreateOrderRequest", fullName: "Sample.Requests.CreateOrderRequest", isNullable: false) with
+                    {
+                        FileLocations = [specificRequestLocation],
+                    },
                     Accessibility: MetadataAccessibility.Public,
                     HasGetter: true,
                     HasSetter: true,
@@ -3046,7 +3059,7 @@ public sealed class TemplateRendererTests
             }$Classes(*Model)[$ClassLocations|$Type[$IsDefined[defined][external]]
             $Properties[$HelperLocations|$Type[$IsDefined[defined][external]]][
             ]
-            RequestsOnly:$Properties(p => p.Type.FileLocations.Any(f => f.Contains("Requests")))[$Name]]
+            ProjectBOnly:$Properties(p => p.Type.FileLocations.Any(f => f.Contains("ProjectB")))[$Name]]
             """;
 
         var diagnostics = new List<GenerationDiagnostic>();
@@ -3060,8 +3073,9 @@ public sealed class TemplateRendererTests
         normalized.Should().Be(
             "OrderModel:True:Models/OrderModel.cs|defined\n" +
             "Request:True:Requests/CreateOrderRequest.cs|defined\n" +
+            "SpecificRequest:True:ProjectB/Requests/CreateOrderRequest.cs|defined\n" +
             "Title:False:|external\n" +
-            "RequestsOnly:Request");
+            "ProjectBOnly:SpecificRequest");
     }
 
 #pragma warning disable S107

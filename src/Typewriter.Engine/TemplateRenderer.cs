@@ -1594,11 +1594,14 @@ public sealed class TemplateRenderer
         TypeMetadataReference type,
         RenderState? state)
     {
-        return state is not null
-            && state.TryResolveType(reference: type, type: out var metadata)
-            && metadata.FileLocations.Count > 0
-                ? metadata.FileLocations
-                : type.FileLocations;
+        if (type.FileLocations.Count > 0)
+        {
+            return type.FileLocations;
+        }
+
+        return state is not null && state.TryResolveType(reference: type, type: out var metadata)
+            ? metadata.FileLocations
+            : [];
     }
 
     private static bool ResolveIsDefined(
@@ -3206,7 +3209,6 @@ public sealed class TemplateRenderer
         private readonly IReadOnlyDictionary<string, MethodMetadata> _methodsByFullName;
         private readonly IReadOnlyDictionary<string, PropertyMetadata> _propertiesByFullName;
         private readonly IReadOnlyDictionary<string, TypeMetadata> _typesByFullName;
-        private readonly IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> _typesByFullNameAndArity;
         private readonly Stack<object> _parentContexts = new();
         private readonly HashSet<string> _reportedCompiledInvocationErrors = [];
         private readonly HashSet<string> _reportedUnknownIdentifiers = [];
@@ -3233,7 +3235,6 @@ public sealed class TemplateRenderer
             var index = metadataIndex ?? ProjectMetadataIndex.Create(metadata: metadata);
             _metadataIndex = index;
             _typesByFullName = index.TypesByFullName;
-            _typesByFullNameAndArity = index.TypesByFullNameAndArity;
             _methodsByFullName = index.MethodsByFullName;
             _propertiesByFullName = index.PropertiesByFullName;
             _compiledTemplateHelper = template.CodeBlocks.Count == 0
@@ -3503,8 +3504,7 @@ public sealed class TemplateRenderer
             TypeMetadataReference reference,
             out TypeMetadata type)
         {
-            return _typesByFullNameAndArity.TryGetValue(key: (reference.FullName, reference.Arity), value: out type!)
-                || (reference.Arity == 0 && _typesByFullName.TryGetValue(key: reference.FullName, value: out type!));
+            return _metadataIndex.TryResolveType(reference: reference, metadata: out type!);
         }
 
         public void AddUnknownIdentifier(
