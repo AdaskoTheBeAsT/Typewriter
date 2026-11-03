@@ -1368,6 +1368,11 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             return "typeof(" + GetTypeFullName(symbol: typeSymbol) + ")";
         }
 
+        if (constant.Kind == TypedConstantKind.Enum)
+        {
+            return constant.ToCSharpString();
+        }
+
         if (constant.Kind == TypedConstantKind.Array)
         {
             return string.Join(

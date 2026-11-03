@@ -3096,6 +3096,108 @@ public sealed class TemplateRendererTests
             "ProjectBOnly:SpecificRequest");
     }
 
+    [Fact]
+    public void RenderPreservesEnumAttributeArgumentNamesInAttributeValueIssue134()
+    {
+        var enumArgType = TypeReference(
+            name: "TypeScriptEnumValueType",
+            fullName: "Sample.TypeScriptEnumValueType",
+            isNullable: false,
+            isPrimitive: true,
+            isEnum: true);
+        var boolType = TypeReference(name: "Boolean", fullName: "System.Boolean", isNullable: false);
+        var stringType = TypeReference(name: "String", fullName: "System.String", isNullable: false);
+
+        var suffixEnum = new TypeMetadata(
+            Name: "Suffix",
+            FullName: "Sample.Suffix",
+            Namespace: "Sample",
+            Kind: TypeMetadataKind.Enum,
+            Accessibility: MetadataAccessibility.Public,
+            Properties: [],
+            Attributes:
+            [
+                new AttributeMetadata(
+                    Name: "GenerateTypeScriptEnum",
+                    FullName: "Sample.GenerateTypeScriptEnumAttribute",
+                    Arguments:
+                    [
+                        new AttributeArgumentMetadata(Name: "ValueType", Value: "Sample.TypeScriptEnumValueType.String")
+                        {
+                            Type = enumArgType,
+                        },
+                    ]),
+            ],
+            BaseTypes: [],
+            EnumValues:
+            [
+                new EnumValueMetadata(Name: "Unknown", Value: 0)
+                {
+                    Attributes =
+                    [
+                        new AttributeMetadata(
+                            Name: "EnumDescription",
+                            FullName: "Sample.EnumDescriptionAttribute",
+                            Arguments:
+                            [
+                                new AttributeArgumentMetadata(Name: "IsUnknown", Value: "True") { Type = boolType },
+                                new AttributeArgumentMetadata(Name: "Value", Value: string.Empty) { Type = stringType },
+                            ]),
+                    ],
+                },
+                new EnumValueMetadata(Name: "RomanNumeralOne", Value: 1)
+                {
+                    Attributes =
+                    [
+                        new AttributeMetadata(
+                            Name: "EnumDescription",
+                            FullName: "Sample.EnumDescriptionAttribute",
+                            Arguments:
+                            [
+                                new AttributeArgumentMetadata(Name: "Value", Value: "I") { Type = stringType },
+                            ]),
+                    ],
+                },
+            ],
+            IsNullableAware: true);
+
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types: [suffixEnum],
+            Diagnostics: []);
+
+        const string template = """
+            ${
+                string DescribeEnum(Enum e)
+                {
+                    var attr = e.Attributes.First(a => a.Name == "GenerateTypeScriptEnum");
+                    var parts = attr.Value.Split('=');
+                    var valueType = parts[1].Trim();
+                    var isString = valueType.EndsWith("TypeScriptEnumValueType.String");
+                    return $"{attr.Value}|isString={isString}|argValue={attr.Arguments[0].Value}";
+                }
+            }$Enums(Suffix)[$DescribeEnum
+            $Attributes[$Name($Value)]
+            $Values[$Name:$Attributes[$Value]][
+            ]]
+            """;
+
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "Enums.tst", Content: template), diagnostics: diagnostics);
+
+        var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        var normalized = output.Replace(oldValue: "\r\n", newValue: "\n", comparisonType: StringComparison.Ordinal).Trim();
+        normalized.Should().Be(
+            "ValueType = Sample.TypeScriptEnumValueType.String|isString=True|argValue=Sample.TypeScriptEnumValueType.String\n" +
+            "GenerateTypeScriptEnum(ValueType = Sample.TypeScriptEnumValueType.String)\n" +
+            "Unknown:IsUnknown = True, Value = \"\"\n" +
+            "RomanNumeralOne:Value = \"I\"");
+    }
+
 #pragma warning disable S107
     private static TypeMetadataReference TypeReference(
         string name,

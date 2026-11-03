@@ -1679,6 +1679,104 @@ public sealed class CSharpProjectMetadataProviderTests
         }
     }
 
+    [Fact]
+    public async Task GetMetadataFormatsEnumAttributeArgumentsAsCSharpEnumExpressionsIssue134()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Models.cs"),
+                contents: """
+                          using System;
+
+                          namespace Sample;
+
+                          public enum TypeScriptEnumValueType
+                          {
+                              Infer,
+                              Self,
+                              Number,
+                              String,
+                              Boolean,
+                          }
+
+                          [AttributeUsage(AttributeTargets.Enum, AllowMultiple = true)]
+                          public sealed class GenerateTypeScriptEnumAttribute : Attribute
+                          {
+                              public GenerateTypeScriptEnumAttribute()
+                              {
+                              }
+
+                              public GenerateTypeScriptEnumAttribute(TypeScriptEnumValueType valueType)
+                              {
+                                  ValueType = valueType;
+                              }
+
+                              public GenerateTypeScriptEnumAttribute(params TypeScriptEnumValueType[] valueTypes)
+                              {
+                              }
+
+                              public TypeScriptEnumValueType ValueType { get; set; }
+                          }
+
+                          [GenerateTypeScriptEnum(ValueType = TypeScriptEnumValueType.String)]
+                          [GenerateTypeScriptEnum(TypeScriptEnumValueType.Number)]
+                          [GenerateTypeScriptEnum(TypeScriptEnumValueType.Number, TypeScriptEnumValueType.String)]
+                          public enum Suffix
+                          {
+                              None = 0,
+                              First = 1,
+                          }
+                          """);
+
+            var provider = new CSharpProjectMetadataProvider();
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == Typewriter.Abstractions.DiagnosticSeverity.Error);
+            var suffix = metadata.Types.Should().ContainSingle(type => type.Name == "Suffix").Which;
+            var attributes = suffix.Attributes.Where(predicate: attribute => attribute.Name == "GenerateTypeScriptEnum").ToArray();
+            attributes.Should().HaveCount(expected: 3);
+
+            var namedArg = attributes[0].Arguments.Should().ContainSingle().Which;
+            namedArg.Name.Should().Be("ValueType");
+            namedArg.Value.Should().Be("Sample.TypeScriptEnumValueType.String");
+            namedArg.Type.Should().NotBeNull();
+            namedArg.Type.IsEnum.Should().BeTrue();
+
+            var positionalArg = attributes[1].Arguments.Should().ContainSingle().Which;
+            positionalArg.Name.Should().BeNull();
+            positionalArg.Value.Should().Be("Sample.TypeScriptEnumValueType.Number");
+            positionalArg.Type.Should().NotBeNull();
+            positionalArg.Type.IsEnum.Should().BeTrue();
+
+            var arrayArg = attributes[2].Arguments.Should().ContainSingle().Which;
+            arrayArg.Name.Should().BeNull();
+            arrayArg.Value.Should().Be("Sample.TypeScriptEnumValueType.Number, Sample.TypeScriptEnumValueType.String");
+            arrayArg.Type.Should().NotBeNull();
+            arrayArg.Type.ElementType.Should().NotBeNull();
+            arrayArg.Type.ElementType.IsEnum.Should().BeTrue();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(
