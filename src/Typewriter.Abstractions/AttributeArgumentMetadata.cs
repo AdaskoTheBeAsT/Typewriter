@@ -9,4 +9,6 @@ public sealed record AttributeArgumentMetadata(
     public TypeMetadataReference? Type { get; init; }
 
     public TypeMetadataReference? TypeValue { get; init; }
+
+    public IReadOnlyList<AttributeArgumentMetadata> Elements { get; init; } = [];
 }

@@ -1732,9 +1732,16 @@ public sealed class CSharpProjectMetadataProviderTests
                               public TypeScriptEnumValueType ValueType { get; set; }
                           }
 
+                          [AttributeUsage(AttributeTargets.Enum, AllowMultiple = true)]
+                          public sealed class DataAttribute(params object[] values) : Attribute
+                          {
+                              public string? Label { get; set; }
+                          }
+
                           [GenerateTypeScriptEnum(ValueType = TypeScriptEnumValueType.String)]
                           [GenerateTypeScriptEnum(TypeScriptEnumValueType.Number)]
                           [GenerateTypeScriptEnum(TypeScriptEnumValueType.Number, TypeScriptEnumValueType.String)]
+                          [Data(TypeScriptEnumValueType.String, "raw", Label = "x")]
                           public enum Suffix
                           {
                               None = 0,
@@ -1770,6 +1777,27 @@ public sealed class CSharpProjectMetadataProviderTests
             arrayArg.Type.Should().NotBeNull();
             arrayArg.Type.ElementType.Should().NotBeNull();
             arrayArg.Type.ElementType.IsEnum.Should().BeTrue();
+            arrayArg.Elements.Should().HaveCount(expected: 2);
+            var firstArrayElement = arrayArg.Elements[0];
+            firstArrayElement.Value.Should().Be("Sample.TypeScriptEnumValueType.Number");
+            firstArrayElement.Type.Should().NotBeNull();
+            firstArrayElement.Type.IsEnum.Should().BeTrue();
+
+            var dataAttribute = suffix.Attributes.Should().ContainSingle(attribute => attribute.Name == "Data").Which;
+            dataAttribute.Arguments.Should().HaveCount(expected: 2);
+            var boxedArrayArg = dataAttribute.Arguments[0];
+            boxedArrayArg.Type.Should().NotBeNull();
+            boxedArrayArg.Type.ElementType.Should().NotBeNull();
+            boxedArrayArg.Type.ElementType.FullName.Should().Be("System.Object");
+            boxedArrayArg.Elements.Should().HaveCount(expected: 2);
+            var boxedEnumElement = boxedArrayArg.Elements[0];
+            boxedEnumElement.Value.Should().Be("Sample.TypeScriptEnumValueType.String");
+            boxedEnumElement.Type.Should().NotBeNull();
+            boxedEnumElement.Type.IsEnum.Should().BeTrue();
+            var boxedStringElement = boxedArrayArg.Elements[1];
+            boxedStringElement.Value.Should().Be("raw");
+            boxedStringElement.Type.Should().NotBeNull();
+            boxedStringElement.Type.FullName.Should().Be("System.String");
         }
         finally
         {

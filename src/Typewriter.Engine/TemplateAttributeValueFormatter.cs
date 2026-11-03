@@ -35,6 +35,13 @@ internal static class TemplateAttributeValueFormatter
 
     private static string FormatValue(AttributeArgumentMetadata argument)
     {
+        if (argument.Elements.Count > 0)
+        {
+            return string.Join(
+                separator: ", ",
+                values: argument.Elements.Select(selector: FormatValue));
+        }
+
         var value = argument.Value;
         if (value is null)
         {

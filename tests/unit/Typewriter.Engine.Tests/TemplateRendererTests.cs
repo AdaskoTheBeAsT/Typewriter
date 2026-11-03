@@ -3107,6 +3107,14 @@ public sealed class TemplateRendererTests
             isEnum: true);
         var boolType = TypeReference(name: "Boolean", fullName: "System.Boolean", isNullable: false);
         var stringType = TypeReference(name: "String", fullName: "System.String", isNullable: false);
+        var objectType = TypeReference(name: "Object", fullName: "System.Object", isNullable: false, isPrimitive: false);
+        var objectArrayType = TypeReference(
+            name: "Object[]",
+            fullName: "System.Object[]",
+            isNullable: false,
+            isPrimitive: false,
+            isCollection: true,
+            elementType: objectType);
 
         var suffixEnum = new TypeMetadata(
             Name: "Suffix",
@@ -3125,6 +3133,31 @@ public sealed class TemplateRendererTests
                         new AttributeArgumentMetadata(Name: "ValueType", Value: "Sample.TypeScriptEnumValueType.String")
                         {
                             Type = enumArgType,
+                        },
+                    ]),
+                new AttributeMetadata(
+                    Name: "Data",
+                    FullName: "Sample.DataAttribute",
+                    Arguments:
+                    [
+                        new AttributeArgumentMetadata(Name: null, Value: "Sample.TypeScriptEnumValueType.String, raw")
+                        {
+                            Type = objectArrayType,
+                            Elements =
+                            [
+                                new AttributeArgumentMetadata(Name: null, Value: "Sample.TypeScriptEnumValueType.String")
+                                {
+                                    Type = enumArgType,
+                                },
+                                new AttributeArgumentMetadata(Name: null, Value: "raw")
+                                {
+                                    Type = stringType,
+                                },
+                            ],
+                        },
+                        new AttributeArgumentMetadata(Name: "Label", Value: "x")
+                        {
+                            Type = stringType,
                         },
                     ]),
             ],
@@ -3178,7 +3211,8 @@ public sealed class TemplateRendererTests
                     return $"{attr.Value}|isString={isString}|argValue={attr.Arguments[0].Value}";
                 }
             }$Enums(Suffix)[$DescribeEnum
-            $Attributes[$Name($Value)]
+            $Attributes[$Name($Value)][
+            ]
             $Values[$Name:$Attributes[$Value]][
             ]]
             """;
@@ -3194,6 +3228,7 @@ public sealed class TemplateRendererTests
         normalized.Should().Be(
             "ValueType = Sample.TypeScriptEnumValueType.String|isString=True|argValue=Sample.TypeScriptEnumValueType.String\n" +
             "GenerateTypeScriptEnum(ValueType = Sample.TypeScriptEnumValueType.String)\n" +
+            "Data(Sample.TypeScriptEnumValueType.String, \"raw\", Label = \"x\")\n" +
             "Unknown:IsUnknown = True, Value = \"\"\n" +
             "RomanNumeralOne:Value = \"I\"");
     }

@@ -1352,6 +1352,9 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 && constant.Value is ITypeSymbol typeSymbol
                     ? CreateTypeReference(symbol: typeSymbol, nullableAnnotation: NullableAnnotation.NotAnnotated)
                     : null,
+            Elements = constant.Kind == TypedConstantKind.Array && !constant.IsNull
+                ? constant.Values.Select(selector: item => CreateAttributeArgument(name: null, constant: item)).ToArray()
+                : [],
         };
     }
 
