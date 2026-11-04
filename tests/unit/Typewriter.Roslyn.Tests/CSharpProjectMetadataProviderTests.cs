@@ -1741,7 +1741,7 @@ public sealed class CSharpProjectMetadataProviderTests
                           [GenerateTypeScriptEnum(ValueType = TypeScriptEnumValueType.String)]
                           [GenerateTypeScriptEnum(TypeScriptEnumValueType.Number)]
                           [GenerateTypeScriptEnum(TypeScriptEnumValueType.Number, TypeScriptEnumValueType.String)]
-                          [Data(TypeScriptEnumValueType.String, "raw", Label = "x")]
+                          [Data(TypeScriptEnumValueType.String, "true", "null", "123", Label = "x")]
                           public enum Suffix
                           {
                               None = 0,
@@ -1789,13 +1789,13 @@ public sealed class CSharpProjectMetadataProviderTests
             boxedArrayArg.Type.Should().NotBeNull();
             boxedArrayArg.Type.ElementType.Should().NotBeNull();
             boxedArrayArg.Type.ElementType.FullName.Should().Be("System.Object");
-            boxedArrayArg.Elements.Should().HaveCount(expected: 2);
+            boxedArrayArg.Elements.Should().HaveCount(expected: 4);
             var boxedEnumElement = boxedArrayArg.Elements[0];
             boxedEnumElement.Value.Should().Be("Sample.TypeScriptEnumValueType.String");
             boxedEnumElement.Type.Should().NotBeNull();
             boxedEnumElement.Type.IsEnum.Should().BeTrue();
             var boxedStringElement = boxedArrayArg.Elements[1];
-            boxedStringElement.Value.Should().Be("raw");
+            boxedStringElement.Value.Should().Be("true");
             boxedStringElement.Type.Should().NotBeNull();
             boxedStringElement.Type.FullName.Should().Be("System.String");
         }

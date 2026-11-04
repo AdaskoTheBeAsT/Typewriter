@@ -48,9 +48,11 @@ internal static class TemplateAttributeValueFormatter
             return "null";
         }
 
-        if (argument.Type?.IsEnum == true
-            || argument.Type?.ElementType?.IsEnum == true
-            || IsSourceLike(value: value))
+        if (!string.Equals(a: argument.Type?.FullName, b: "System.String", comparisonType: StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(value: value)
+            && (argument.Type?.IsEnum == true
+                || argument.Type?.ElementType?.IsEnum == true
+                || IsSourceLike(value: value)))
         {
             return value;
         }

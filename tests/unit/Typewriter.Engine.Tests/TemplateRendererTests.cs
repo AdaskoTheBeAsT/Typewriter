@@ -3115,6 +3115,13 @@ public sealed class TemplateRendererTests
             isPrimitive: false,
             isCollection: true,
             elementType: objectType);
+        var enumArrayType = TypeReference(
+            name: "TypeScriptEnumValueType[]",
+            fullName: "Sample.TypeScriptEnumValueType[]",
+            isNullable: false,
+            isPrimitive: false,
+            isCollection: true,
+            elementType: enumArgType);
 
         var suffixEnum = new TypeMetadata(
             Name: "Suffix",
@@ -3140,7 +3147,7 @@ public sealed class TemplateRendererTests
                     FullName: "Sample.DataAttribute",
                     Arguments:
                     [
-                        new AttributeArgumentMetadata(Name: null, Value: "Sample.TypeScriptEnumValueType.String, raw")
+                        new AttributeArgumentMetadata(Name: null, Value: "Sample.TypeScriptEnumValueType.String, true, null, 123")
                         {
                             Type = objectArrayType,
                             Elements =
@@ -3149,7 +3156,15 @@ public sealed class TemplateRendererTests
                                 {
                                     Type = enumArgType,
                                 },
-                                new AttributeArgumentMetadata(Name: null, Value: "raw")
+                                new AttributeArgumentMetadata(Name: null, Value: "true")
+                                {
+                                    Type = stringType,
+                                },
+                                new AttributeArgumentMetadata(Name: null, Value: "null")
+                                {
+                                    Type = stringType,
+                                },
+                                new AttributeArgumentMetadata(Name: null, Value: "123")
                                 {
                                     Type = stringType,
                                 },
@@ -3158,6 +3173,10 @@ public sealed class TemplateRendererTests
                         new AttributeArgumentMetadata(Name: "Label", Value: "x")
                         {
                             Type = stringType,
+                        },
+                        new AttributeArgumentMetadata(Name: "ValueTypes", Value: string.Empty)
+                        {
+                            Type = enumArrayType,
                         },
                     ]),
             ],
@@ -3228,7 +3247,7 @@ public sealed class TemplateRendererTests
         normalized.Should().Be(
             "ValueType = Sample.TypeScriptEnumValueType.String|isString=True|argValue=Sample.TypeScriptEnumValueType.String\n" +
             "GenerateTypeScriptEnum(ValueType = Sample.TypeScriptEnumValueType.String)\n" +
-            "Data(Sample.TypeScriptEnumValueType.String, \"raw\", Label = \"x\")\n" +
+            "Data(Sample.TypeScriptEnumValueType.String, \"true\", \"null\", \"123\", Label = \"x\", ValueTypes = \"\")\n" +
             "Unknown:IsUnknown = True, Value = \"\"\n" +
             "RomanNumeralOne:Value = \"I\"");
     }
