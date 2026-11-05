@@ -27,20 +27,32 @@ internal static class TemplateAttributeValueFormatter
 
     private static string FormatArgument(AttributeArgumentMetadata argument)
     {
-        var value = FormatValue(value: argument.Value);
+        var value = FormatValue(argument: argument);
         return string.IsNullOrWhiteSpace(value: argument.Name)
             ? value
             : string.Concat(str0: argument.Name, str1: " = ", str2: value);
     }
 
-    private static string FormatValue(string? value)
+    private static string FormatValue(AttributeArgumentMetadata argument)
     {
+        if (argument.Elements.Count > 0)
+        {
+            return string.Join(
+                separator: ", ",
+                values: argument.Elements.Select(selector: FormatValue));
+        }
+
+        var value = argument.Value;
         if (value is null)
         {
             return "null";
         }
 
-        if (IsSourceLike(value: value))
+        if (!string.Equals(a: argument.Type?.FullName, b: "System.String", comparisonType: StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(value: value)
+            && (argument.Type?.IsEnum == true
+                || argument.Type?.ElementType?.IsEnum == true
+                || IsSourceLike(value: value)))
         {
             return value;
         }

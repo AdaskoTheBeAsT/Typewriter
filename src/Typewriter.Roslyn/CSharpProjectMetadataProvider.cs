@@ -1352,6 +1352,9 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
                 && constant.Value is ITypeSymbol typeSymbol
                     ? CreateTypeReference(symbol: typeSymbol, nullableAnnotation: NullableAnnotation.NotAnnotated)
                     : null,
+            Elements = constant.Kind == TypedConstantKind.Array && !constant.IsNull
+                ? constant.Values.Select(selector: item => CreateAttributeArgument(name: null, constant: item)).ToArray()
+                : [],
         };
     }
 
@@ -1366,6 +1369,11 @@ public sealed class CSharpProjectMetadataProvider : IProjectMetadataProvider
             && constant.Value is ITypeSymbol typeSymbol)
         {
             return "typeof(" + GetTypeFullName(symbol: typeSymbol) + ")";
+        }
+
+        if (constant.Kind == TypedConstantKind.Enum)
+        {
+            return constant.ToCSharpString();
         }
 
         if (constant.Kind == TypedConstantKind.Array)
