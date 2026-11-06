@@ -13,7 +13,7 @@ namespace Typewriter.Engine;
 
 internal static class TemplateRuntimeCompiler
 {
-    private const string HostTypeFullName = "Typewriter.Engine.TemplateRuntime.Generated.TypewriterTemplateHost";
+    internal const string HostTypeFullName = "Typewriter.Engine.TemplateRuntime.Generated.TypewriterTemplateHost";
     private const string HostTypeName = "TypewriterTemplateHost";
     private const int MaxCompiledTemplateCacheEntries = 128;
     private const int MaxRemoteLoadBytes = 1024 * 1024;
@@ -51,7 +51,7 @@ internal static class TemplateRuntimeCompiler
         TemplateRenderDefaults defaults,
         ProjectMetadataIndex? metadataIndex)
     {
-        if (template.CodeBlocks.Count == 0)
+        if (!template.HasCompiledCode)
         {
             return null;
         }
@@ -76,7 +76,7 @@ internal static class TemplateRuntimeCompiler
         ArgumentNullException.ThrowIfNull(argument: template);
         ArgumentNullException.ThrowIfNull(argument: diagnostics);
 
-        if (template.CodeBlocks.Count == 0)
+        if (!template.HasCompiledCode)
         {
             return null;
         }
@@ -161,7 +161,7 @@ internal static class TemplateRuntimeCompiler
         ArgumentNullException.ThrowIfNull(argument: template);
         ArgumentNullException.ThrowIfNull(argument: diagnostics);
 
-        if (template.CodeBlocks.Count == 0)
+        if (!template.HasCompiledCode)
         {
             return 0;
         }
@@ -169,6 +169,7 @@ internal static class TemplateRuntimeCompiler
         var source = BuildSource(templatePath: template.Path, codeBlocks: template.CodeBlocks, diagnostics: diagnostics, referenceDirectives: out var referenceDirectives);
         var resolver = new TemplateReferenceResolver(templatePath: template.Path, diagnostics: diagnostics);
         var references = resolver.CreateReferences(referenceDirectives: referenceDirectives);
+        source = TemplateInlinePredicateCompiler.AppendToSource(template: template, source: source, references: references);
         var cacheKey = CreateCompiledTemplateCacheKey(source: source, references: references);
         return CompiledTemplateCacheMissCounts.TryGetValue(key: cacheKey, value: out var count)
             ? count
@@ -192,6 +193,7 @@ internal static class TemplateRuntimeCompiler
         var source = BuildSource(templatePath: template.Path, codeBlocks: template.CodeBlocks, diagnostics: diagnostics, referenceDirectives: out var referenceDirectives);
         var resolver = new TemplateReferenceResolver(templatePath: template.Path, diagnostics: diagnostics);
         var references = resolver.CreateReferences(referenceDirectives: referenceDirectives);
+        source = TemplateInlinePredicateCompiler.AppendToSource(template: template, source: source, references: references);
         var cacheKey = CreateCompiledTemplateCacheKey(source: source, references: references);
         if (!CompiledTemplateCache.TryGetValue(key: cacheKey, value: out var cacheEntry))
         {

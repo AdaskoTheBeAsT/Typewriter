@@ -445,7 +445,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
     private static CompiledTemplateFactory? CreateCompiledTemplateFactory(
         TemplateDocument template,
         ICollection<GenerationDiagnostic> diagnostics) =>
-        template.CodeBlocks.Count == 0
+        !template.HasCompiledCode
             ? null
             : TemplateRuntimeCompiler.CompileFactory(template: template, diagnostics: diagnostics);
 
