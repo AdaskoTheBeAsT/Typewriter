@@ -10,6 +10,8 @@ Local commands and the CI workflow only create artifacts. The tag-triggered rele
 |---|---|---|---|
 | Typewriter CLI | `.nupkg` | NuGet | Published by the tag release workflow |
 | Typewriter language server | `.nupkg` | NuGet | Published by the tag release workflow |
+| Typewriter annotations | `.nupkg` | NuGet | Published by the tag release workflow |
+| Typewriter CodeModel | `.nupkg` | NuGet | Published by the tag release workflow |
 | Visual Studio | `.vsix` | GitHub release; Visual Studio Marketplace planned | Visual Studio 2026 package with architecture-neutral CLI/LSP payload |
 | Visual Studio Code | `.vsix` | GitHub release; VS Code Marketplace planned | Bundled package configured |
 | JetBrains Rider | `.zip` | GitHub release; JetBrains Marketplace planned | Gradle wrapper and verification configured |
@@ -329,6 +331,8 @@ Gradle verifyPlugin
 ```text
 dotnet pack CLI
 dotnet pack language server
+dotnet pack annotations
+dotnet pack code model
 dotnet build Visual Studio VSIX
 vsce package VS Code extension
 Gradle buildPlugin Rider extension
@@ -341,6 +345,8 @@ Normalize release artifact names:
 ```text
 AdaskoTheBeAsT.Typewriter.Cli.<version>.nupkg
 AdaskoTheBeAsT.Typewriter.LanguageServer.<version>.nupkg
+AdaskoTheBeAsT.Typewriter.Annotations.<version>.nupkg
+AdaskoTheBeAsT.Typewriter.CodeModel.<version>.nupkg
 Typewriter.VisualStudio-<version>.vsix
 typewriter-vscode-<version>.vsix
 Typewriter-Rider-<version>.zip

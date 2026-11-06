@@ -28,41 +28,41 @@ public class Settings
 
     public virtual char StringLiteralCharacter => _stringLiteralCharacter;
 
-    public virtual string DateTypeGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateType;
+    public virtual string DateTypeGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateType;
 
-    public virtual string DateInitializerGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateInitializer;
+    public virtual string DateInitializerGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateInitializer;
 
-    public virtual string DateOnlyTypeGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateOnlyType;
+    public virtual string DateOnlyTypeGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateOnlyType;
 
-    public virtual string DateOnlyInitializerGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateOnlyInitializer;
+    public virtual string DateOnlyInitializerGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateOnlyInitializer;
 
-    public virtual string TimeOnlyTypeGeneration { get; private set; } = TypeScriptTypeMapper.DefaultTimeOnlyType;
+    public virtual string TimeOnlyTypeGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultTimeOnlyType;
 
-    public virtual string TimeOnlyInitializerGeneration { get; private set; } = TypeScriptTypeMapper.DefaultTimeOnlyInitializer;
+    public virtual string TimeOnlyInitializerGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultTimeOnlyInitializer;
 
     public virtual DateLibrary DateLibraryGeneration { get; private set; } = DateLibrary.Legacy;
 
     public virtual string DateLibraryImportsGeneration { get; private set; } = string.Empty;
 
-    public virtual string InstantTypeGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateType;
+    public virtual string InstantTypeGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateType;
 
-    public virtual string InstantInitializerGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateInitializer;
+    public virtual string InstantInitializerGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateInitializer;
 
-    public virtual string PlainDateTypeGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateOnlyType;
+    public virtual string PlainDateTypeGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateOnlyType;
 
-    public virtual string PlainDateInitializerGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateOnlyInitializer;
+    public virtual string PlainDateInitializerGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateOnlyInitializer;
 
-    public virtual string PlainTimeTypeGeneration { get; private set; } = TypeScriptTypeMapper.DefaultTimeOnlyType;
+    public virtual string PlainTimeTypeGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultTimeOnlyType;
 
-    public virtual string PlainTimeInitializerGeneration { get; private set; } = TypeScriptTypeMapper.DefaultTimeOnlyInitializer;
+    public virtual string PlainTimeInitializerGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultTimeOnlyInitializer;
 
-    public virtual string PlainDateTimeTypeGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateType;
+    public virtual string PlainDateTimeTypeGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateType;
 
-    public virtual string PlainDateTimeInitializerGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateInitializer;
+    public virtual string PlainDateTimeInitializerGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateInitializer;
 
-    public virtual string ZonedDateTimeTypeGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateType;
+    public virtual string ZonedDateTimeTypeGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateType;
 
-    public virtual string ZonedDateTimeInitializerGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDateInitializer;
+    public virtual string ZonedDateTimeInitializerGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDateInitializer;
 
     public virtual string DurationTypeGeneration { get; private set; } = "string";
 
@@ -80,13 +80,13 @@ public class Settings
 
     public virtual string PlainMonthDayInitializerGeneration { get; private set; } = "\"\"";
 
-    public virtual string GuidTypeGeneration { get; private set; } = TypeScriptTypeMapper.DefaultGuidType;
+    public virtual string GuidTypeGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultGuidType;
 
-    public virtual string GuidInitializerGeneration { get; private set; } = TypeScriptTypeMapper.DefaultGuidInitializer;
+    public virtual string GuidInitializerGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultGuidInitializer;
 
-    public virtual string DecimalTypeGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDecimalType;
+    public virtual string DecimalTypeGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDecimalType;
 
-    public virtual string DecimalInitializerGeneration { get; private set; } = TypeScriptTypeMapper.DefaultDecimalInitializer;
+    public virtual string DecimalInitializerGeneration { get; private set; } = TypeScriptTypeDefaults.DefaultDecimalInitializer;
 
     public virtual bool StrictNullGeneration { get; private set; } = true;
 
@@ -140,7 +140,7 @@ public class Settings
     public virtual Settings UseDateType(string dateType)
     {
         DateTypeGeneration = string.IsNullOrWhiteSpace(value: dateType)
-            ? TypeScriptTypeMapper.DefaultDateType
+            ? TypeScriptTypeDefaults.DefaultDateType
             : dateType.Trim();
         InstantTypeGeneration = DateTypeGeneration;
         PlainDateTimeTypeGeneration = DateTypeGeneration;
@@ -151,7 +151,7 @@ public class Settings
     public virtual Settings UseDateInitializer(string dateInitializer)
     {
         DateInitializerGeneration = string.IsNullOrWhiteSpace(value: dateInitializer)
-            ? TypeScriptTypeMapper.DefaultDateInitializer
+            ? TypeScriptTypeDefaults.DefaultDateInitializer
             : dateInitializer.Trim();
         InstantInitializerGeneration = DateInitializerGeneration;
         PlainDateTimeInitializerGeneration = DateInitializerGeneration;
@@ -162,7 +162,7 @@ public class Settings
     public virtual Settings UseDateOnlyType(string dateOnlyType)
     {
         DateOnlyTypeGeneration = string.IsNullOrWhiteSpace(value: dateOnlyType)
-            ? TypeScriptTypeMapper.DefaultDateOnlyType
+            ? TypeScriptTypeDefaults.DefaultDateOnlyType
             : dateOnlyType.Trim();
         PlainDateTypeGeneration = DateOnlyTypeGeneration;
         return this;
@@ -171,7 +171,7 @@ public class Settings
     public virtual Settings UseDateOnlyInitializer(string dateOnlyInitializer)
     {
         DateOnlyInitializerGeneration = string.IsNullOrWhiteSpace(value: dateOnlyInitializer)
-            ? TypeScriptTypeMapper.DefaultDateOnlyInitializer
+            ? TypeScriptTypeDefaults.DefaultDateOnlyInitializer
             : dateOnlyInitializer.Trim();
         PlainDateInitializerGeneration = DateOnlyInitializerGeneration;
         return this;
@@ -180,7 +180,7 @@ public class Settings
     public virtual Settings UseTimeOnlyType(string timeOnlyType)
     {
         TimeOnlyTypeGeneration = string.IsNullOrWhiteSpace(value: timeOnlyType)
-            ? TypeScriptTypeMapper.DefaultTimeOnlyType
+            ? TypeScriptTypeDefaults.DefaultTimeOnlyType
             : timeOnlyType.Trim();
         PlainTimeTypeGeneration = TimeOnlyTypeGeneration;
         return this;
@@ -189,7 +189,7 @@ public class Settings
     public virtual Settings UseTimeOnlyInitializer(string timeOnlyInitializer)
     {
         TimeOnlyInitializerGeneration = string.IsNullOrWhiteSpace(value: timeOnlyInitializer)
-            ? TypeScriptTypeMapper.DefaultTimeOnlyInitializer
+            ? TypeScriptTypeDefaults.DefaultTimeOnlyInitializer
             : timeOnlyInitializer.Trim();
         PlainTimeInitializerGeneration = TimeOnlyInitializerGeneration;
         return this;
@@ -201,12 +201,12 @@ public class Settings
         if (library == DateLibrary.Legacy)
         {
             DateLibraryImportsGeneration = string.Empty;
-            UseDateType(dateType: TypeScriptTypeMapper.DefaultDateType);
-            UseDateInitializer(dateInitializer: TypeScriptTypeMapper.DefaultDateInitializer);
-            UseDateOnlyType(dateOnlyType: TypeScriptTypeMapper.DefaultDateOnlyType);
-            UseDateOnlyInitializer(dateOnlyInitializer: TypeScriptTypeMapper.DefaultDateOnlyInitializer);
-            UseTimeOnlyType(timeOnlyType: TypeScriptTypeMapper.DefaultTimeOnlyType);
-            UseTimeOnlyInitializer(timeOnlyInitializer: TypeScriptTypeMapper.DefaultTimeOnlyInitializer);
+            UseDateType(dateType: TypeScriptTypeDefaults.DefaultDateType);
+            UseDateInitializer(dateInitializer: TypeScriptTypeDefaults.DefaultDateInitializer);
+            UseDateOnlyType(dateOnlyType: TypeScriptTypeDefaults.DefaultDateOnlyType);
+            UseDateOnlyInitializer(dateOnlyInitializer: TypeScriptTypeDefaults.DefaultDateOnlyInitializer);
+            UseTimeOnlyType(timeOnlyType: TypeScriptTypeDefaults.DefaultTimeOnlyType);
+            UseTimeOnlyInitializer(timeOnlyInitializer: TypeScriptTypeDefaults.DefaultTimeOnlyInitializer);
             DurationTypeGeneration = "string";
             DurationInitializerGeneration = "\"00:00:00\"";
             PeriodTypeGeneration = "string";
@@ -226,7 +226,7 @@ public class Settings
     public virtual Settings UseGuidType(string guidType)
     {
         GuidTypeGeneration = string.IsNullOrWhiteSpace(value: guidType)
-            ? TypeScriptTypeMapper.DefaultGuidType
+            ? TypeScriptTypeDefaults.DefaultGuidType
             : guidType.Trim();
         return this;
     }
@@ -235,14 +235,14 @@ public class Settings
     {
         GuidInitializerGeneration = ScalarInitializer.Normalize(
             initializer: guidInitializer,
-            defaultInitializer: TypeScriptTypeMapper.DefaultGuidInitializer);
+            defaultInitializer: TypeScriptTypeDefaults.DefaultGuidInitializer);
         return this;
     }
 
     public virtual Settings UseDecimalType(string decimalType)
     {
         DecimalTypeGeneration = string.IsNullOrWhiteSpace(value: decimalType)
-            ? TypeScriptTypeMapper.DefaultDecimalType
+            ? TypeScriptTypeDefaults.DefaultDecimalType
             : decimalType.Trim();
         return this;
     }
@@ -251,7 +251,7 @@ public class Settings
     {
         DecimalInitializerGeneration = ScalarInitializer.Normalize(
             initializer: decimalInitializer,
-            defaultInitializer: TypeScriptTypeMapper.DefaultDecimalInitializer);
+            defaultInitializer: TypeScriptTypeDefaults.DefaultDecimalInitializer);
         return this;
     }
 

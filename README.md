@@ -196,6 +196,8 @@ The classic VS extension offered basic completion inside `.tst` files. This vers
 | 🟣 **Visual Studio 2026 extension** | [`src/Typewriter.VisualStudio`](src/Typewriter.VisualStudio)     | SDK-style VSIX for AMD64 and ARM64: generate on save, Error List diagnostics, Output window logging   |
 | 🧠 **JetBrains Rider plugin**       | [`rider/`](rider)                                                | IntelliJ frontend plugin: `.tst` highlighting, Tools menu actions, settings, save-time CLI generation |
 | 📐 **Abstractions**                 | [`src/Typewriter.Abstractions`](src/Typewriter.Abstractions)     | Shared contracts: configuration, diagnostics, metadata, generation results                            |
+| 🧩 **CodeModel (`AdaskoTheBeAsT.Typewriter.CodeModel`)** | [`src/Typewriter.CodeModel`](src/Typewriter.CodeModel) | `netstandard2.0` NuGet package with `Typewriter.CodeModel`, `Settings`, and template extension methods for helper IntelliSense |
+| 🏷️ **Annotations (`AdaskoTheBeAsT.Typewriter.Annotations`)** | [`src/Typewriter.Annotations`](src/Typewriter.Annotations) | `netstandard2.0` NuGet package with source-level attributes (`[GenerateFrontendType]`, `[FrontendRuntimeType]`, etc.) |
 
 ---
 
@@ -1077,6 +1079,37 @@ ${
 
 NuGet references are restored automatically into the normal NuGet package cache. If you use private feeds, place a `NuGet.config` near the template or workspace; Typewriter searches upward from the template directory.
 
+#### Getting IDE IntelliSense in `#load` and `#r` helpers with `AdaskoTheBeAsT.Typewriter.CodeModel`
+
+When authoring external `.cs` helper files for `#load` or compiled helper class libraries for `#r`, install the [`AdaskoTheBeAsT.Typewriter.CodeModel`](src/Typewriter.CodeModel/README.md) (`netstandard2.0`) NuGet package to get full IDE IntelliSense and XML documentation for `Typewriter.CodeModel` (`File`, `Class`, `Record`, `Struct`, `Interface`, `Enum`, `Property`, `Method`, `Type`, etc.), `Typewriter.Configuration.Settings`, `Typewriter.Extensions.*`, and `Typewriter.VisualStudio.ILog`.
+
+Follow these three rules to avoid C# compiler or runtime conflicts:
+
+1. **Reference the package as compile-only (`PrivateAssets="all"` and `ExcludeAssets="runtime"`):**
+
+   ```xml
+   <ItemGroup>
+     <PackageReference Include="AdaskoTheBeAsT.Typewriter.CodeModel" Version="4.15.0" PrivateAssets="all" ExcludeAssets="runtime" />
+   </ItemGroup>
+   ```
+
+   This gives your IDE and compiler the `Typewriter.CodeModel` types at design/compile time without copying `Typewriter.CodeModel.dll` into your application's runtime `bin/` output or flowing the dependency transitively to other projects.
+
+2. **Prevent standard C# project build errors on `#load` files:**
+   - **Static class in `#load` or compiled `#r` library:** Wrap your helper logic inside a `static class` (for example `static class NameHelpers { public static string ContractName(Class c) => ...; }`) so it is valid C# inside a `.csproj`, and call it from a thin one-line wrapper method in your `.tst` template (`string ContractName(Class c) => NameHelpers.ContractName(c);`).
+   - **Bare methods in `#load` files:** Because `#load` splices bare methods directly into Typewriter's generated `TypewriterTemplateHost` class, a standard `.csproj` build will reject bare methods with `CS0116` / `CS8803`. If your `#load` `.cs` files contain bare methods, exclude them from your application's `Compile` items so `dotnet build` ignores them:
+
+     ```xml
+     <ItemGroup>
+       <PackageReference Include="AdaskoTheBeAsT.Typewriter.CodeModel" Version="4.15.0" PrivateAssets="all" ExcludeAssets="runtime" />
+       <Compile Remove="templates/**/*.cs" />
+       <None Include="templates/**/*.cs" />
+     </ItemGroup>
+     ```
+
+3. **Do not `#r` `AdaskoTheBeAsT.Typewriter.CodeModel` inside `.tst` templates:**
+   Never add `#r "nuget: AdaskoTheBeAsT.Typewriter.CodeModel"` or `#r "Typewriter.CodeModel.dll"` in `.tst` files. The Typewriter CLI and Language Server automatically provide the host's `Typewriter.CodeModel` assembly and default `Typewriter.*` namespace imports when compiling templates.
+
 ### Compiled C# helpers
 
 ```csharp
@@ -1422,6 +1455,8 @@ when intentionally updating recipes and snapshots.
 
 ```text
 src/
+├── Typewriter.CodeModel/       # 🧩 Template CodeModel contracts, Settings, and extensions (netstandard2.0)
+├── Typewriter.Annotations/     # 🏷️ Source-level attributes for frontend generation (netstandard2.0)
 ├── Typewriter.Abstractions/    # 📐 Contracts: configuration, diagnostics, metadata, results
 ├── Typewriter.Engine/          # ⚙️ Template parsing, rendering, compiled helpers, file writing
 ├── Typewriter.Roslyn/          # 🔬 C# metadata extraction (symbols, nullability, attributes, docs)
@@ -1485,9 +1520,11 @@ pwsh ./Build-VSCodeExtension.ps1 -OutputDirectory artifacts/packages
 ./rider/gradlew -p rider verifyPlugin
 ./rider/gradlew -p rider buildPlugin
 
-# Pack the dotnet tools
+# Pack the dotnet tools and NuGet libraries
 dotnet pack src/Typewriter.Cli/Typewriter.Cli.csproj --configuration Release --output artifacts/packages
 dotnet pack src/Typewriter.LanguageServer/Typewriter.LanguageServer.csproj --configuration Release --output artifacts/packages
+dotnet pack src/Typewriter.Annotations/Typewriter.Annotations.csproj --configuration Release --output artifacts/packages
+dotnet pack src/Typewriter.CodeModel/Typewriter.CodeModel.csproj --configuration Release --output artifacts/packages
 
 # Build the VSIX
 dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --configuration Release -m:1

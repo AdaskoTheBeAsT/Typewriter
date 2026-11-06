@@ -23,7 +23,7 @@ internal static class TypeScriptTemporalTypes
     public static string FormatTimeOnlyInitializer(
         string initializer,
         char stringLiteralCharacter) =>
-        initializer.Equals(value: TypeScriptTypeMapper.DefaultTimeOnlyInitializer, comparisonType: StringComparison.Ordinal)
+        initializer.Equals(value: TypeScriptTypeDefaults.DefaultTimeOnlyInitializer, comparisonType: StringComparison.Ordinal)
             ? $"{stringLiteralCharacter}00:00:00{stringLiteralCharacter}"
             : initializer;
 }

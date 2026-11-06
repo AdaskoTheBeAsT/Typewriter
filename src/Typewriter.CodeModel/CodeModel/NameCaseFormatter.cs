@@ -56,14 +56,14 @@ public static class NameCaseFormatter
             return false;
         }
 
-        var normalized = value.Replace(oldValue: "_", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
-            .Replace(oldValue: "-", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
-            .Replace(oldValue: ".", newValue: string.Empty, comparisonType: StringComparison.Ordinal);
-        foreach (var candidate in System.Enum.GetValues<NameCase>())
+        var normalized = value!.Replace(oldValue: "_", newValue: string.Empty)
+            .Replace(oldValue: "-", newValue: string.Empty)
+            .Replace(oldValue: ".", newValue: string.Empty);
+        foreach (var candidate in (NameCase[])System.Enum.GetValues(enumType: typeof(NameCase)))
         {
             var candidateName = candidate.ToString();
             if (normalized.Equals(value: candidateName, comparisonType: StringComparison.OrdinalIgnoreCase)
-                || normalized.Equals(value: candidateName.Replace(oldValue: "Case", newValue: string.Empty, comparisonType: StringComparison.Ordinal), comparisonType: StringComparison.OrdinalIgnoreCase))
+                || normalized.Equals(value: candidateName.Replace(oldValue: "Case", newValue: string.Empty), comparisonType: StringComparison.OrdinalIgnoreCase))
             {
                 nameCase = candidate;
                 return true;
@@ -151,7 +151,7 @@ public static class NameCaseFormatter
         var pascal = string.Concat(values: words.Select(selector: ToPascalWord));
         return pascal.Length == 0
             ? pascal
-            : char.ToLowerInvariant(c: pascal[index: 0]) + pascal[1..];
+            : char.ToLowerInvariant(c: pascal[index: 0]) + pascal.Substring(startIndex: 1);
     }
 
     private static string ToPascalWord(string word)
@@ -164,7 +164,7 @@ public static class NameCaseFormatter
         var lower = word.ToLowerInvariant();
         return lower.Length == 1
             ? lower.ToUpperInvariant()
-            : char.ToUpperInvariant(c: lower[index: 0]) + lower[1..];
+            : char.ToUpperInvariant(c: lower[index: 0]) + lower.Substring(startIndex: 1);
     }
 
     private static string JoinWords(
@@ -187,7 +187,7 @@ public static class NameCaseFormatter
             }
 
             if (current.Length > 0
-                && StartsNewWord(previous: current[^1], current: character, next: index + 1 < value.Length ? value[index: index + 1] : null))
+                && StartsNewWord(previous: current[index: current.Length - 1], current: character, next: index + 1 < value.Length ? value[index: index + 1] : null))
             {
                 AddCurrentWord(words: words, current: current);
             }

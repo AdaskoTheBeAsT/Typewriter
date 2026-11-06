@@ -8,14 +8,17 @@ public static class HttpMethodExtensions
 
     public static string HttpMethod(this Method method)
     {
-        ArgumentNullException.ThrowIfNull(argument: method);
+        if (method is null)
+        {
+            throw new ArgumentNullException(paramName: nameof(method));
+        }
 
         var httpAttributes = method.Attributes
             .Where(predicate: attribute => attribute.Name.StartsWith(value: "Http", comparisonType: StringComparison.OrdinalIgnoreCase));
         var acceptAttribute = method.Attributes.FirstOrDefault(
             predicate: attribute => attribute.Name.Equals(value: "AcceptVerbs", comparisonType: StringComparison.OrdinalIgnoreCase));
         var verbs = httpAttributes
-            .Select(selector: attribute => attribute.Name[4..].ToLowerInvariant())
+            .Select(selector: attribute => attribute.Name.Substring(startIndex: 4).ToLowerInvariant())
             .Where(predicate: verb => verb.Length > 0)
             .ToList();
 
@@ -23,8 +26,9 @@ public static class HttpMethodExtensions
         {
             verbs.AddRange(
                 collection: acceptAttribute.Value
-                    .Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .Select(selector: verb => verb.Trim(trimChar: '"').ToLowerInvariant()));
+                    .Split(separator: [','], options: StringSplitOptions.RemoveEmptyEntries)
+                    .Select(selector: verb => verb.Trim().Trim(trimChars: '"').ToLowerInvariant())
+                    .Where(predicate: verb => verb.Length > 0));
         }
 
         if (verbs.Contains(value: "post", comparer: StringComparer.OrdinalIgnoreCase))

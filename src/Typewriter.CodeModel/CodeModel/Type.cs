@@ -228,9 +228,9 @@ public class Type : Item
     private static string NormalizeName(string? name)
     {
         return (name ?? string.Empty)
-            .Replace(oldValue: " | null", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
-            .Replace(oldValue: "(", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
-            .Replace(oldValue: ")", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
+            .Replace(oldValue: " | null", newValue: string.Empty)
+            .Replace(oldValue: "(", newValue: string.Empty)
+            .Replace(oldValue: ")", newValue: string.Empty)
             .TrimEnd('[', ']');
     }
 }

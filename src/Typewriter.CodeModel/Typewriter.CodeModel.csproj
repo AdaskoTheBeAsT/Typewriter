@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>true</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageId>AdaskoTheBeAsT.Typewriter.CodeModel</PackageId>
+    <Authors>AdaskoTheBeAsT</Authors>
+    <Description>CodeModel contracts, configuration, and helper extensions for Typewriter .tst templates and #load C# helper files.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/AdaskoTheBeAsT/Typewriter</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/AdaskoTheBeAsT/Typewriter</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>typewriter;typescript;code-generation;codemodel;tst</PackageTags>
+    <PackageIcon>icon.png</PackageIcon>
+    <NoWarn>$(NoWarn);SA0001</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="README.md" Pack="true" PackagePath="\" />
+    <None Include="icon.png" Pack="true" PackagePath="" />
+  </ItemGroup>
+</Project>

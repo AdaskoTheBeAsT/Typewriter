@@ -406,6 +406,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
             [
                 typeof(TemplateDocument).Assembly.Location,
                 typeof(ProjectMetadata).Assembly.Location,
+                typeof(Typewriter.CodeModel.File).Assembly.Location,
             ])
             .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
             .Distinct(comparer: StringComparer.OrdinalIgnoreCase)

@@ -8,7 +8,7 @@ internal static class ScalarInitializer
     {
         return string.IsNullOrWhiteSpace(value: initializer)
             ? defaultInitializer
-            : initializer.Trim();
+            : initializer!.Trim();
     }
 
     public static string ResolveGuid(
@@ -39,7 +39,7 @@ internal static class ScalarInitializer
             return decimalInitializer;
         }
 
-        return decimalType.Equals(value: TypeScriptTypeMapper.DefaultDecimalType, comparisonType: StringComparison.Ordinal)
+        return decimalType.Equals(value: TypeScriptTypeDefaults.DefaultDecimalType, comparisonType: StringComparison.Ordinal)
             ? "0"
             : $"new {decimalType}(0)";
     }
