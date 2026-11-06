@@ -1655,37 +1655,8 @@ public sealed class TemplateRenderer
         ref int index,
         char open,
         char close,
-        out string? block)
-    {
-        block = null;
-        var openIndex = index + 1;
-        if (openIndex >= template.Length || template[index: openIndex] != open)
-        {
-            return false;
-        }
-
-        var depth = 0;
-        for (var cursor = openIndex; cursor < template.Length; cursor++)
-        {
-            if (template[index: cursor] == open)
-            {
-                depth++;
-            }
-            else if (template[index: cursor] == close)
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    block = template.Substring(startIndex: openIndex + 1, length: cursor - openIndex - 1);
-                    index = cursor;
-                    return true;
-                }
-            }
-        }
-
-        index = template.Length - 1;
-        return true;
-    }
+        out string? block) =>
+        TemplateBlockReader.TryRead(template: template, index: ref index, open: open, close: close, block: out block);
 
     private static string GetName(object item)
     {
@@ -1905,7 +1876,7 @@ public sealed class TemplateRenderer
 
         _ = TryReadBlock(template: template, index: ref index, open: '[', close: ']', block: out var separator);
 
-        var items = ApplyFilter(items: collection.Cast<object>(), filter: filter, parentContext: context, state: state).ToArray();
+        var items = ApplyFilter(items: collection.Cast<object>(), filter: filter, identifier: identifier, parentContext: context, state: state).ToArray();
         if (context is ProjectMetadata
             && IsRootItemCollection(identifier: identifier))
         {
@@ -1977,6 +1948,7 @@ public sealed class TemplateRenderer
     private IEnumerable<object> ApplyFilter(
         IEnumerable<object> items,
         string? filter,
+        string identifier,
         object parentContext,
         RenderState state)
     {
@@ -1986,7 +1958,7 @@ public sealed class TemplateRenderer
         }
 
         var trimmed = filter.Trim();
-        if (TryApplyPredicateFilter(items: items, filter: trimmed, parentContext: parentContext, state: state, filtered: out var filtered))
+        if (TryApplyPredicateFilter(items: items, filter: trimmed, identifier: identifier, parentContext: parentContext, state: state, filtered: out var filtered))
         {
             return filtered;
         }
@@ -2023,11 +1995,19 @@ public sealed class TemplateRenderer
     private bool TryApplyPredicateFilter(
         IEnumerable<object> items,
         string filter,
+        string identifier,
         object parentContext,
         RenderState state,
         out IEnumerable<object> filtered)
     {
         filtered = [];
+        if (state.TryGetInlinePredicateMethod(collectionName: identifier, filter: filter, methodName: out var inlineMethodName)
+            && state.HasCompiledMethod(methodName: inlineMethodName))
+        {
+            filtered = items.Where(predicate: item => state.InvokeCompiledPredicate(methodName: inlineMethodName, context: item));
+            return true;
+        }
+
         if (TryParseLambda(value: filter, parameterName: out var parameterName, expression: out var expression))
         {
             filtered = items.Where(predicate: item => EvaluatePredicate(expression: expression, parameterName: parameterName, context: item, state: state));
@@ -3239,6 +3219,7 @@ public sealed class TemplateRenderer
         private readonly ProjectMetadataIndex _metadataIndex;
         private readonly IReadOnlyDictionary<string, MethodMetadata> _methodsByFullName;
         private readonly IReadOnlyDictionary<string, PropertyMetadata> _propertiesByFullName;
+        private readonly IReadOnlyDictionary<(string CollectionName, string Filter), string> _inlinePredicateMethods;
         private readonly Stack<object> _parentContexts = new();
         private readonly HashSet<string> _reportedCompiledInvocationErrors = [];
         private readonly HashSet<string> _reportedUnknownIdentifiers = [];
@@ -3266,7 +3247,10 @@ public sealed class TemplateRenderer
             _metadataIndex = index;
             _methodsByFullName = index.MethodsByFullName;
             _propertiesByFullName = index.PropertiesByFullName;
-            _compiledTemplateHelper = template.CodeBlocks.Count == 0
+            _inlinePredicateMethods = template.InlinePredicates
+                .GroupBy(keySelector: predicate => (predicate.CollectionName, predicate.Filter))
+                .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First().MethodName);
+            _compiledTemplateHelper = !template.HasCompiledCode
                 ? null
                 : compiledTemplateFactory?.CreateHelper(metadata: metadata, diagnostics: diagnostics, defaults: defaults, metadataIndex: index)
                   ?? TemplateRuntimeCompiler.Compile(template: template, metadata: metadata, diagnostics: diagnostics, defaults: defaults, metadataIndex: index);
@@ -3431,6 +3415,12 @@ public sealed class TemplateRenderer
         {
             return _compiledTemplateHelper?.HasMethod(methodName: methodName) == true;
         }
+
+        public bool TryGetInlinePredicateMethod(
+            string collectionName,
+            string filter,
+            [NotNullWhen(returnValue: true)] out string? methodName) =>
+            _inlinePredicateMethods.TryGetValue(key: (collectionName, filter), value: out methodName);
 
         public bool InvokeCompiledPredicate(
             string methodName,

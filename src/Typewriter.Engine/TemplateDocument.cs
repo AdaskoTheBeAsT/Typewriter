@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using Typewriter.Abstractions;
@@ -11,11 +12,24 @@ public sealed record TemplateDocument(
 {
     private const string ExpressionGroupName = "expression";
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(seconds: 1);
+    private static readonly ConditionalWeakTable<TemplateDocument, IReadOnlyList<TemplateInlinePredicate>> InlinePredicateCache = [];
 
     internal IReadOnlyDictionary<string, TemplateCompatibilityMethod> CompatibilityMethods { get; init; } =
         new Dictionary<string, TemplateCompatibilityMethod>(comparer: StringComparer.Ordinal);
 
     internal IReadOnlyList<TemplateCodeBlock> CodeBlocks { get; init; } = [];
+
+    internal bool HasCompiledCode => CodeBlocks.Count > 0 || InlinePredicates.Count > 0;
+
+    internal IReadOnlyList<TemplateInlinePredicate> InlinePredicates =>
+        InlinePredicateCache.GetValue(
+            key: this,
+            createValueCallback: template => TemplateInlinePredicateScanner.Find(
+                content: template.InlinePredicateSource is { } source && source.Content.Equals(value: template.Content, comparisonType: StringComparison.Ordinal)
+                    ? source.OriginalContent
+                    : template.Content));
+
+    private (string Content, string OriginalContent)? InlinePredicateSource { get; init; }
 
     public static TemplateDocument Parse(
         TemplateFile template,
@@ -34,13 +48,15 @@ public sealed record TemplateDocument(
             diagnostics: diagnostics,
             outputPath: ref outputPath);
 
+        var renderContent = content.TrimStart('\uFEFF', '\r', '\n');
         return new TemplateDocument(
             Path: template.Path,
-            Content: content.TrimStart('\uFEFF', '\r', '\n'),
+            Content: renderContent,
             OutputPath: outputPath)
         {
             CompatibilityMethods = compatibilityMethods,
             CodeBlocks = codeBlocks,
+            InlinePredicateSource = (renderContent, StripDirectiveLines(content: template.Content, preserveLines: true)),
         };
     }
 
@@ -73,7 +89,9 @@ public sealed record TemplateDocument(
         return line[prefix.Length..].Trim();
     }
 
-    private static string StripDirectiveLines(string content)
+    private static string StripDirectiveLines(
+        string content,
+        bool preserveLines = false)
     {
         using var reader = new StringReader(s: content);
         var result = new StringBuilder(capacity: content.Length);
@@ -85,6 +103,11 @@ public sealed record TemplateDocument(
                 || trimmed.StartsWith(value: "// typewriter-output:", comparisonType: StringComparison.OrdinalIgnoreCase)
                 || trimmed.StartsWith(value: "// typewriter-template:", comparisonType: StringComparison.OrdinalIgnoreCase))
             {
+                if (preserveLines)
+                {
+                    result.Append(value: '\n');
+                }
+
                 continue;
             }
 

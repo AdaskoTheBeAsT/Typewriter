@@ -104,6 +104,9 @@ internal sealed class TemplateCodeModelAdapterFactory
             EnumValueMetadata enumValue => CreateEnumValue(enumValue: enumValue, parent: null),
             AttributeMetadata attribute => CreateAttribute(attribute: attribute, parent: null),
             AttributeArgumentMetadata argument => CreateAttributeArgument(argument: argument),
+            DocCommentMetadata docComment => CreateDocComment(docComment: docComment, parent: null),
+            ParameterCommentMetadata parameterComment => CreateParameterComment(parameter: parameterComment, parent: null),
+            TypeParameterMetadata typeParameter => CreateTypeParameter(parameter: typeParameter, parent: null),
             TypeMappingContext typeContext => CreateType(type: typeContext.Reference, runtimeType: typeContext.RuntimeType),
             CodeClass codeClass when targetType.IsAssignableFrom(c: typeof(CodeType)) => codeClass.Type,
             CodeRecord codeRecord when targetType.IsAssignableFrom(c: typeof(CodeType)) => codeRecord.Type,
@@ -210,14 +213,29 @@ internal sealed class TemplateCodeModelAdapterFactory
                 Returns = docComment.Returns,
                 Parameters = new Typewriter.CodeModel.ParameterCommentCollection(
                     items: docComment.Parameters.Select(
-                        selector: parameter => new Typewriter.CodeModel.ParameterComment
-                        {
-                            Name = parameter.Name,
-                            Description = parameter.Description,
-                            Parent = parent,
-                        })),
+                        selector: parameter => CreateParameterComment(parameter: parameter, parent: parent))),
             };
     }
+
+    private static Typewriter.CodeModel.ParameterComment CreateParameterComment(
+        ParameterCommentMetadata parameter,
+        Typewriter.CodeModel.Item? parent) =>
+        new()
+        {
+            Name = parameter.Name,
+            Description = parameter.Description,
+            Parent = parent,
+        };
+
+    private static Typewriter.CodeModel.TypeParameter CreateTypeParameter(
+        TypeParameterMetadata parameter,
+        Typewriter.CodeModel.Item? parent) =>
+        new()
+        {
+            Name = parameter.Name,
+            FullName = parameter.FullName,
+            Parent = parent,
+        };
 
     private static Typewriter.CodeModel.TypeParameterCollection CreateTypeParameters(
         IEnumerable<TypeParameterMetadata> typeParameters,
@@ -225,12 +243,7 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         return new Typewriter.CodeModel.TypeParameterCollection(
             items: typeParameters.Select(
-                selector: parameter => new Typewriter.CodeModel.TypeParameter
-                {
-                    Name = parameter.Name,
-                    FullName = parameter.FullName,
-                    Parent = parent,
-                }));
+                selector: parameter => CreateTypeParameter(parameter: parameter, parent: parent)));
     }
 
     private static bool IsTaskLike(string fullName)

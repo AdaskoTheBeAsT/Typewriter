@@ -67,12 +67,13 @@ internal static class TemplateCodeBlockScanner
 
         if (openIndex < 0
             || openIndex >= content.Length
-            || content[index: openIndex] != '{')
+            || content[index: openIndex] is not ('{' or '('))
         {
             return -1;
         }
 
-        return ScanBalancedBraces(content: content, startIndex: openIndex + 1);
+        var open = content[index: openIndex];
+        return ScanBalancedBlock(content: content, startIndex: openIndex + 1, open: open, close: open == '{' ? '}' : ')');
     }
 
     private static int SkipLeadingTrivia(string block)
@@ -103,9 +104,11 @@ internal static class TemplateCodeBlockScanner
         return index;
     }
 
-    private static int ScanBalancedBraces(
+    private static int ScanBalancedBlock(
         string content,
-        int startIndex)
+        int startIndex,
+        char open = '{',
+        char close = '}')
     {
         var depth = 1;
         var index = startIndex;
@@ -117,11 +120,11 @@ internal static class TemplateCodeBlockScanner
             }
 
             var current = content[index: index];
-            if (current == '{')
+            if (current == open)
             {
                 depth++;
             }
-            else if (current == '}')
+            else if (current == close)
             {
                 depth--;
                 if (depth == 0)
@@ -373,7 +376,7 @@ internal static class TemplateCodeBlockScanner
             return false;
         }
 
-        var holeEnd = ScanBalancedBraces(content: content, startIndex: index + 1);
+        var holeEnd = ScanBalancedBlock(content: content, startIndex: index + 1);
         index = holeEnd < 0 ? content.Length : holeEnd + 1;
         return true;
     }
@@ -447,7 +450,7 @@ internal static class TemplateCodeBlockScanner
             return index + braces;
         }
 
-        var holeEnd = ScanBalancedBraces(content: content, startIndex: index + braces);
+        var holeEnd = ScanBalancedBlock(content: content, startIndex: index + braces);
         if (holeEnd < 0)
         {
             return content.Length;
