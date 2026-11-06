@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Text.Json;
@@ -51,10 +52,33 @@ internal sealed class TemplateReferenceResolver
             .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
             .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
             .Where(predicate: File.Exists)
-            .DistinctBy(keySelector: path => Path.GetFileNameWithoutExtension(path: path), comparer: StringComparer.OrdinalIgnoreCase)
+            .DistinctBy(keySelector: GetAssemblyIdentityKey, comparer: StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         return paths.Select(selector: path => MetadataReference.CreateFromFile(path: path)).ToArray();
+    }
+
+    private static string GetAssemblyIdentityKey(string path)
+    {
+        try
+        {
+            var assemblyName = AssemblyName.GetAssemblyName(assemblyFile: path).Name;
+            return !string.IsNullOrWhiteSpace(value: assemblyName)
+                ? $"assembly:{assemblyName}"
+                : $"path:{Path.GetFullPath(path: path)}";
+        }
+        catch (BadImageFormatException)
+        {
+            return $"path:{Path.GetFullPath(path: path)}";
+        }
+        catch (FileLoadException)
+        {
+            return $"path:{Path.GetFullPath(path: path)}";
+        }
+        catch (FileNotFoundException)
+        {
+            return $"path:{Path.GetFullPath(path: path)}";
+        }
     }
 
     private static IEnumerable<string> GetTrustedPlatformAssemblyPaths()
