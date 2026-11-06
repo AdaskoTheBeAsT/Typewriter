@@ -260,6 +260,86 @@ public sealed class TypewriterGeneratorWorkspaceTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GenerateAsyncPreservesDeclaringFileParentsAndTopLevelDelegates(bool singleFileMode)
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            var templatePath = Path.Combine(path1: directory, path2: "Models.tst");
+            await File.WriteAllTextAsync(path: projectPath, contents: "<Project />");
+            var first = CreateClassMetadata(name: "FooViewModel");
+            var sibling = CreateClassMetadata(name: "BarViewModel");
+            var unrelated = CreateClassMetadata(name: "ExternalViewModel");
+            var callback = new DelegateMetadata(
+                Name: "Callback",
+                FullName: "Sample.Callback",
+                Accessibility: MetadataAccessibility.Public,
+                ReturnType: CreateTypeReference(type: first),
+                IsGeneric: false,
+                Parameters: [],
+                Attributes: [],
+                ParentTypeFullName: string.Empty);
+            var metadataProvider = new CapturingMetadataProvider(
+                types: [first, sibling, unrelated],
+                sourceFiles:
+                [
+                    new SourceFileMetadata(Path: Path.Combine(path1: directory, path2: "FooViewModel.cs"), Types: [first, sibling]),
+                    new SourceFileMetadata(Path: Path.Combine(path1: directory, path2: "ExternalViewModel.cs"), Types: [unrelated]),
+                    new SourceFileMetadata(Path: Path.Combine(path1: directory, path2: "Callbacks.cs"), Types: []) { Delegates = [callback] },
+                ],
+                delegates: [callback]);
+            var template = $$"""
+                ${
+                    Template(Settings settings)
+                    {
+                        {{(singleFileMode ? "settings.SingleFileMode(\"all.ts\");" : string.Empty)}}
+                    }
+                    string DeclaringClasses(Class c)
+                    {
+                        var file = (File)c.Parent;
+                        return file.Name + ":" + string.Join(",", file.Classes.Select(fc => fc.Name));
+                    }
+                    string DeclaringDelegate(Delegate d) => ((File)d.Parent).Name + ":" + d.Name;
+                }
+                $Classes[$DeclaringClasses:$Parent[$Name];]
+                $Delegates[$DeclaringDelegate:$Parent[$Name];]
+                """;
+            var generator = new TypewriterGenerator(
+                templateDiscovery: new StaticTemplateDiscovery(templates: new TemplateFile(Path: templatePath, Content: template)),
+                metadataProvider: metadataProvider,
+                fileWriter: new PassthroughFileWriter());
+
+            var result = await generator.GenerateAsync(
+                request: new GenerationRequest(
+                    WorkspacePath: directory,
+                    ProjectPath: projectPath,
+                    TemplatePath: templatePath,
+                    Mode: GenerationMode.Generate,
+                    Configuration: TypewriterConfiguration.Default),
+                cancellationToken: CancellationToken.None);
+
+            result.Success.Should().BeTrue(because: string.Join(separator: Environment.NewLine, values: result.Diagnostics.Select(selector: diagnostic => diagnostic.Message)));
+            result.GeneratedFiles.Should().HaveCount(singleFileMode ? 1 : 3);
+            var content = string.Join(separator: '\n', values: result.GeneratedFiles.Select(selector: file => file.Content));
+            content.Should().Contain("FooViewModel:FooViewModel,BarViewModel:FooViewModel;");
+            content.Should().Contain("ExternalViewModel:ExternalViewModel:ExternalViewModel;");
+            content.Should().Contain("Callbacks:Callback:Callbacks;");
+            if (!singleFileMode)
+            {
+                result.GeneratedFiles.Single(predicate: file => file.Path.EndsWith(value: "Callbacks.ts", comparisonType: StringComparison.Ordinal))
+                    .Content.Trim().Should().EndWith("Callbacks:Callback:Callbacks;").And.NotContain("ViewModel");
+            }
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     [Fact]
     public async Task GenerateAsyncFansOutBySourceFileUsingSourceFilenameWhenNoOutputFilenameFactoryIsConfigured()
     {
@@ -1270,6 +1350,7 @@ public sealed class TypewriterGeneratorWorkspaceTests
         private readonly List<ProjectContext> _projects = [];
         private readonly IReadOnlyList<SourceFileMetadata> _sourceFiles;
         private readonly IReadOnlyList<TypeMetadata> _types;
+        private readonly IReadOnlyList<DelegateMetadata> _delegates;
 
         public CapturingMetadataProvider()
             : this(types: [])
@@ -1278,10 +1359,12 @@ public sealed class TypewriterGeneratorWorkspaceTests
 
         public CapturingMetadataProvider(
             IReadOnlyList<TypeMetadata> types,
-            IReadOnlyList<SourceFileMetadata>? sourceFiles = null)
+            IReadOnlyList<SourceFileMetadata>? sourceFiles = null,
+            IReadOnlyList<DelegateMetadata>? delegates = null)
         {
             _types = types;
             _sourceFiles = sourceFiles ?? [];
+            _delegates = delegates ?? [];
         }
 
         public ProjectContext? Project { get; private set; }
@@ -1294,7 +1377,11 @@ public sealed class TypewriterGeneratorWorkspaceTests
         {
             Project = project;
             _projects.Add(item: project);
-            return Task.FromResult(result: new ProjectMetadata(ProjectPath: project.ProjectPath, SourceFiles: _sourceFiles, Types: _types, Diagnostics: []));
+            return Task.FromResult(
+                result: new ProjectMetadata(ProjectPath: project.ProjectPath, SourceFiles: _sourceFiles, Types: _types, Diagnostics: [])
+                {
+                    Delegates = _delegates,
+                });
         }
     }
 

@@ -7,6 +7,9 @@ namespace Typewriter.CodeModel;
 /// </summary>
 public class Item
 {
+    private Item? _parent;
+    private Lazy<Item?>? _parentFactory;
+
     /// <summary>
     /// Gets the name of the assembly that declares this item, for example <c>MyApp.Contracts</c>.
     /// </summary>
@@ -33,10 +36,14 @@ public class Item
 #pragma warning restore SA1300 // Element should begin with upper-case letter
 
     /// <summary>
-    /// Gets the parent code model item, for example the <see cref="Class"/> that declares
-    /// the current <see cref="Property"/>. Template shorthand: <c>$Parent</c>.
+    /// Gets the declaring <see cref="File"/> for a top-level type, or the containing
+    /// code model item for a nested type or member. Template shorthand: <c>$Parent</c>.
     /// </summary>
-    public virtual Item? Parent { get; init; }
+    public virtual Item? Parent
+    {
+        get => _parentFactory is null ? _parent : _parentFactory.Value;
+        init => _parent = value;
+    }
 
     /// <summary>
     /// Formats <see cref="Name"/> with the requested casing convention
@@ -48,4 +55,13 @@ public class Item
 
     /// <inheritdoc/>
     public override string ToString() => Name;
+
+    internal void SetParent(Item? parent)
+    {
+        _parent = parent;
+        _parentFactory = null;
+    }
+
+    internal void SetParentFactory(Func<Item?> parentFactory) =>
+        _parentFactory = new Lazy<Item?>(valueFactory: parentFactory);
 }

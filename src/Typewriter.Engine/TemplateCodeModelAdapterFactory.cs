@@ -21,12 +21,15 @@ namespace Typewriter.Engine;
 
 internal sealed class TemplateCodeModelAdapterFactory
 {
+    private readonly ProjectMetadata _metadata;
     private readonly Typewriter.Configuration.Settings _settings;
     private readonly string _assemblyName;
     private readonly ProjectMetadataIndex _metadataIndex;
     private readonly IReadOnlyDictionary<string, MethodMetadata> _methodsByFullName;
     private readonly IReadOnlyDictionary<string, PropertyMetadata> _propertiesByFullName;
-    private readonly IReadOnlyDictionary<string, TypeMetadata> _typesByFullName;
+    private readonly IReadOnlyDictionary<string, SourceFileMetadata> _sourceFilesByPath;
+    private readonly Dictionary<string, CodeFile> _filesBySourcePath = new(comparer: StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<Typewriter.CodeModel.Item, object> _metadataByItem = new(comparer: ReferenceEqualityComparer.Instance);
     private readonly TypeScriptTypeMapper _typeMapper = new();
     private CodeFile? _cachedFile;
     private ProjectMetadata? _cachedFileProject;
@@ -55,13 +58,17 @@ internal sealed class TemplateCodeModelAdapterFactory
         Typewriter.Configuration.Settings settings,
         ProjectMetadataIndex? metadataIndex)
     {
+        _metadata = metadata;
         _settings = settings;
         _assemblyName = Path.GetFileNameWithoutExtension(path: metadata.ProjectPath);
         var index = metadataIndex ?? ProjectMetadataIndex.Create(metadata: metadata);
         _metadataIndex = index;
-        _typesByFullName = index.TypesByFullName;
         _methodsByFullName = index.MethodsByFullName;
         _propertiesByFullName = index.PropertiesByFullName;
+        _sourceFilesByPath = index.Metadata.SourceFiles
+            .Concat(second: metadata.SourceFiles)
+            .GroupBy(keySelector: sourceFile => sourceFile.Path, comparer: StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.Last(), comparer: StringComparer.OrdinalIgnoreCase);
     }
 
     public bool TryAdapt(
@@ -116,10 +123,52 @@ internal sealed class TemplateCodeModelAdapterFactory
             return _cachedFile;
         }
 
-        _cachedFile = (CodeFile)AdaptProject(project: project, targetType: typeof(CodeFile))!;
+        var sourcePaths = GetProjectSourcePaths(project: project);
+        var filePath = sourcePaths.Length == 1 ? sourcePaths[0] : project.ProjectPath;
+        var isSourceFile = sourcePaths.Length <= 1;
+        if (!isSourceFile || !_filesBySourcePath.TryGetValue(key: filePath, value: out var file))
+        {
+            file = CreateFileModel(project: project, filePath: filePath, attachParents: isSourceFile);
+        }
+
+        _cachedFile = file;
         _cachedFileProject = project;
-        return _cachedFile;
+        if (isSourceFile)
+        {
+            _filesBySourcePath[filePath] = file;
+        }
+
+        return file;
     }
+
+    public CodeFile ResolveParentFile(TypeMetadata type)
+    {
+        var filePath = GetPrimaryFilePath(type: type);
+        var sourceFile = FindSourceFile(
+            filePath: filePath,
+            containsDeclaration: source => source.Types.Any(
+                predicate: candidate => candidate.FullName.Equals(value: type.FullName, comparisonType: StringComparison.Ordinal)
+                    && candidate.Kind == type.Kind
+                    && candidate.TypeParameters.Count == type.TypeParameters.Count
+                    && candidate.AssemblyName.Equals(value: type.AssemblyName, comparisonType: StringComparison.Ordinal)));
+        return ResolveParentFile(sourceFile: sourceFile, filePath: filePath);
+    }
+
+    public CodeFile ResolveParentFile(DelegateMetadata @delegate)
+    {
+        var filePath = @delegate.Location?.Path;
+        var sourceFile = FindSourceFile(
+            filePath: filePath,
+            containsDeclaration: source => source.Delegates.Any(
+                predicate: candidate => candidate.FullName.Equals(value: @delegate.FullName, comparisonType: StringComparison.Ordinal)
+                    && candidate.AssemblyName.Equals(value: @delegate.AssemblyName, comparisonType: StringComparison.Ordinal)));
+        return ResolveParentFile(sourceFile: sourceFile, filePath: filePath);
+    }
+
+    public object GetFilterContext(object item) =>
+        item is Typewriter.CodeModel.Item codeItem && _metadataByItem.TryGetValue(key: codeItem, value: out var metadata)
+            ? metadata
+            : item;
 
     public Typewriter.CodeModel.InterfaceCollection CreateInterfaces(
         TypeMetadata type,
@@ -343,24 +392,155 @@ internal sealed class TemplateCodeModelAdapterFactory
         };
     }
 
-    private object? AdaptProject(
-        ProjectMetadata project,
-        System.Type targetType)
+    private static string GetPrimaryFilePath(TypeMetadata type) =>
+        !string.IsNullOrWhiteSpace(value: type.Location?.Path)
+            ? type.Location.Path
+            : type.FileLocations.FirstOrDefault(predicate: path => !string.IsNullOrWhiteSpace(value: path)) ?? string.Empty;
+
+    private static string[] GetProjectSourcePaths(ProjectMetadata project) =>
+        (project.SourceFiles.Count > 0
+            ? project.SourceFiles.Select(selector: sourceFile => sourceFile.Path)
+            : project.Types.Select(selector: GetPrimaryFilePath)
+                .Concat(second: project.Delegates.Select(selector: @delegate => @delegate.Location?.Path ?? string.Empty)))
+        .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
+        .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    private static void SetChildParents(
+        Typewriter.CodeModel.Item parent,
+        IEnumerable<Typewriter.CodeModel.Item> children)
     {
-        if (!targetType.IsAssignableFrom(c: typeof(CodeFile)))
+        foreach (var child in children)
         {
-            return null;
+            child.SetParent(parent: parent);
+        }
+    }
+
+    private static T AttachChildren<T>(
+        T item,
+        Typewriter.CodeModel.IAttributeCollection attributes,
+        Typewriter.CodeModel.DocComment? docComment,
+        IReadOnlyList<IEnumerable<Typewriter.CodeModel.Item>>? childCollections = null)
+        where T : Typewriter.CodeModel.Item
+    {
+        SetChildParents(parent: item, children: attributes);
+        foreach (var attribute in attributes)
+        {
+            SetChildParents(parent: attribute, children: attribute.Arguments);
         }
 
-        var filePath = project.SourceFiles.Count == 1
-            ? project.SourceFiles[index: 0].Path
-            : project.ProjectPath;
+        if (docComment is not null)
+        {
+            docComment.SetParent(parent: item);
+            SetChildParents(parent: docComment, children: docComment.Parameters);
+        }
 
+        foreach (var children in childCollections ?? [])
+        {
+            SetChildParents(parent: item, children: children);
+        }
+
+        return item;
+    }
+
+    private SourceFileMetadata? FindSourceFile(
+        string? filePath,
+        Func<SourceFileMetadata, bool> containsDeclaration)
+    {
+        ArgumentNullException.ThrowIfNull(argument: containsDeclaration);
+
+        // A partial declaration belongs to the file currently being rendered,
+        // even when Roslyn reports another part as its primary location.
+        if (_metadata.SourceFiles.Count == 1 && containsDeclaration.Invoke(arg: _metadata.SourceFiles[index: 0]))
+        {
+            return _metadata.SourceFiles[index: 0];
+        }
+
+        return filePath is not null && _sourceFilesByPath.TryGetValue(key: filePath, value: out var sourceFile)
+            ? sourceFile
+            : _sourceFilesByPath.Values.FirstOrDefault(predicate: containsDeclaration);
+    }
+
+    private CodeFile ResolveParentFile(
+        SourceFileMetadata? sourceFile,
+        string? filePath)
+    {
+        if (sourceFile is not null)
+        {
+            filePath = sourceFile.Path;
+            if (_metadata.SourceFiles.Count == 1
+                && _metadata.SourceFiles[index: 0].Path.Equals(value: filePath, comparisonType: StringComparison.OrdinalIgnoreCase))
+            {
+                return CreateFile(project: _metadata);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(value: filePath))
+        {
+            return CreateFile(project: _metadata);
+        }
+
+        if (_filesBySourcePath.TryGetValue(key: filePath, value: out var cachedFile))
+        {
+            return cachedFile;
+        }
+
+        var sourcePaths = GetProjectSourcePaths(project: _metadata);
+        if (sourcePaths.Length == 1 && sourcePaths[0].Equals(value: filePath, comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            return CreateFile(project: _metadata);
+        }
+
+        sourceFile ??= new SourceFileMetadata(
+            Path: filePath,
+            Types: _metadataIndex.Metadata.Types
+                .Where(predicate: type => GetPrimaryFilePath(type: type).Equals(value: filePath, comparisonType: StringComparison.OrdinalIgnoreCase)
+                    || type.FileLocations.Contains(value: filePath, comparer: StringComparer.OrdinalIgnoreCase))
+                .ToArray())
+        {
+            Delegates = _metadataIndex.Metadata.Delegates
+                .Where(predicate: @delegate => string.Equals(a: @delegate.Location?.Path, b: filePath, comparisonType: StringComparison.OrdinalIgnoreCase))
+                .ToArray(),
+        };
+        var project = _metadata with
+        {
+            SourceFiles = [sourceFile],
+            Types = sourceFile.Types,
+            Delegates = sourceFile.Delegates,
+        };
+        var file = CreateFileModel(project: project, filePath: filePath, attachParents: true);
+        _filesBySourcePath[filePath] = file;
+        return file;
+    }
+
+    private Typewriter.CodeModel.Item? ResolveTypeParent(TypeMetadata type) =>
+        string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)
+            ? ResolveParentFile(type: type)
+            : CreateParentTypeItem(fullName: type.ContainingTypeFullName, item: type);
+
+    private void SetTypeParent(
+        Typewriter.CodeModel.Item item,
+        TypeMetadata type,
+        CodeType? declarationType = null)
+    {
+        _metadataByItem[item] = type;
+
+        // Parent navigation is lazy so adapting a declaration does not recursively
+        // construct the file that contains that same declaration.
+        item.SetParentFactory(parentFactory: () => ResolveTypeParent(type: type));
+        declarationType?.SetParentFactory(parentFactory: () => item.Parent);
+    }
+
+    private CodeFile CreateFileModel(
+        ProjectMetadata project,
+        string filePath,
+        bool attachParents)
+    {
         var rootTypes = project.Types
             .Where(predicate: static type => string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName))
             .ToArray();
 
-        return new CodeFile
+        var file = new CodeFile
         {
             Name = Path.GetFileNameWithoutExtension(path: filePath),
             FullName = filePath,
@@ -377,7 +557,10 @@ internal sealed class TemplateCodeModelAdapterFactory
                 items: rootTypes
                     .Where(predicate: type => type.Kind == TypeMetadataKind.Struct)
                     .Select(selector: CreateStruct)),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: project.Delegates.Select(selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
+            Delegates = new Typewriter.CodeModel.DelegateCollection(
+                items: project.Delegates
+                    .Where(predicate: @delegate => string.IsNullOrWhiteSpace(value: @delegate.ParentTypeFullName))
+                    .Select(selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
             Interfaces = new Typewriter.CodeModel.InterfaceCollection(
                 items: rootTypes
                     .Where(predicate: type => type.Kind == TypeMetadataKind.Interface)
@@ -388,6 +571,18 @@ internal sealed class TemplateCodeModelAdapterFactory
                     .Select(selector: CreateEnum)),
             Types = new Typewriter.CodeModel.TypeCollection(items: rootTypes.Select(selector: CreateType)),
         };
+        if (attachParents)
+        {
+            SetChildParents(parent: file, children: file.Classes);
+            SetChildParents(parent: file, children: file.Records);
+            SetChildParents(parent: file, children: file.Structs);
+            SetChildParents(parent: file, children: file.Delegates);
+            SetChildParents(parent: file, children: file.Interfaces);
+            SetChildParents(parent: file, children: file.Enums);
+            SetChildParents(parent: file, children: file.Types);
+        }
+
+        return file;
     }
 
     private object? AdaptType(
@@ -434,7 +629,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var classType = reference is null ? CreateType(type: type) : CreateType(type: reference);
-        return new CodeClass
+        var item = new CodeClass
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
@@ -465,6 +660,16 @@ internal sealed class TemplateCodeModelAdapterFactory
             TypeArguments = classType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
+        SetTypeParent(item: item, type: type, declarationType: classType);
+        return AttachChildren(
+            item: item,
+            attributes: item.Attributes,
+            docComment: item.DocComment,
+            childCollections: [
+                item.Constants, item.Delegates, item.Events, item.Fields, item.Methods,
+                item.NestedClasses, item.NestedEnums, item.NestedInterfaces, item.NestedRecords, item.NestedStructs,
+                item.Properties, item.StaticReadOnlyFields, item.TypeParameters,
+            ]);
     }
 
     private CodeRecord CreateRecord(TypeMetadata type)
@@ -477,7 +682,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var recordType = reference is null ? CreateType(type: type) : CreateType(type: reference);
-        return new CodeRecord
+        var item = new CodeRecord
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
@@ -507,6 +712,16 @@ internal sealed class TemplateCodeModelAdapterFactory
             TypeArguments = recordType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
+        SetTypeParent(item: item, type: type, declarationType: recordType);
+        return AttachChildren(
+            item: item,
+            attributes: item.Attributes,
+            docComment: item.DocComment,
+            childCollections: [
+                item.Constants, item.Delegates, item.Events, item.Fields, item.Methods,
+                item.NestedClasses, item.NestedEnums, item.NestedInterfaces, item.NestedRecords, item.NestedStructs,
+                item.Properties, item.StaticReadOnlyFields, item.TypeParameters,
+            ]);
     }
 
     private CodeInterface CreateInterface(TypeMetadata type)
@@ -519,7 +734,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var interfaceType = reference is null ? CreateType(type: type) : CreateType(type: reference);
-        return new CodeInterface
+        var item = new CodeInterface
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
@@ -538,6 +753,12 @@ internal sealed class TemplateCodeModelAdapterFactory
             TypeArguments = interfaceType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
+        SetTypeParent(item: item, type: type, declarationType: interfaceType);
+        return AttachChildren(
+            item: item,
+            attributes: item.Attributes,
+            docComment: item.DocComment,
+            childCollections: [item.Events, item.Methods, item.NestedStructs, item.Properties, item.TypeParameters]);
     }
 
     private CodeStruct CreateStruct(TypeMetadata type)
@@ -550,7 +771,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var structType = reference is null ? CreateType(type: type) : CreateType(type: reference);
-        return new CodeStruct
+        var item = new CodeStruct
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
@@ -580,6 +801,16 @@ internal sealed class TemplateCodeModelAdapterFactory
             TypeArguments = structType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
+        SetTypeParent(item: item, type: type, declarationType: structType);
+        return AttachChildren(
+            item: item,
+            attributes: item.Attributes,
+            docComment: item.DocComment,
+            childCollections: [
+                item.Constants, item.Delegates, item.Events, item.Fields, item.Methods,
+                item.NestedClasses, item.NestedEnums, item.NestedInterfaces, item.NestedRecords, item.NestedStructs,
+                item.Properties, item.StaticReadOnlyFields, item.TypeParameters,
+            ]);
     }
 
     private CodeEnum CreateEnum(TypeMetadata type)
@@ -597,12 +828,17 @@ internal sealed class TemplateCodeModelAdapterFactory
             Type = CreateType(type: type),
             Values = new Typewriter.CodeModel.EnumValueCollection(items: type.EnumValues.Select(selector: value => CreateEnumValue(enumValue: value, parent: null))),
         };
-        return enumModel;
+        SetTypeParent(item: enumModel, type: type, declarationType: enumModel.Type);
+        return AttachChildren(
+            item: enumModel,
+            attributes: enumModel.Attributes,
+            docComment: enumModel.DocComment,
+            childCollections: [enumModel.Values]);
     }
 
     private CodeType CreateType(TypeMetadata type)
     {
-        return new CodeType
+        var item = new CodeType
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
@@ -636,6 +872,16 @@ internal sealed class TemplateCodeModelAdapterFactory
             DefaultValue = GetDefaultValue(type: type),
             Settings = _settings,
         };
+        SetTypeParent(item: item, type: type);
+        return AttachChildren(
+            item: item,
+            attributes: item.Attributes,
+            docComment: item.DocComment,
+            childCollections: [
+                item.Constants, item.Delegates, item.Fields, item.Methods,
+                item.NestedClasses, item.NestedEnums, item.NestedInterfaces, item.NestedRecords, item.NestedStructs,
+                item.Properties, item.StaticReadOnlyFields, item.TypeParameters,
+            ]);
     }
 
     private CodeType CreateType(
@@ -654,7 +900,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             guidType: _settings.GuidTypeGeneration,
             runtimeType: runtimeType);
         var isStruct = typeMetadata?.Kind == TypeMetadataKind.Struct;
-        return new MappedCodeType(
+        var item = new MappedCodeType(
             interfacesFactory: () => CreateInterfaces(reference: type, metadata: typeMetadata))
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
@@ -688,6 +934,16 @@ internal sealed class TemplateCodeModelAdapterFactory
             UseResolvedDefault = _settings.DateLibraryGeneration != Typewriter.Configuration.DateLibrary.Legacy
                                  || runtimeType != FrontendRuntimeTypeKind.Auto,
         };
+        if (typeMetadata is not null)
+        {
+            SetTypeParent(item: item, type: typeMetadata);
+        }
+
+        return AttachChildren(
+            item: item,
+            attributes: item.Attributes,
+            docComment: item.DocComment,
+            childCollections: [item.TupleElements]);
     }
 
     private bool TryResolveType(
@@ -709,12 +965,11 @@ internal sealed class TemplateCodeModelAdapterFactory
         Typewriter.CodeModel.Item? parent,
         bool includeParameters)
     {
-        return new Typewriter.CodeModel.Property
+        var item = new Typewriter.CodeModel.Property
         {
             AssemblyName = ResolveAssemblyName(assemblyName: property.AssemblyName),
             Name = property.Name,
             FullName = property.FullName,
-            Parent = parent ?? CreateParentTypeItem(fullName: property.ParentTypeFullName),
             Attributes = CreateAttributes(attributes: property.Attributes, parent: null),
             DocComment = CreateDocComment(docComment: property.DocComment, parent: null),
             HasGetter = property.HasGetter,
@@ -729,6 +984,13 @@ internal sealed class TemplateCodeModelAdapterFactory
             Type = CreateType(type: property.Type, runtimeType: FrontendRuntimeTypeResolver.Resolve(attributes: property.Attributes)),
             Value = property.Value ?? string.Empty,
         };
+        _metadataByItem[item] = property;
+        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: property.ParentTypeFullName, item: property));
+        return AttachChildren(
+            item: item,
+            attributes: item.Attributes,
+            docComment: item.DocComment,
+            childCollections: [item.Parameters]);
     }
 
     private CodeMethod CreateMethod(
@@ -743,12 +1005,11 @@ internal sealed class TemplateCodeModelAdapterFactory
         Typewriter.CodeModel.Item? parent,
         bool includeParameters)
     {
-        return new CodeMethod
+        var item = new CodeMethod
         {
             AssemblyName = ResolveAssemblyName(assemblyName: method.AssemblyName),
             Name = method.Name,
             FullName = method.FullName,
-            Parent = parent ?? CreateParentTypeItem(fullName: method.ParentTypeFullName),
             Attributes = CreateAttributes(attributes: method.Attributes, parent: null),
             DocComment = CreateDocComment(docComment: method.DocComment, parent: null),
             IsAbstract = method.IsAbstract,
@@ -759,104 +1020,121 @@ internal sealed class TemplateCodeModelAdapterFactory
             Type = CreateType(type: method.ReturnType),
             TypeParameters = CreateTypeParameters(typeParameters: method.TypeParameters, parent: null),
         };
+        _metadataByItem[item] = method;
+        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: method.ParentTypeFullName, item: method));
+        return AttachChildren(
+            item: item,
+            attributes: item.Attributes,
+            docComment: item.DocComment,
+            childCollections: [item.Parameters, item.TypeParameters]);
     }
 
     private CodeParameter CreateParameter(
         ParameterMetadata parameter,
         Typewriter.CodeModel.Item? parent)
     {
-        return new CodeParameter
+        var item = new CodeParameter
         {
             AssemblyName = ResolveAssemblyName(assemblyName: parameter.AssemblyName),
             Name = parameter.Name,
             FullName = parameter.FullName,
-            Parent = parent
-                ?? (Typewriter.CodeModel.Item?)CreateParentMethod(fullName: parameter.ParentMethodFullName)
-                ?? CreateParentProperty(fullName: parameter.ParentPropertyFullName),
             Attributes = CreateAttributes(attributes: parameter.Attributes, parent: null),
             DefaultValue = parameter.DefaultValue ?? string.Empty,
             HasDefaultValue = parameter.HasDefaultValue,
             Type = CreateType(type: parameter.Type, runtimeType: FrontendRuntimeTypeResolver.Resolve(attributes: parameter.Attributes)),
         };
+        _metadataByItem[item] = parameter;
+        item.SetParentFactory(
+            parentFactory: () => parent
+                ?? (Typewriter.CodeModel.Item?)CreateParentMethod(fullName: parameter.ParentMethodFullName)
+                ?? CreateParentProperty(fullName: parameter.ParentPropertyFullName));
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: null);
     }
 
     private CodeConstant CreateConstant(
         ConstantMetadata constant,
         Typewriter.CodeModel.Item? parent)
     {
-        return new CodeConstant
+        var item = new CodeConstant
         {
             AssemblyName = ResolveAssemblyName(assemblyName: constant.AssemblyName),
             Name = constant.Name,
             FullName = constant.FullName,
-            Parent = parent ?? CreateParentTypeItem(fullName: constant.ParentTypeFullName),
             Attributes = CreateAttributes(attributes: constant.Attributes, parent: null),
             DocComment = CreateDocComment(docComment: constant.DocComment, parent: null),
             Type = CreateType(type: constant.Type),
             Value = constant.Value ?? string.Empty,
         };
+        _metadataByItem[item] = constant;
+        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: constant.ParentTypeFullName, item: constant));
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment);
     }
 
     private CodeField CreateField(
         FieldMetadata field,
         Typewriter.CodeModel.Item? parent)
     {
-        return new CodeField
+        var item = new CodeField
         {
             AssemblyName = ResolveAssemblyName(assemblyName: field.AssemblyName),
             Name = field.Name,
             FullName = field.FullName,
-            Parent = parent ?? CreateParentTypeItem(fullName: field.ParentTypeFullName),
             Attributes = CreateAttributes(attributes: field.Attributes, parent: null),
             DocComment = CreateDocComment(docComment: field.DocComment, parent: null),
             Type = CreateType(type: field.Type, runtimeType: FrontendRuntimeTypeResolver.Resolve(attributes: field.Attributes)),
             Value = field.Value ?? string.Empty,
         };
+        _metadataByItem[item] = field;
+        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: field.ParentTypeFullName, item: field));
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment);
     }
 
     private CodeStaticReadOnlyField CreateStaticReadOnlyField(
         StaticReadOnlyFieldMetadata field,
         Typewriter.CodeModel.Item? parent)
     {
-        return new CodeStaticReadOnlyField
+        var item = new CodeStaticReadOnlyField
         {
             AssemblyName = ResolveAssemblyName(assemblyName: field.AssemblyName),
             Name = field.Name,
             FullName = field.FullName,
-            Parent = parent ?? CreateParentTypeItem(fullName: field.ParentTypeFullName),
             Attributes = CreateAttributes(attributes: field.Attributes, parent: null),
             DocComment = CreateDocComment(docComment: field.DocComment, parent: null),
             Type = CreateType(type: field.Type),
             Value = field.Value ?? string.Empty,
         };
+        _metadataByItem[item] = field;
+        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: field.ParentTypeFullName, item: field));
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment);
     }
 
     private CodeEvent CreateEvent(
         EventMetadata @event,
         Typewriter.CodeModel.Item? parent)
     {
-        return new CodeEvent
+        var item = new CodeEvent
         {
             AssemblyName = ResolveAssemblyName(assemblyName: @event.AssemblyName),
             Name = @event.Name,
             FullName = @event.FullName,
-            Parent = parent ?? CreateParentTypeItem(fullName: @event.ParentTypeFullName),
             Attributes = CreateAttributes(attributes: @event.Attributes, parent: null),
             DocComment = CreateDocComment(docComment: @event.DocComment, parent: null),
             Type = CreateType(type: @event.Type),
         };
+        _metadataByItem[item] = @event;
+        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: @event.ParentTypeFullName, item: @event));
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment);
     }
 
     private CodeDelegate CreateDelegate(
         DelegateMetadata @delegate,
         Typewriter.CodeModel.Item? parent)
     {
-        return new CodeDelegate
+        var item = new CodeDelegate
         {
             AssemblyName = ResolveAssemblyName(assemblyName: @delegate.AssemblyName),
             Name = @delegate.Name,
             FullName = @delegate.FullName,
-            Parent = parent ?? CreateParentTypeItem(fullName: @delegate.ParentTypeFullName),
             Attributes = CreateAttributes(attributes: @delegate.Attributes, parent: null),
             DocComment = CreateDocComment(docComment: @delegate.DocComment, parent: null),
             IsGeneric = @delegate.IsGeneric,
@@ -864,13 +1142,24 @@ internal sealed class TemplateCodeModelAdapterFactory
             Type = CreateType(type: @delegate.ReturnType),
             TypeParameters = CreateTypeParameters(typeParameters: @delegate.TypeParameters, parent: null),
         };
+        _metadataByItem[item] = @delegate;
+        item.SetParentFactory(
+            parentFactory: () => parent
+                ?? (string.IsNullOrWhiteSpace(value: @delegate.ParentTypeFullName)
+                    ? ResolveParentFile(@delegate: @delegate)
+                    : CreateParentTypeItem(fullName: @delegate.ParentTypeFullName, item: @delegate)));
+        return AttachChildren(
+            item: item,
+            attributes: item.Attributes,
+            docComment: item.DocComment,
+            childCollections: [item.Parameters, item.TypeParameters]);
     }
 
     private CodeAttribute CreateAttribute(
         AttributeMetadata attribute,
         Typewriter.CodeModel.Item? parent)
     {
-        return new CodeAttribute
+        var item = new CodeAttribute
         {
             AssemblyName = ResolveAssemblyName(assemblyName: attribute.AssemblyName),
             Name = attribute.Name,
@@ -880,6 +1169,9 @@ internal sealed class TemplateCodeModelAdapterFactory
             Type = attribute.Type is null ? null : CreateType(type: attribute.Type),
             Value = TemplateAttributeValueFormatter.Format(attribute: attribute),
         };
+        _metadataByItem[item] = attribute;
+        SetChildParents(parent: item, children: item.Arguments);
+        return item;
     }
 
     private Typewriter.CodeModel.AttributeArgument CreateAttributeArgument(AttributeArgumentMetadata argument)
@@ -920,18 +1212,20 @@ internal sealed class TemplateCodeModelAdapterFactory
         EnumValueMetadata enumValue,
         CodeEnum? parent)
     {
-        return new Typewriter.CodeModel.EnumValue
+        var item = new Typewriter.CodeModel.EnumValue
         {
             AssemblyName = ResolveAssemblyName(assemblyName: enumValue.AssemblyName),
             Name = enumValue.Name,
             FullName = string.IsNullOrWhiteSpace(value: enumValue.ParentTypeFullName)
                 ? enumValue.Name
                 : string.Concat(str0: enumValue.ParentTypeFullName, str1: ".", str2: enumValue.Name),
-            Parent = parent ?? CreateParentEnum(fullName: enumValue.ParentTypeFullName),
             Attributes = CreateAttributes(attributes: enumValue.Attributes, parent: null),
             DocComment = CreateDocComment(docComment: enumValue.DocComment, parent: null),
             Value = enumValue.Value ?? 0,
         };
+        _metadataByItem[item] = enumValue;
+        item.SetParentFactory(parentFactory: () => parent ?? CreateParentEnum(fullName: enumValue.ParentTypeFullName, item: enumValue));
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment);
     }
 
     private Typewriter.CodeModel.InterfaceCollection CreateInterfaces(
@@ -989,10 +1283,11 @@ internal sealed class TemplateCodeModelAdapterFactory
         return new Typewriter.CodeModel.AttributeCollection(items: attributes.Select(selector: attribute => CreateAttribute(attribute: attribute, parent: parent)));
     }
 
-    private Typewriter.CodeModel.Item? CreateParentTypeItem(string fullName)
+    private Typewriter.CodeModel.Item? CreateParentTypeItem(
+        string fullName,
+        object item)
     {
-        if (string.IsNullOrWhiteSpace(value: fullName)
-            || !_typesByFullName.TryGetValue(key: fullName, value: out var type))
+        if (!_metadataIndex.TryResolveParentType(fullName: fullName, item: item, metadata: out var type))
         {
             return null;
         }
@@ -1012,7 +1307,7 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         return !string.IsNullOrWhiteSpace(value: fullName)
             && _methodsByFullName.TryGetValue(key: fullName, value: out var method)
-                ? CreateMethod(method: method, parent: CreateParentTypeItem(fullName: method.ParentTypeFullName), includeParameters: false)
+                ? CreateMethod(method: method, parent: CreateParentTypeItem(fullName: method.ParentTypeFullName, item: method), includeParameters: false)
                 : null;
     }
 
@@ -1020,14 +1315,15 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         return !string.IsNullOrWhiteSpace(value: fullName)
             && _propertiesByFullName.TryGetValue(key: fullName, value: out var property)
-                ? CreateProperty(property: property, parent: CreateParentTypeItem(fullName: property.ParentTypeFullName), includeParameters: false)
+                ? CreateProperty(property: property, parent: CreateParentTypeItem(fullName: property.ParentTypeFullName, item: property), includeParameters: false)
                 : null;
     }
 
-    private CodeEnum? CreateParentEnum(string fullName)
+    private CodeEnum? CreateParentEnum(
+        string fullName,
+        object item)
     {
-        return !string.IsNullOrWhiteSpace(value: fullName)
-            && _typesByFullName.TryGetValue(key: fullName, value: out var type)
+        return _metadataIndex.TryResolveParentType(fullName: fullName, item: item, metadata: out var type)
             && type.Kind == TypeMetadataKind.Enum
                 ? CreateShallowEnum(type: type)
                 : null;
@@ -1035,8 +1331,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     private CodeClass? CreateContainingClass(TypeMetadata type)
     {
-        return !string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)
-            && _typesByFullName.TryGetValue(key: type.ContainingTypeFullName, value: out var containingType)
+        return _metadataIndex.TryResolveParentType(fullName: type.ContainingTypeFullName, item: type, metadata: out var containingType)
             && containingType.Kind == TypeMetadataKind.Class
                 ? CreateShallowClass(type: containingType)
                 : null;
@@ -1044,8 +1339,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     private CodeRecord? CreateContainingRecord(TypeMetadata type)
     {
-        return !string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)
-            && _typesByFullName.TryGetValue(key: type.ContainingTypeFullName, value: out var containingType)
+        return _metadataIndex.TryResolveParentType(fullName: type.ContainingTypeFullName, item: type, metadata: out var containingType)
             && containingType.Kind == TypeMetadataKind.Record
                 ? CreateShallowRecord(type: containingType)
                 : null;
@@ -1053,8 +1347,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     private CodeStruct? CreateContainingStruct(TypeMetadata type)
     {
-        return !string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)
-            && _typesByFullName.TryGetValue(key: type.ContainingTypeFullName, value: out var containingType)
+        return _metadataIndex.TryResolveParentType(fullName: type.ContainingTypeFullName, item: type, metadata: out var containingType)
             && containingType.Kind == TypeMetadataKind.Struct
                 ? CreateShallowStruct(type: containingType)
                 : null;
@@ -1062,7 +1355,7 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     private CodeClass CreateShallowClass(TypeMetadata type)
     {
-        return new CodeClass
+        var item = new CodeClass
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
@@ -1076,11 +1369,13 @@ internal sealed class TemplateCodeModelAdapterFactory
             TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
+        SetTypeParent(item: item, type: type, declarationType: item.Type);
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment, childCollections: [item.TypeParameters]);
     }
 
     private CodeRecord CreateShallowRecord(TypeMetadata type)
     {
-        return new CodeRecord
+        var item = new CodeRecord
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
@@ -1093,11 +1388,13 @@ internal sealed class TemplateCodeModelAdapterFactory
             TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
+        SetTypeParent(item: item, type: type, declarationType: item.Type);
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment, childCollections: [item.TypeParameters]);
     }
 
     private CodeStruct CreateShallowStruct(TypeMetadata type)
     {
-        return new CodeStruct
+        var item = new CodeStruct
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
@@ -1110,11 +1407,13 @@ internal sealed class TemplateCodeModelAdapterFactory
             TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
+        SetTypeParent(item: item, type: type, declarationType: item.Type);
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment, childCollections: [item.TypeParameters]);
     }
 
     private CodeInterface CreateShallowInterface(TypeMetadata type)
     {
-        return new CodeInterface
+        var item = new CodeInterface
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
@@ -1126,11 +1425,13 @@ internal sealed class TemplateCodeModelAdapterFactory
             TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
+        SetTypeParent(item: item, type: type, declarationType: item.Type);
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment, childCollections: [item.TypeParameters]);
     }
 
     private CodeEnum CreateShallowEnum(TypeMetadata type)
     {
-        return new CodeEnum
+        var item = new CodeEnum
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
@@ -1140,11 +1441,13 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsFlags = HasAttribute(attributes: type.Attributes, name: "Flags"),
             Type = CreateTypeShell(type: type),
         };
+        SetTypeParent(item: item, type: type, declarationType: item.Type);
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment);
     }
 
     private CodeType CreateTypeShell(TypeMetadata type)
     {
-        return new CodeType
+        var item = new CodeType
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = type.Name,
@@ -1162,6 +1465,8 @@ internal sealed class TemplateCodeModelAdapterFactory
             TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
+        SetTypeParent(item: item, type: type);
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment, childCollections: [item.TypeParameters]);
     }
 
     private CodeClass? CreateBaseClass(
