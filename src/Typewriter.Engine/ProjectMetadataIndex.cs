@@ -7,6 +7,7 @@ namespace Typewriter.Engine;
 internal sealed class ProjectMetadataIndex
 {
     private readonly Lazy<SourceFileDependencyIndex> _dependencyIndex;
+    private readonly Lazy<IReadOnlyDictionary<object, TypeMetadata>> _parentTypesByItem;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<TypeMetadata>> _typesByHierarchyKey;
     private readonly IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> _unambiguousNestedTypesByFullNameAndArity;
 
@@ -18,15 +19,20 @@ internal sealed class ProjectMetadataIndex
         IReadOnlyDictionary<string, MethodMetadata> methodsByFullName,
         IReadOnlyDictionary<string, PropertyMetadata> propertiesByFullName)
     {
+        Metadata = metadata;
         TypesByFullName = typesByFullName;
         _typesByHierarchyKey = typesByHierarchyKey;
         _unambiguousNestedTypesByFullNameAndArity = unambiguousNestedTypesByFullNameAndArity;
         MethodsByFullName = methodsByFullName;
         PropertiesByFullName = propertiesByFullName;
+        _parentTypesByItem = new Lazy<IReadOnlyDictionary<object, TypeMetadata>>(
+            valueFactory: () => CreateParentTypeIndex(types: typesByHierarchyKey.Values.SelectMany(selector: types => types)));
         _dependencyIndex = new Lazy<SourceFileDependencyIndex>(
             valueFactory: () => SourceFileDependencyIndex.Build(metadata: metadata),
             mode: LazyThreadSafetyMode.ExecutionAndPublication);
     }
+
+    public ProjectMetadata Metadata { get; }
 
     public IReadOnlyDictionary<string, TypeMetadata> TypesByFullName { get; }
 
@@ -92,6 +98,25 @@ internal sealed class ProjectMetadataIndex
         return false;
     }
 
+    public bool TryResolveParentType(
+        string fullName,
+        object? item,
+        [NotNullWhen(returnValue: true)] out TypeMetadata? metadata)
+    {
+        if (string.IsNullOrWhiteSpace(value: fullName))
+        {
+            metadata = null;
+            return false;
+        }
+
+        if (item is not null && _parentTypesByItem.Value.TryGetValue(key: item, value: out metadata))
+        {
+            return true;
+        }
+
+        return TypesByFullName.TryGetValue(key: fullName, value: out metadata);
+    }
+
     /// <summary>
     /// Computes the transitive closure of source files affected by the changed source
     /// files: every changed file plus every file whose declared types reference a type
@@ -104,6 +129,25 @@ internal sealed class ProjectMetadataIndex
         ArgumentNullException.ThrowIfNull(argument: changedSourcePaths);
 
         return _dependencyIndex.Value.GetAffectedSourceFiles(changedSourcePaths: changedSourcePaths);
+    }
+
+    private static IReadOnlyDictionary<object, TypeMetadata> CreateParentTypeIndex(IEnumerable<TypeMetadata> types)
+    {
+        var parents = new Dictionary<object, TypeMetadata>(comparer: ReferenceEqualityComparer.Instance);
+        foreach (var type in types)
+        {
+            var children = EnumerateNestedTypes(type: type).Cast<object>()
+                .Concat(second: type.Properties).Concat(second: type.Methods)
+                .Concat(second: type.Constants).Concat(second: type.Fields)
+                .Concat(second: type.StaticReadOnlyFields).Concat(second: type.Events)
+                .Concat(second: type.Delegates).Concat(second: type.EnumValues);
+            foreach (var child in children)
+            {
+                parents[child] = type;
+            }
+        }
+
+        return parents;
     }
 
     private static bool TrySelectCandidate(

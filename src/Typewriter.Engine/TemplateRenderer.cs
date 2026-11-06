@@ -13,6 +13,7 @@ using CodeModelEnum = Typewriter.CodeModel.Enum;
 using CodeModelEnumValue = Typewriter.CodeModel.EnumValue;
 using CodeModelEvent = Typewriter.CodeModel.Event;
 using CodeModelField = Typewriter.CodeModel.Field;
+using CodeModelFile = Typewriter.CodeModel.File;
 using CodeModelInterface = Typewriter.CodeModel.Interface;
 using CodeModelItem = Typewriter.CodeModel.Item;
 using CodeModelMethod = Typewriter.CodeModel.Method;
@@ -974,6 +975,26 @@ public sealed class TemplateRenderer
         };
     }
 
+    private static object? ResolveCodeModelFile(
+        CodeModelFile file,
+        string identifier) =>
+        identifier switch
+        {
+            "Name" => file.Name,
+            "name" => file.name,
+            "FullName" => file.FullName,
+            "Path" => file.Path,
+            "Parent" => file.Parent,
+            "Classes" => file.Classes,
+            "Records" => file.Records,
+            "Structs" => file.Structs,
+            "Delegates" => file.Delegates,
+            "Interfaces" => file.Interfaces,
+            "Enums" => file.Enums,
+            "Types" => file.Types,
+            _ => Unresolved.Value,
+        };
+
     private static object? ResolveCodeModelClass(
         CodeModelClass @class,
         string identifier)
@@ -998,6 +1019,7 @@ public sealed class TemplateRenderer
             "NestedClasses" => @class.NestedClasses,
             "NestedEnums" => @class.NestedEnums,
             "NestedInterfaces" => @class.NestedInterfaces,
+            "NestedRecords" => @class.NestedRecords,
             "NestedStructs" => @class.NestedStructs,
             "Parent" => @class.Parent,
             "Properties" => @class.Properties,
@@ -1033,6 +1055,10 @@ public sealed class TemplateRenderer
             "Fields" => record.Fields,
             "Interfaces" => record.Interfaces,
             "Methods" => record.Methods,
+            "NestedClasses" => record.NestedClasses,
+            "NestedEnums" => record.NestedEnums,
+            "NestedInterfaces" => record.NestedInterfaces,
+            "NestedRecords" => record.NestedRecords,
             "NestedStructs" => record.NestedStructs,
             "Parent" => record.Parent,
             "Properties" => record.Properties,
@@ -1342,6 +1368,7 @@ public sealed class TemplateRenderer
             "NestedClasses" => type.NestedClasses,
             "NestedEnums" => type.NestedEnums,
             "NestedInterfaces" => type.NestedInterfaces,
+            "NestedRecords" => type.NestedRecords,
             "NestedStructs" => type.NestedStructs,
             "Parent" => type.Parent,
             "Properties" => type.Properties,
@@ -1463,7 +1490,7 @@ public sealed class TemplateRenderer
                 : string.Concat(str0: enumValue.ParentTypeFullName, str1: ".", str2: enumValue.Name),
             "AssemblyName" => enumValue.AssemblyName,
             "Value" => enumValue.Value?.ToString(provider: CultureInfo.InvariantCulture) ?? string.Empty,
-            "Parent" => state?.ResolveParentType(fullName: enumValue.ParentTypeFullName) ?? Unresolved.Value,
+            "Parent" => state?.ResolveParentType(fullName: enumValue.ParentTypeFullName, item: enumValue) ?? Unresolved.Value,
             "DocComment" => enumValue.DocComment,
             "Attributes" => enumValue.Attributes,
             _ => Unresolved.Value,
@@ -1745,8 +1772,7 @@ public sealed class TemplateRenderer
             return null;
         }
 
-        if (state is null
-            || !state.TryResolveType(fullName: type.ContainingTypeFullName, type: out var containingType))
+        if (state?.ResolveParentType(fullName: type.ContainingTypeFullName, item: type) is not TypeMetadata containingType)
         {
             return Unresolved.Value;
         }
@@ -1967,30 +1993,30 @@ public sealed class TemplateRenderer
 
         return trimmed switch
         {
-            "Class" => items.OfType<TypeMetadata>().Where(predicate: type => type.Kind == TypeMetadataKind.Class),
-            "Record" => items.OfType<TypeMetadata>().Where(predicate: type => type.Kind == TypeMetadataKind.Record),
-            "Struct" => items.OfType<TypeMetadata>().Where(predicate: type => type.Kind == TypeMetadataKind.Struct),
-            "Interface" => items.OfType<TypeMetadata>().Where(predicate: type => type.Kind == TypeMetadataKind.Interface),
-            "Enum" => items.OfType<TypeMetadata>().Where(predicate: type => type.Kind == TypeMetadataKind.Enum),
-            "HasProperties" => items.OfType<TypeMetadata>().Where(predicate: type => type.Properties.Count > 0),
-            "HasMethods" => items.OfType<TypeMetadata>().Where(predicate: type => type.Methods.Count > 0),
-            "HasConstants" => items.OfType<TypeMetadata>().Where(predicate: type => type.Constants.Count > 0),
-            "Static" => items.OfType<TypeMetadata>().Where(predicate: type => type.IsStatic),
-            "NonStatic" => items.OfType<TypeMetadata>().Where(predicate: type => !type.IsStatic),
-            "Public" => items.Where(predicate: item => HasAccessibility(item: item, accessibility: MetadataAccessibility.Public)),
-            "Internal" => items.Where(predicate: item => HasAccessibility(item: item, accessibility: MetadataAccessibility.Internal)),
+            "Class" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Kind: TypeMetadataKind.Class }),
+            "Record" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Kind: TypeMetadataKind.Record }),
+            "Struct" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Kind: TypeMetadataKind.Struct }),
+            "Interface" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Kind: TypeMetadataKind.Interface }),
+            "Enum" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Kind: TypeMetadataKind.Enum }),
+            "HasProperties" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Properties.Count: > 0 }),
+            "HasMethods" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Methods.Count: > 0 }),
+            "HasConstants" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Constants.Count: > 0 }),
+            "Static" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { IsStatic: true }),
+            "NonStatic" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { IsStatic: false }),
+            "Public" => items.Where(predicate: item => HasAccessibility(item: state.AdapterFactory.GetFilterContext(item: item), accessibility: MetadataAccessibility.Public)),
+            "Internal" => items.Where(predicate: item => HasAccessibility(item: state.AdapterFactory.GetFilterContext(item: item), accessibility: MetadataAccessibility.Internal)),
             _ when trimmed.StartsWith(value: "Namespace=", comparisonType: StringComparison.OrdinalIgnoreCase) => items
                 .Where(predicate: item => string.Equals(
-                    a: GetNamespace(item: item),
+                    a: GetNamespace(item: state.AdapterFactory.GetFilterContext(item: item)),
                     b: trimmed["Namespace=".Length..],
                     comparisonType: StringComparison.Ordinal)),
             _ when trimmed.StartsWith(value: "Name=", comparisonType: StringComparison.OrdinalIgnoreCase) => items
-                .Where(predicate: item => GetName(item: item).Equals(value: trimmed["Name=".Length..], comparisonType: StringComparison.Ordinal)),
+                .Where(predicate: item => GetName(item: state.AdapterFactory.GetFilterContext(item: item)).Equals(value: trimmed["Name=".Length..], comparisonType: StringComparison.Ordinal)),
             _ when trimmed.StartsWith(value: '[') && trimmed.EndsWith(value: ']') => items
-                .Where(predicate: item => MatchesAny(values: GetAttributeSelectors(item: item), pattern: trimmed.Trim('[', ']', ' '))),
+                .Where(predicate: item => MatchesAny(values: GetAttributeSelectors(item: state.AdapterFactory.GetFilterContext(item: item)), pattern: trimmed.Trim('[', ']', ' '))),
             _ when trimmed.StartsWith(value: ':') => items
-                .Where(predicate: item => MatchesAny(values: GetInheritanceSelectors(item: item), pattern: trimmed[1..].Trim())),
-            _ => items.Where(predicate: item => MatchesAny(values: GetItemSelectors(item: item), pattern: trimmed)),
+                .Where(predicate: item => MatchesAny(values: GetInheritanceSelectors(item: state.AdapterFactory.GetFilterContext(item: item)), pattern: trimmed[1..].Trim())),
+            _ => items.Where(predicate: item => MatchesAny(values: GetItemSelectors(item: state.AdapterFactory.GetFilterContext(item: item)), pattern: trimmed)),
         };
     }
 
@@ -2689,6 +2715,7 @@ public sealed class TemplateRenderer
             DocCommentMetadata docComment => ResolveDocComment(docComment: docComment, identifier: identifier),
             ParameterCommentMetadata parameterComment => ResolveParameterComment(parameterComment: parameterComment, identifier: identifier),
             TypeParameterMetadata typeParameter => ResolveTypeParameter(typeParameter: typeParameter, identifier: identifier),
+            CodeModelFile codeFile => ResolveCodeModelFile(file: codeFile, identifier: identifier),
             CodeModelClass codeClass => ResolveCodeModelClass(@class: codeClass, identifier: identifier),
             CodeModelRecord codeRecord => ResolveCodeModelRecord(record: codeRecord, identifier: identifier),
             CodeModelStruct codeStruct => ResolveCodeModelStruct(@struct: codeStruct, identifier: identifier),
@@ -2779,6 +2806,7 @@ public sealed class TemplateRenderer
             "Namespace" => type.Namespace,
             "Kind" => type.Kind.ToString(),
             "AssemblyName" => type.AssemblyName,
+            "Parent" => state?.ResolveTypeParent(type: type) ?? Unresolved.Value,
             "DocComment" => type.DocComment,
             "TypeParameters" => type.TypeParameters,
             "TypeArguments" => type.TypeArguments,
@@ -2837,7 +2865,7 @@ public sealed class TemplateRenderer
             "Name" => property.Name,
             "name" => ToCamelCase(value: property.Name),
             "FullName" => property.FullName,
-            "Parent" => state?.ResolveParentType(fullName: property.ParentTypeFullName) ?? Unresolved.Value,
+            "Parent" => state?.ResolveParentType(fullName: property.ParentTypeFullName, item: property) ?? Unresolved.Value,
             "Type" => CreateTypeTemplateValue(type: property.Type, state: state, runtimeType: runtimeType),
             "CSharpType" => property.Type.Name,
             "TypeScriptType" => MapType(type: property.Type, state: state, runtimeType: runtimeType),
@@ -2869,7 +2897,7 @@ public sealed class TemplateRenderer
             "Name" => method.Name,
             "name" => ToCamelCase(value: method.Name),
             "FullName" => method.FullName,
-            "Parent" => state?.ResolveParentType(fullName: method.ParentTypeFullName) ?? Unresolved.Value,
+            "Parent" => state?.ResolveParentType(fullName: method.ParentTypeFullName, item: method) ?? Unresolved.Value,
             "Type" => CreateTypeTemplateValue(type: method.ReturnType, state: state),
             "ReturnType" => CreateTypeTemplateValue(type: method.ReturnType, state: state),
             "CSharpType" => method.ReturnType.Name,
@@ -2923,7 +2951,7 @@ public sealed class TemplateRenderer
             "Name" => constant.Name,
             "name" => ToCamelCase(value: constant.Name),
             "FullName" => constant.FullName,
-            "Parent" => state?.ResolveParentType(fullName: constant.ParentTypeFullName) ?? Unresolved.Value,
+            "Parent" => state?.ResolveParentType(fullName: constant.ParentTypeFullName, item: constant) ?? Unresolved.Value,
             "Type" => CreateTypeTemplateValue(type: constant.Type, state: state),
             "CSharpType" => constant.Type.Name,
             "TypeScriptType" => MapType(type: constant.Type, state: state),
@@ -2947,7 +2975,7 @@ public sealed class TemplateRenderer
             "name" => ToCamelCase(value: field.Name),
             "FullName" => field.FullName,
             "AssemblyName" => field.AssemblyName,
-            "Parent" => state?.ResolveParentType(fullName: field.ParentTypeFullName) ?? Unresolved.Value,
+            "Parent" => state?.ResolveParentType(fullName: field.ParentTypeFullName, item: field) ?? Unresolved.Value,
             "Type" => CreateTypeTemplateValue(type: field.Type, state: state, runtimeType: runtimeType),
             "CSharpType" => field.Type.Name,
             "TypeScriptType" => MapType(type: field.Type, state: state, runtimeType: runtimeType),
@@ -2970,7 +2998,7 @@ public sealed class TemplateRenderer
             "name" => ToCamelCase(value: field.Name),
             "FullName" => field.FullName,
             "AssemblyName" => field.AssemblyName,
-            "Parent" => state?.ResolveParentType(fullName: field.ParentTypeFullName) ?? Unresolved.Value,
+            "Parent" => state?.ResolveParentType(fullName: field.ParentTypeFullName, item: field) ?? Unresolved.Value,
             "Type" => CreateTypeTemplateValue(type: field.Type, state: state),
             "CSharpType" => field.Type.Name,
             "TypeScriptType" => MapType(type: field.Type, state: state),
@@ -2993,7 +3021,7 @@ public sealed class TemplateRenderer
             "name" => ToCamelCase(value: @event.Name),
             "FullName" => @event.FullName,
             "AssemblyName" => @event.AssemblyName,
-            "Parent" => state?.ResolveParentType(fullName: @event.ParentTypeFullName) ?? Unresolved.Value,
+            "Parent" => state?.ResolveParentType(fullName: @event.ParentTypeFullName, item: @event) ?? Unresolved.Value,
             "Type" => CreateTypeTemplateValue(type: @event.Type, state: state),
             "CSharpType" => @event.Type.Name,
             "TypeScriptType" => MapType(type: @event.Type, state: state),
@@ -3015,7 +3043,7 @@ public sealed class TemplateRenderer
             "name" => ToCamelCase(value: @delegate.Name),
             "FullName" => @delegate.FullName,
             "AssemblyName" => @delegate.AssemblyName,
-            "Parent" => state?.ResolveParentType(fullName: @delegate.ParentTypeFullName) ?? Unresolved.Value,
+            "Parent" => state?.ResolveDelegateParent(@delegate: @delegate) ?? Unresolved.Value,
             "Type" => CreateTypeTemplateValue(type: @delegate.ReturnType, state: state),
             "ReturnType" => CreateTypeTemplateValue(type: @delegate.ReturnType, state: state),
             "CSharpType" => @delegate.ReturnType.Name,
@@ -3072,6 +3100,9 @@ public sealed class TemplateRenderer
             "AssemblyName" => type.AssemblyName,
             "Namespace" => type.Namespace,
             "OriginalName" => type.Name,
+            "Parent" => state is not null && state.TryResolveType(reference: type, type: out var parentMetadata)
+                ? state.ResolveTypeParent(type: parentMetadata)
+                : null,
             "Type" => new TypeTemplateValue(
                 Reference: type,
                 Text: _typeMapper.Map(
@@ -3208,7 +3239,6 @@ public sealed class TemplateRenderer
         private readonly ProjectMetadataIndex _metadataIndex;
         private readonly IReadOnlyDictionary<string, MethodMetadata> _methodsByFullName;
         private readonly IReadOnlyDictionary<string, PropertyMetadata> _propertiesByFullName;
-        private readonly IReadOnlyDictionary<string, TypeMetadata> _typesByFullName;
         private readonly Stack<object> _parentContexts = new();
         private readonly HashSet<string> _reportedCompiledInvocationErrors = [];
         private readonly HashSet<string> _reportedUnknownIdentifiers = [];
@@ -3234,7 +3264,6 @@ public sealed class TemplateRenderer
             _defaults = defaults;
             var index = metadataIndex ?? ProjectMetadataIndex.Create(metadata: metadata);
             _metadataIndex = index;
-            _typesByFullName = index.TypesByFullName;
             _methodsByFullName = index.MethodsByFullName;
             _propertiesByFullName = index.PropertiesByFullName;
             _compiledTemplateHelper = template.CodeBlocks.Count == 0
@@ -3353,10 +3382,21 @@ public sealed class TemplateRenderer
             return outputPath;
         }
 
-        public object ResolveParentType(string fullName)
+        public object ResolveTypeParent(TypeMetadata type) =>
+            string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)
+                ? AdapterFactory.ResolveParentFile(type: type)
+                : ResolveParentType(fullName: type.ContainingTypeFullName, item: type);
+
+        public object ResolveDelegateParent(DelegateMetadata @delegate) =>
+            string.IsNullOrWhiteSpace(value: @delegate.ParentTypeFullName)
+                ? AdapterFactory.ResolveParentFile(@delegate: @delegate)
+                : ResolveParentType(fullName: @delegate.ParentTypeFullName, item: @delegate);
+
+        public object ResolveParentType(
+            string fullName,
+            object? item = null)
         {
-            return !string.IsNullOrWhiteSpace(value: fullName)
-                && _typesByFullName.TryGetValue(key: fullName, value: out var parent)
+            return _metadataIndex.TryResolveParentType(fullName: fullName, item: item, metadata: out var parent)
                     ? parent
                     : Unresolved.Value;
         }
@@ -3491,13 +3531,6 @@ public sealed class TemplateRenderer
         {
             return _compatibilityMethods.TryGetValue(key: name, value: out method!)
                 && method.Kind == kind;
-        }
-
-        public bool TryResolveType(
-            string fullName,
-            out TypeMetadata type)
-        {
-            return _typesByFullName.TryGetValue(key: fullName, value: out type!);
         }
 
         public bool TryResolveType(

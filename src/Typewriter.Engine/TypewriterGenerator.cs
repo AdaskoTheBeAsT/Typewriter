@@ -146,7 +146,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
     {
         return template.OutputPath is null
             && inspection?.IsSingleFileMode != true
-            && project.SourceFiles.Any(predicate: sourceFile => sourceFile.Types.Count > 0);
+            && project.SourceFiles.Any(predicate: sourceFile => sourceFile.Types.Count > 0 || sourceFile.Delegates.Count > 0);
     }
 
     /// <summary>
@@ -268,7 +268,10 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
             ProjectPath: project.ProjectPath,
             SourceFiles: [sourceFile],
             Types: sourceFile.Types,
-            Diagnostics: []);
+            Diagnostics: [])
+        {
+            Delegates = sourceFile.Delegates,
+        };
     }
 
     private static IReadOnlyList<SourceFileRenderContext> CreateSourceFileRenderContexts(
@@ -276,7 +279,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         ProjectMetadataIndex metadataIndex)
     {
         var contexts = new List<SourceFileRenderContext>();
-        foreach (var sourceFile in project.SourceFiles.Where(predicate: sourceFile => sourceFile.Types.Count > 0))
+        foreach (var sourceFile in project.SourceFiles.Where(predicate: sourceFile => sourceFile.Types.Count > 0 || sourceFile.Delegates.Count > 0))
         {
             var sourceProject = CreateSourceFileProject(project: project, sourceFile: sourceFile);
             contexts.Add(
