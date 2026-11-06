@@ -17,7 +17,10 @@ public static class DocCommentExtensions
 
     public static string ToJsDoc(this DocComment docComment)
     {
-        ArgumentNullException.ThrowIfNull(argument: docComment);
+        if (docComment is null)
+        {
+            throw new ArgumentNullException(paramName: nameof(docComment));
+        }
 
         var lines = new List<string>();
 
@@ -57,14 +60,20 @@ public static class DocCommentExtensions
 
     public static string ToJsDocSummary(this DocComment docComment)
     {
-        ArgumentNullException.ThrowIfNull(argument: docComment);
+        if (docComment is null)
+        {
+            throw new ArgumentNullException(paramName: nameof(docComment));
+        }
 
         return ConvertInlineTags(text: docComment.Summary);
     }
 
     public static string ToJsDocReturns(this DocComment docComment)
     {
-        ArgumentNullException.ThrowIfNull(argument: docComment);
+        if (docComment is null)
+        {
+            throw new ArgumentNullException(paramName: nameof(docComment));
+        }
 
         return ConvertInlineTags(text: docComment.Returns);
     }
@@ -147,19 +156,19 @@ public static class DocCommentExtensions
         var value = cref;
         if (value.Length > 2 && value[1] == ':')
         {
-            value = value[2..];
+            value = value.Substring(startIndex: 2);
         }
 
         var parenIndex = value.IndexOf(value: '(');
         if (parenIndex >= 0)
         {
-            value = value[..parenIndex];
+            value = value.Substring(startIndex: 0, length: parenIndex);
         }
 
         var dotIndex = value.LastIndexOf(value: '.');
         if (dotIndex >= 0 && dotIndex < value.Length - 1)
         {
-            value = value[(dotIndex + 1)..];
+            value = value.Substring(startIndex: dotIndex + 1);
         }
 
         return value;

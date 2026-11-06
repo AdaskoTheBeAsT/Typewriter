@@ -14,5 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Typewriter.Abstractions\Typewriter.Abstractions.csproj" />
+    <ProjectReference Include="..\Typewriter.CodeModel\Typewriter.CodeModel.csproj" />
   </ItemGroup>
 </Project>

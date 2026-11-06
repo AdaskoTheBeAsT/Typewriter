@@ -51,6 +51,7 @@ internal sealed class TemplateReferenceResolver
             .Where(predicate: path => !string.IsNullOrWhiteSpace(value: path))
             .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
             .Where(predicate: File.Exists)
+            .DistinctBy(keySelector: path => Path.GetFileNameWithoutExtension(path: path), comparer: StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         return paths.Select(selector: path => MetadataReference.CreateFromFile(path: path)).ToArray();
@@ -68,6 +69,7 @@ internal sealed class TemplateReferenceResolver
             {
                 typeof(TemplateRenderer).Assembly.Location,
                 typeof(ProjectMetadata).Assembly.Location,
+                typeof(Typewriter.CodeModel.File).Assembly.Location,
                 typeof(Enumerable).Assembly.Location,
                 typeof(RuntimeInformation).Assembly.Location,
             }

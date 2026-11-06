@@ -4,4 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Typewriter.CodeModel\Typewriter.CodeModel.csproj" />
+  </ItemGroup>
 </Project>

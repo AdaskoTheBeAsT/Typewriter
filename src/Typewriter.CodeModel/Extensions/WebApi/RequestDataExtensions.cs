@@ -13,12 +13,15 @@ public static class RequestDataExtensions
         this Method method,
         string route)
     {
-        ArgumentNullException.ThrowIfNull(argument: method);
+        if (method is null)
+        {
+            throw new ArgumentNullException(paramName: nameof(method));
+        }
 
         var url = method.Url(route: route);
         var dataParameters = method.Parameters
             .Where(predicate: parameter => !parameter.Type.Name.Equals(value: "CancellationToken", comparisonType: StringComparison.OrdinalIgnoreCase))
-            .Where(predicate: parameter => !url.Contains(value: $"${{{UrlExtensions.GetParameterValue(method: method, name: parameter.Name)}}}", comparisonType: StringComparison.Ordinal))
+            .Where(predicate: parameter => url.IndexOf(value: $"${{{UrlExtensions.GetParameterValue(method: method, name: parameter.Name)}}}", comparisonType: StringComparison.Ordinal) < 0)
             .ToArray();
 
         return dataParameters.Length switch

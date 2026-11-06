@@ -17,7 +17,10 @@ public static class UrlExtensions
         this Method method,
         string route)
     {
-        ArgumentNullException.ThrowIfNull(argument: method);
+        if (method is null)
+        {
+            throw new ArgumentNullException(paramName: nameof(method));
+        }
 
         route = Route(method: method, route: route);
         route = RemoveUnmatchedOptionalParameters(method: method, route: route);
@@ -37,7 +40,10 @@ public static class UrlExtensions
         this Method method,
         string route)
     {
-        ArgumentNullException.ThrowIfNull(argument: method);
+        if (method is null)
+        {
+            throw new ArgumentNullException(paramName: nameof(method));
+        }
 
         var routeAttribute = method.Attributes.FirstOrDefault(
                 predicate: attribute => attribute.Name.Equals(value: nameof(Route), comparisonType: StringComparison.OrdinalIgnoreCase))
@@ -55,7 +61,7 @@ public static class UrlExtensions
             else
             {
                 route = value.StartsWith(value: "~/", comparisonType: StringComparison.OrdinalIgnoreCase)
-                    ? value[2..]
+                    ? value.Substring(startIndex: 2)
                     : CombineRoute(routePrefix: routePrefix, route: value);
             }
 #pragma warning restore CC0014 // Use ternary operator
@@ -112,7 +118,7 @@ public static class UrlExtensions
             ?.Value;
         var routePrefix = routePrefixValue is null
             ? null
-            : ParseAttributeValue(value: routePrefixValue).TrimEnd(trimChar: '/');
+            : ParseAttributeValue(value: routePrefixValue).TrimEnd(trimChars: '/');
 
         if (string.IsNullOrEmpty(value: routePrefix))
         {
@@ -121,7 +127,7 @@ public static class UrlExtensions
                 ?.Value;
             routePrefix = routeValue is null
                 ? null
-                : ParseAttributeValue(value: routeValue).TrimEnd(trimChar: '/');
+                : ParseAttributeValue(value: routeValue).TrimEnd(trimChars: '/');
         }
 
         if (!string.IsNullOrEmpty(value: routePrefix))
@@ -139,13 +145,13 @@ public static class UrlExtensions
             return value;
         }
 
-        if (value.StartsWith(value: '\"'))
+        if (value.StartsWith(value: "\"", comparisonType: StringComparison.Ordinal))
         {
             return Regex.Match(
                 input: value,
                 pattern: @"(?<="")(?:\\.|[^""\\])*(?="")",
                 options: RegexOptions.CultureInvariant,
-                matchTimeout: TimeSpan.FromSeconds(seconds: 1)).Value;
+                matchTimeout: TimeSpan.FromSeconds(value: 1)).Value;
         }
 
         // Named-argument-only values such as `Name = "ListFoo", Order = 5` carry no
@@ -154,13 +160,13 @@ public static class UrlExtensions
                 input: value,
                 pattern: @"^\s*\w+\s*=",
                 options: RegexOptions.CultureInvariant,
-                matchTimeout: TimeSpan.FromSeconds(seconds: 1)))
+                matchTimeout: TimeSpan.FromSeconds(value: 1)))
         {
             var templateArgument = Regex.Match(
                 input: value,
                 pattern: @"\bTemplate\s*=\s*""(?<routeTemplate>(?:\\.|[^""\\])*)""",
                 options: RegexOptions.CultureInvariant,
-                matchTimeout: TimeSpan.FromSeconds(seconds: 1));
+                matchTimeout: TimeSpan.FromSeconds(value: 1));
             return templateArgument.Success ? templateArgument.Groups[groupname: "routeTemplate"].Value : string.Empty;
         }
 
@@ -175,7 +181,7 @@ public static class UrlExtensions
                 input: route,
                 pattern: @"\{(?<parameter>\w+):*\w*\?\}",
                 options: RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
-                matchTimeout: TimeSpan.FromSeconds(seconds: 1))
+                matchTimeout: TimeSpan.FromSeconds(value: 1))
             .Cast<Match>()
             .Select(selector: match => match.Groups[groupname: "parameter"].Value);
         var unmatchedParameters = parameters
@@ -190,7 +196,7 @@ public static class UrlExtensions
                 pattern: $"\\{{{parameter}:*\\w*\\?\\}}",
                 replacement: string.Empty,
                 options: RegexOptions.CultureInvariant,
-                matchTimeout: TimeSpan.FromSeconds(seconds: 1));
+                matchTimeout: TimeSpan.FromSeconds(value: 1));
         }
 
         return route;
@@ -200,30 +206,30 @@ public static class UrlExtensions
         Method method,
         string route)
     {
-        if ((route.Contains(value: "{controller}", comparisonType: StringComparison.Ordinal) || route.Contains(value: "[controller]", comparisonType: StringComparison.Ordinal))
+        if ((route.IndexOf(value: "{controller}", comparisonType: StringComparison.Ordinal) >= 0 || route.IndexOf(value: "[controller]", comparisonType: StringComparison.Ordinal) >= 0)
             && !method.Parameters.Any(predicate: parameter => parameter.name.Equals(value: "controller", comparisonType: StringComparison.OrdinalIgnoreCase))
             && method.Parent is Class parent)
         {
             var controller = parent.Name;
             if (controller.EndsWith(value: "Controller", comparisonType: StringComparison.OrdinalIgnoreCase))
             {
-                controller = controller[..^10];
+                controller = controller.Substring(startIndex: 0, length: controller.Length - 10);
             }
 
             route = route
-                .Replace(oldValue: "{controller}", newValue: controller, comparisonType: StringComparison.Ordinal)
-                .Replace(oldValue: "[controller]", newValue: controller, comparisonType: StringComparison.Ordinal);
+                .Replace(oldValue: "{controller}", newValue: controller)
+                .Replace(oldValue: "[controller]", newValue: controller);
         }
 
-        if ((route.Contains(value: "{action}", comparisonType: StringComparison.Ordinal) || route.Contains(value: "[action]", comparisonType: StringComparison.Ordinal))
+        if ((route.IndexOf(value: "{action}", comparisonType: StringComparison.Ordinal) >= 0 || route.IndexOf(value: "[action]", comparisonType: StringComparison.Ordinal) >= 0)
             && !method.Parameters.Any(predicate: parameter => parameter.name.Equals(value: "action", comparisonType: StringComparison.OrdinalIgnoreCase)))
         {
             var action = method.Attributes
                 .FirstOrDefault(predicate: attribute => attribute.Name.Equals(value: "ActionName", comparisonType: StringComparison.OrdinalIgnoreCase))
                 ?.Value ?? method.name;
             route = route
-                .Replace(oldValue: "{action}", newValue: action, comparisonType: StringComparison.Ordinal)
-                .Replace(oldValue: "[action]", newValue: action, comparisonType: StringComparison.Ordinal);
+                .Replace(oldValue: "{action}", newValue: action)
+                .Replace(oldValue: "[action]", newValue: action);
         }
 
         return route;
@@ -238,14 +244,14 @@ public static class UrlExtensions
             pattern: @"\{\*?(?<parameter>\w+):?\w*\??\}",
             evaluator: match => $"${{{GetParameterValue(method: method, name: match.Groups[groupname: "parameter"].Value)}}}",
             options: RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
-            matchTimeout: TimeSpan.FromSeconds(seconds: 1));
+            matchTimeout: TimeSpan.FromSeconds(value: 1));
     }
 
     private static string AppendQueryString(
         Method method,
         string route)
     {
-        var prefix = route.Contains(value: '?', comparisonType: StringComparison.Ordinal) ? "&" : "?";
+        var prefix = route.IndexOf(value: '?') >= 0 ? "&" : "?";
         var builder = new StringBuilder(value: route);
         foreach (var parameterName in method.Parameters
                      .Where(predicate: parameter => parameter.Type.IsPrimitive
@@ -253,7 +259,7 @@ public static class UrlExtensions
                                                         predicate: attribute => attribute.Name.Equals(value: "FromBody", comparisonType: StringComparison.OrdinalIgnoreCase)))
                      .Select(selector: parameter => parameter.Name))
         {
-            if (route.Contains(value: $"${{{GetParameterValue(method: method, name: parameterName)}}}", comparisonType: StringComparison.Ordinal))
+            if (route.IndexOf(value: $"${{{GetParameterValue(method: method, name: parameterName)}}}", comparisonType: StringComparison.Ordinal) >= 0)
             {
                 continue;
             }

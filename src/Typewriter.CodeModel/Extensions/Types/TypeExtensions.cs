@@ -7,12 +7,15 @@ public static class TypeExtensions
 {
     public static string ClassName(this Type type)
     {
-        ArgumentNullException.ThrowIfNull(argument: type);
+        if (type is null)
+        {
+            throw new ArgumentNullException(paramName: nameof(type));
+        }
 
         return type.Name
-            .Replace(oldValue: " | null", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
-            .Replace(oldValue: "(", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
-            .Replace(oldValue: ")", newValue: string.Empty, comparisonType: StringComparison.Ordinal)
+            .Replace(oldValue: " | null", newValue: string.Empty)
+            .Replace(oldValue: "(", newValue: string.Empty)
+            .Replace(oldValue: ")", newValue: string.Empty)
             .TrimEnd('[', ']');
     }
 
@@ -20,7 +23,10 @@ public static class TypeExtensions
     public static string Default(this Type type)
 #pragma warning restore MA0051,S3776
     {
-        ArgumentNullException.ThrowIfNull(argument: type);
+        if (type is null)
+        {
+            throw new ArgumentNullException(paramName: nameof(type));
+        }
 
         if (type.IsNullable)
         {
@@ -57,16 +63,16 @@ public static class TypeExtensions
         if (type.FullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal))
         {
             return ScalarInitializer.ResolveDecimal(
-                decimalType: type.Settings?.DecimalTypeGeneration ?? TypeScriptTypeMapper.DefaultDecimalType,
-                decimalInitializer: type.Settings?.DecimalInitializerGeneration ?? TypeScriptTypeMapper.DefaultDecimalInitializer);
+                decimalType: type.Settings?.DecimalTypeGeneration ?? TypeScriptTypeDefaults.DefaultDecimalType,
+                decimalInitializer: type.Settings?.DecimalInitializerGeneration ?? TypeScriptTypeDefaults.DefaultDecimalInitializer);
         }
 
         var stringLiteralCharacter = type.Settings?.StringLiteralCharacter ?? '"';
         if (type.IsGuid)
         {
             return ScalarInitializer.ResolveGuid(
-                guidType: type.Settings?.GuidTypeGeneration ?? TypeScriptTypeMapper.DefaultGuidType,
-                guidInitializer: type.Settings?.GuidInitializerGeneration ?? TypeScriptTypeMapper.DefaultGuidInitializer,
+                guidType: type.Settings?.GuidTypeGeneration ?? TypeScriptTypeDefaults.DefaultGuidType,
+                guidInitializer: type.Settings?.GuidInitializerGeneration ?? TypeScriptTypeDefaults.DefaultGuidInitializer,
                 stringLiteralCharacter: stringLiteralCharacter);
         }
 
@@ -77,19 +83,19 @@ public static class TypeExtensions
 
         if (TypeScriptTemporalTypes.IsDateOnly(fullName: type.FullName))
         {
-            return type.Settings?.DateOnlyInitializerGeneration ?? TypeScriptTypeMapper.DefaultDateOnlyInitializer;
+            return type.Settings?.DateOnlyInitializerGeneration ?? TypeScriptTypeDefaults.DefaultDateOnlyInitializer;
         }
 
         if (TypeScriptTemporalTypes.IsTimeOnly(fullName: type.FullName))
         {
             return TypeScriptTemporalTypes.FormatTimeOnlyInitializer(
-                initializer: type.Settings?.TimeOnlyInitializerGeneration ?? TypeScriptTypeMapper.DefaultTimeOnlyInitializer,
+                initializer: type.Settings?.TimeOnlyInitializerGeneration ?? TypeScriptTypeDefaults.DefaultTimeOnlyInitializer,
                 stringLiteralCharacter: stringLiteralCharacter);
         }
 
         if (type.IsDate || TypeScriptTemporalTypes.IsDateTime(fullName: type.FullName))
         {
-            return type.Settings?.DateInitializerGeneration ?? TypeScriptTypeMapper.DefaultDateInitializer;
+            return type.Settings?.DateInitializerGeneration ?? TypeScriptTypeDefaults.DefaultDateInitializer;
         }
 
         if (type.Name.Equals(value: "number", comparisonType: StringComparison.OrdinalIgnoreCase)
@@ -121,7 +127,10 @@ public static class TypeExtensions
 
     public static Type Unwrap(this Type type)
     {
-        ArgumentNullException.ThrowIfNull(argument: type);
+        if (type is null)
+        {
+            throw new ArgumentNullException(paramName: nameof(type));
+        }
 
         return type.IsGeneric && type.TypeArguments.Count > 0
             ? type.TypeArguments[index: 0]

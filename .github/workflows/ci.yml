@@ -87,6 +87,9 @@ jobs:
       - name: Pack annotations
         run: dotnet pack src/Typewriter.Annotations/Typewriter.Annotations.csproj --configuration Release --no-build --output artifacts/packages
 
+      - name: Pack code model
+        run: dotnet pack src/Typewriter.CodeModel/Typewriter.CodeModel.csproj --configuration Release --no-build --output artifacts/packages
+
       - name: Build Visual Studio VSIX
         run: dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --configuration Release --no-restore -m:1
 
