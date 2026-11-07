@@ -28,17 +28,9 @@ internal sealed class CompiledTemplateHelper : IDisposable
         _settings = settings;
         _loadContext = loadContext;
         _unloadLoadContextOnDispose = unloadLoadContextOnDispose;
-#pragma warning disable S3011 // Reflection should not be used to increase accessibility of classes, methods, or fields
-        var methods = host.GetType().GetMethods(
-            bindingAttr: BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-#pragma warning restore S3011 // Reflection should not be used to increase accessibility of classes, methods, or fields
-        _methodsByName = methods
-            .GroupBy(keySelector: method => method.Name, comparer: StringComparer.Ordinal)
-            .ToDictionary(
-                keySelector: group => group.Key,
-                elementSelector: group => (IReadOnlyList<MethodInfo>)group.ToArray(),
-                comparer: StringComparer.Ordinal);
-        _parametersByMethod = methods.ToDictionary(keySelector: method => method, elementSelector: method => method.GetParameters());
+        var bindings = CompiledTemplateBindings.For(hostType: host.GetType());
+        _methodsByName = bindings.MethodsByName;
+        _parametersByMethod = bindings.ParametersByMethod;
         AssemblyLoadContextReference = new WeakReference(target: loadContext);
     }
 

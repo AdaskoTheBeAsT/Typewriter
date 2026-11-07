@@ -27,7 +27,7 @@ internal sealed class PathGlobMatcher
 
         _regex = new Regex(
             pattern: ConvertGlobToRegex(pattern: normalizedPattern),
-            options: RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled,
+            options: RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
             matchTimeout: RegexTimeout);
     }
 

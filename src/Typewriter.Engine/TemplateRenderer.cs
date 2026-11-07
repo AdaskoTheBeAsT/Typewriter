@@ -64,7 +64,9 @@ public sealed class TemplateRenderer
             defaults: defaults ?? TemplateRenderDefaults.Default,
             compiledTemplateFactory: compiledTemplateFactory,
             metadataIndex: metadataIndex);
-        var content = NormalizeRenderedWhitespace(value: RenderCore(template: template.Content, context: metadata, state: state));
+        var output = new StringBuilder(capacity: template.Content.Length);
+        RenderCore(template: template.SourceIndex.Root, context: metadata, state: state, output: output);
+        var content = NormalizeRenderedWhitespace(value: output.ToString());
         var settings = state.TemplateSettings;
         var outputPath = template.OutputPath ?? state.ResolveOutputPath();
         state.NotifyRenderComplete();
@@ -1568,20 +1570,6 @@ public sealed class TemplateRenderer
         return Typewriter.CodeModel.NameCaseFormatter.TryParse(value: identifier[..^"Name".Length], nameCase: out nameCase);
     }
 
-    private static string ReadIdentifier(
-        string template,
-        int start)
-    {
-        var end = start;
-        while (end < template.Length
-            && (char.IsLetterOrDigit(c: template[index: end]) || template[index: end] == '_'))
-        {
-            end++;
-        }
-
-        return template[start..end];
-    }
-
     private static string? ResolveEnumDefault(
         TypeMetadataReference type,
         RenderState? state)
@@ -1651,12 +1639,11 @@ public sealed class TemplateRenderer
     }
 
     private static bool TryReadBlock(
-        string template,
+        TemplateSlice template,
         ref int index,
         char open,
-        char close,
-        out string? block) =>
-        TemplateBlockReader.TryRead(template: template, index: ref index, open: open, close: close, block: out block);
+        out TemplateSlice? block) =>
+        template.TryReadBlock(index: ref index, open: open, block: out block);
 
     private static string GetName(object item)
     {
@@ -1751,12 +1738,12 @@ public sealed class TemplateRenderer
         return containingType.Kind == kind ? containingType : null;
     }
 
-    private string RenderCore(
-        string template,
+    private void RenderCore(
+        TemplateSlice template,
         object context,
-        RenderState state)
+        RenderState state,
+        StringBuilder output)
     {
-        var output = new StringBuilder(capacity: template.Length);
         for (var index = 0; index < template.Length; index++)
         {
             if (template[index: index] != '$')
@@ -1775,7 +1762,7 @@ public sealed class TemplateRenderer
                 continue;
             }
 
-            var identifier = ReadIdentifier(template: template, start: index + 1);
+            var identifier = template.ReadIdentifier(start: index + 1);
             if (identifier.Length == 0)
             {
                 output.Append(value: template[index: index]);
@@ -1789,19 +1776,17 @@ public sealed class TemplateRenderer
             if (!TryResolveCompatibilityString(context: context, identifier: identifier, state: state, value: out var value)
                 && !TryResolve(context: context, identifier: identifier, value: out value, state: state))
             {
-                state.AddUnknownIdentifier(identifier: identifier, index: identifierStart);
+                state.AddUnknownIdentifier(identifier: identifier, index: template.Start + identifierStart);
                 output.Append(value: '$').Append(value: identifier);
                 continue;
             }
 
             RenderValue(template: template, context: context, state: state, output: output, index: ref index, identifier: identifier, value: value);
         }
-
-        return output.ToString();
     }
 
     private void RenderValue(
-        string template,
+        TemplateSlice template,
         object context,
         RenderState state,
         StringBuilder output,
@@ -1841,7 +1826,7 @@ public sealed class TemplateRenderer
 
         if (value is null)
         {
-            _ = TryReadBlock(template: template, index: ref index, open: '[', close: ']', block: out _);
+            _ = TryReadBlock(template: template, index: ref index, open: '[', block: out _);
             return;
         }
 
@@ -1849,7 +1834,7 @@ public sealed class TemplateRenderer
     }
 
     private void AppendCollection(
-        string template,
+        TemplateSlice template,
         object context,
         RenderState state,
         StringBuilder output,
@@ -1858,8 +1843,8 @@ public sealed class TemplateRenderer
         IEnumerable collection)
     {
         var originalIndex = index;
-        _ = TryReadBlock(template: template, index: ref index, open: '(', close: ')', block: out var filter);
-        if (!TryReadBlock(template: template, index: ref index, open: '[', close: ']', block: out var block)
+        _ = TryReadBlock(template: template, index: ref index, open: '(', block: out var filter);
+        if (!TryReadBlock(template: template, index: ref index, open: '[', block: out var block)
             || block is null)
         {
             var scalarValue = FormatCollectionScalar(collection: collection);
@@ -1870,13 +1855,13 @@ public sealed class TemplateRenderer
                 return;
             }
 
-            state.AddParseError(identifier: identifier, index: index, message: "Collection template block is missing.");
+            state.AddParseError(identifier: identifier, index: template.Start + index, message: "Collection template block is missing.");
             return;
         }
 
-        _ = TryReadBlock(template: template, index: ref index, open: '[', close: ']', block: out var separator);
+        _ = TryReadBlock(template: template, index: ref index, open: '[', block: out var separator);
 
-        var items = ApplyFilter(items: collection.Cast<object>(), filter: filter, identifier: identifier, parentContext: context, state: state).ToArray();
+        var items = ApplyFilter(items: collection.Cast<object>(), filter: filter?.Text, identifier: identifier, parentContext: context, state: state).ToArray();
         if (context is ProjectMetadata
             && IsRootItemCollection(identifier: identifier))
         {
@@ -1890,10 +1875,10 @@ public sealed class TemplateRenderer
             {
                 if (itemIndex > 0 && separator is not null)
                 {
-                    output.Append(value: RenderCore(template: separator, context: context, state: state));
+                    RenderCore(template: separator.Value, context: context, state: state, output: output);
                 }
 
-                output.Append(value: RenderCore(template: block, context: items[itemIndex], state: state));
+                RenderCore(template: block.Value, context: items[itemIndex], state: state, output: output);
             }
         }
         finally
@@ -1903,34 +1888,34 @@ public sealed class TemplateRenderer
     }
 
     private void AppendBoolean(
-        string template,
+        TemplateSlice template,
         object context,
         RenderState state,
         StringBuilder output,
         ref int index,
         bool value)
     {
-        if (!TryReadBlock(template: template, index: ref index, open: '[', close: ']', block: out var trueBlock))
+        if (!TryReadBlock(template: template, index: ref index, open: '[', block: out var trueBlock))
         {
             output.Append(value: value ? "true" : "false");
             return;
         }
 
-        _ = TryReadBlock(template: template, index: ref index, open: '[', close: ']', block: out var falseBlock);
-        output.Append(value: RenderCore(template: value ? trueBlock ?? string.Empty : falseBlock ?? string.Empty, context: context, state: state));
+        _ = TryReadBlock(template: template, index: ref index, open: '[', block: out var falseBlock);
+        RenderCore(template: value ? trueBlock ?? template.Empty : falseBlock ?? template.Empty, context: context, state: state, output: output);
     }
 
     private void AppendScalar(
-        string template,
+        TemplateSlice template,
         RenderState state,
         StringBuilder output,
         ref int index,
         string value,
         object? blockContext = null)
     {
-        if (TryReadBlock(template: template, index: ref index, open: '[', close: ']', block: out var block))
+        if (TryReadBlock(template: template, index: ref index, open: '[', block: out var block))
         {
-            output.Append(value: RenderCore(template: block ?? string.Empty, context: blockContext ?? value, state: state));
+            RenderCore(template: block ?? template.Empty, context: blockContext ?? value, state: state, output: output);
             return;
         }
 
@@ -3224,7 +3209,7 @@ public sealed class TemplateRenderer
         private readonly HashSet<string> _reportedCompiledInvocationErrors = [];
         private readonly HashSet<string> _reportedUnknownIdentifiers = [];
         private readonly IReadOnlyDictionary<string, TemplateCompatibilityMethod> _compatibilityMethods;
-        private readonly string _templateContent;
+        private readonly TemplateSourceIndex _templateSource;
         private readonly string _templatePath;
         private readonly TemplateRenderDefaults _defaults;
         private TemplateCodeModelAdapterFactory? _adapterFactory;
@@ -3239,7 +3224,7 @@ public sealed class TemplateRenderer
         {
             _metadata = metadata;
             _templatePath = template.Path;
-            _templateContent = template.Content;
+            _templateSource = template.SourceIndex;
             _compatibilityMethods = template.CompatibilityMethods;
             _diagnostics = diagnostics;
             _defaults = defaults;
@@ -3247,9 +3232,7 @@ public sealed class TemplateRenderer
             _metadataIndex = index;
             _methodsByFullName = index.MethodsByFullName;
             _propertiesByFullName = index.PropertiesByFullName;
-            _inlinePredicateMethods = template.InlinePredicates
-                .GroupBy(keySelector: predicate => (predicate.CollectionName, predicate.Filter))
-                .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First().MethodName);
+            _inlinePredicateMethods = template.InlinePredicateMethods;
             _compiledTemplateHelper = !template.HasCompiledCode
                 ? null
                 : compiledTemplateFactory?.CreateHelper(metadata: metadata, diagnostics: diagnostics, defaults: defaults, metadataIndex: index)
@@ -3648,25 +3631,7 @@ public sealed class TemplateRenderer
                 metadataIndex: _metadataIndex);
         }
 
-        private (int Line, int Column) GetLineColumn(int index)
-        {
-            var line = 1;
-            var column = 1;
-            for (var cursor = 0; cursor < index && cursor < _templateContent.Length; cursor++)
-            {
-                if (_templateContent[index: cursor] == '\n')
-                {
-                    line++;
-                    column = 1;
-                }
-                else
-                {
-                    column++;
-                }
-            }
-
-            return (line, column);
-        }
+        private (int Line, int Column) GetLineColumn(int index) => _templateSource.GetPosition(index: index);
     }
 
     private sealed class Unresolved

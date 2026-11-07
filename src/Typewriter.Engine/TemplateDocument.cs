@@ -13,6 +13,8 @@ public sealed record TemplateDocument(
     private const string ExpressionGroupName = "expression";
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(seconds: 1);
     private static readonly ConditionalWeakTable<TemplateDocument, IReadOnlyList<TemplateInlinePredicate>> InlinePredicateCache = [];
+    private static readonly ConditionalWeakTable<TemplateDocument, TemplateSourceIndex> SourceIndexCache = [];
+    private static readonly ConditionalWeakTable<TemplateDocument, IReadOnlyDictionary<(string CollectionName, string Filter), string>> InlinePredicateMethodCache = [];
 
     internal IReadOnlyDictionary<string, TemplateCompatibilityMethod> CompatibilityMethods { get; init; } =
         new Dictionary<string, TemplateCompatibilityMethod>(comparer: StringComparer.Ordinal);
@@ -20,6 +22,16 @@ public sealed record TemplateDocument(
     internal IReadOnlyList<TemplateCodeBlock> CodeBlocks { get; init; } = [];
 
     internal bool HasCompiledCode => CodeBlocks.Count > 0 || InlinePredicates.Count > 0;
+
+    internal TemplateSourceIndex SourceIndex =>
+        SourceIndexCache.GetValue(key: this, createValueCallback: static template => new TemplateSourceIndex(content: template.Content));
+
+    internal IReadOnlyDictionary<(string CollectionName, string Filter), string> InlinePredicateMethods =>
+        InlinePredicateMethodCache.GetValue(
+            key: this,
+            createValueCallback: static template => template.InlinePredicates
+                .GroupBy(keySelector: predicate => (predicate.CollectionName, predicate.Filter))
+                .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.First().MethodName));
 
     internal IReadOnlyList<TemplateInlinePredicate> InlinePredicates =>
         InlinePredicateCache.GetValue(
@@ -124,13 +136,18 @@ public sealed record TemplateDocument(
         ref string? outputPath)
     {
         var result = new StringBuilder(capacity: content.Length);
+        var ends = new Dictionary<int, int>();
         for (var index = 0; index < content.Length; index++)
         {
             if (content[index: index] == '$'
                 && index + 1 < content.Length
                 && content[index: index + 1] == '{')
             {
-                var end = TemplateCodeBlockScanner.FindBalancedEnd(content: content, openIndex: index + 1);
+                if (!ends.TryGetValue(key: index + 1, value: out var end))
+                {
+                    end = TemplateCodeBlockScanner.IndexBalancedEnd(content: content, openIndex: index + 1, ends: ends);
+                }
+
                 if (end < 0)
                 {
                     diagnostics.Add(
@@ -144,8 +161,7 @@ public sealed record TemplateDocument(
                     return result.ToString();
                 }
 
-                var blockContent = content.Substring(startIndex: index + 2, length: end - index - 2);
-                if (!TemplateCodeBlockScanner.IsCompatibilityCodeBlock(block: blockContent))
+                if (!TemplateCodeBlockScanner.IsCompatibilityCodeBlock(block: content.AsSpan(start: index + 2, length: end - index - 2)))
                 {
                     result.Append(value: content[index: index]);
                     continue;
@@ -179,6 +195,8 @@ public sealed record TemplateDocument(
 
     private static IEnumerable<TemplateCodeBlock> FindCompatibilityCodeBlocks(string content)
     {
+        var lines = new TemplateLineMap(content: content);
+        var ends = new Dictionary<int, int>();
         for (var index = 0; index < content.Length; index++)
         {
             if (content[index: index] != '$'
@@ -188,41 +206,28 @@ public sealed record TemplateDocument(
                 continue;
             }
 
-            var end = TemplateCodeBlockScanner.FindBalancedEnd(content: content, openIndex: index + 1);
+            if (!ends.TryGetValue(key: index + 1, value: out var end))
+            {
+                end = TemplateCodeBlockScanner.IndexBalancedEnd(content: content, openIndex: index + 1, ends: ends);
+            }
+
             if (end < 0)
             {
                 yield break;
             }
 
-            var blockContent = content.Substring(startIndex: index + 2, length: end - index - 2);
-            if (!TemplateCodeBlockScanner.IsCompatibilityCodeBlock(block: blockContent))
+            if (!TemplateCodeBlockScanner.IsCompatibilityCodeBlock(block: content.AsSpan(start: index + 2, length: end - index - 2)))
             {
                 continue;
             }
 
             yield return new TemplateCodeBlock(
-                Content: blockContent,
-                StartLine: GetLineNumber(content: content, index: index));
+                Content: content.Substring(startIndex: index + 2, length: end - index - 2),
+                StartLine: lines.GetPosition(index: index).Line);
 #pragma warning disable S127 // "for" loop stop conditions should be invariant
             index = end;
 #pragma warning restore S127 // "for" loop stop conditions should be invariant
         }
-    }
-
-    private static int GetLineNumber(
-        string content,
-        int index)
-    {
-        var line = 1;
-        for (var cursor = 0; cursor < index && cursor < content.Length; cursor++)
-        {
-            if (content[index: cursor] == '\n')
-            {
-                line++;
-            }
-        }
-
-        return line;
     }
 
     private static void AddExpressionBodiedMethods(
@@ -238,7 +243,7 @@ public sealed record TemplateDocument(
                               "\\(\\s*(?<parameterType>[A-Za-z_][A-Za-z0-9_<>.,\\s]*)\\s+" +
                               "(?<parameterName>[A-Za-z_][A-Za-z0-9_]*)\\s*\\)\\s*=>\\s*" +
                               "(?<expression>[^;]+);",
-                     options: RegexOptions.CultureInvariant,
+                     options: RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
                      matchTimeout: RegexTimeout))
         {
             AddMethod(match: match, methods: methods);
@@ -250,6 +255,7 @@ public sealed record TemplateDocument(
         string block,
         IDictionary<string, TemplateCompatibilityMethod> methods)
     {
+        var ends = new Dictionary<int, int>();
 #pragma warning disable SA1118 // Parameter should not span multiple lines
         foreach (Match match in Regex.Matches(
                      input: block,
@@ -259,36 +265,35 @@ public sealed record TemplateDocument(
                               @"\(\s*(?<parameterType>[A-Za-z_][A-Za-z0-9_<>.,\s]*)\s+" +
                               @"(?<parameterName>[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*" +
                               @"\{",
-                     options: RegexOptions.CultureInvariant,
+                     options: RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
                      matchTimeout: RegexTimeout))
         {
             var openBrace = match.Index + match.Length - 1;
-            var closeBrace = TemplateCodeBlockScanner.FindBalancedEnd(content: block, openIndex: openBrace);
+            if (!ends.TryGetValue(key: openBrace, value: out var closeBrace))
+            {
+                closeBrace = TemplateCodeBlockScanner.IndexBalancedEnd(content: block, openIndex: openBrace, ends: ends);
+            }
+
             if (closeBrace < 0)
             {
                 continue;
             }
 
             var body = block.Substring(startIndex: openBrace + 1, length: closeBrace - openBrace - 1);
-            var returnMatch = Regex.Match(
+            var returnStatements = Regex.Matches(
                 input: body,
                 pattern: @"return\s+(?<expression>[^;]+);",
-                options: RegexOptions.CultureInvariant | RegexOptions.Singleline,
+                options: RegexOptions.CultureInvariant | RegexOptions.Singleline | RegexOptions.NonBacktracking,
                 matchTimeout: RegexTimeout);
-            if (!returnMatch.Success)
+            if (returnStatements.Count == 0)
             {
                 continue;
             }
 
-            var returnStatements = Regex.Matches(
-                input: body,
-                pattern: @"return\s+(?<expression>[^;]+);",
-                options: RegexOptions.CultureInvariant | RegexOptions.Singleline,
-                matchTimeout: RegexTimeout);
             var expression = returnStatements.Count == 1
                 && !body.Contains(value: "if", comparisonType: StringComparison.Ordinal)
                 && !body.Contains(value: "foreach", comparisonType: StringComparison.Ordinal)
-                    ? returnMatch.Groups[groupname: ExpressionGroupName].Value
+                    ? returnStatements[0].Groups[groupname: ExpressionGroupName].Value
                     : null;
 
             AddMethod(match: match, methods: methods, expression: expression, body: body);

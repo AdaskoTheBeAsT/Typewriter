@@ -54,7 +54,7 @@ internal static class TemplateEmbeddedLanguage
         var contentStart = dollarIndex + 2;
         var contentEnd = end < 0 ? text.Length : end;
         if (!TemplateCodeBlockScanner.IsCompatibilityCodeBlock(
-                block: text[contentStart..contentEnd],
+                block: text.AsSpan(start: contentStart, length: contentEnd - contentStart),
                 allowPartial: IsStandaloneBlockStart(text: text, dollarIndex: dollarIndex)))
         {
             return false;
