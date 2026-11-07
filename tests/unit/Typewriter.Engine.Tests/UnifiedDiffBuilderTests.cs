@@ -7,6 +7,17 @@ namespace Typewriter.Engine.Tests;
 public sealed class UnifiedDiffBuilderTests
 {
     [Fact]
+    public void BuildReturnsEmptyForIdenticalContentAboveTheMatrixLimit()
+    {
+        var content = string.Join(separator: '\n', values: Enumerable.Repeat(element: "same", count: 5000));
+        var copy = new string(value: content.ToCharArray());
+
+        var diff = UnifiedDiffBuilder.Build(path: "large.ts", oldContent: content, newContent: copy);
+
+        diff.Should().BeEmpty();
+    }
+
+    [Fact]
     public void BuildReturnsEmptyForIdenticalContent()
     {
         const string content = "line1\nline2\nline3";

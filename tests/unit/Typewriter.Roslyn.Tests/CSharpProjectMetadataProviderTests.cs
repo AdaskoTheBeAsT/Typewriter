@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Typewriter.Roslyn.Tests;
 
+[Collection("Roslyn metadata cache")]
 public sealed class CSharpProjectMetadataProviderTests
 {
     [Fact]

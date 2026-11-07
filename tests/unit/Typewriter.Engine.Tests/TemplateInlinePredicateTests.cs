@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Typewriter.Engine.Tests;
 
+[Collection("Compiled template cache")]
 public sealed class TemplateInlinePredicateTests
 {
     [Theory]

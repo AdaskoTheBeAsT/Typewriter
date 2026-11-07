@@ -14,6 +14,7 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\Shared\StampedAssemblyReferenceCache.cs" Link="Compilation\StampedAssemblyReferenceCache.cs" />
     <ProjectReference Include="..\Typewriter.Abstractions\Typewriter.Abstractions.csproj" />
     <ProjectReference Include="..\Typewriter.Buildalyzer\Typewriter.Buildalyzer.csproj" />
   </ItemGroup>

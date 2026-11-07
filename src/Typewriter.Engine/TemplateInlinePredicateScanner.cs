@@ -10,7 +10,14 @@ internal static class TemplateInlinePredicateScanner
     {
         var predicates = new List<TemplateInlinePredicate>();
         var methodNames = new Dictionary<(string CollectionName, string Filter), string>();
-        Scan(content: content, start: 0, end: content.Length, parentIdentifier: null, predicates: predicates, methodNames: methodNames);
+        var source = new TemplateSourceIndex(content: content);
+        var pending = new Stack<(int Start, int End, string? ParentIdentifier)>();
+        pending.Push(item: (0, content.Length, null));
+        while (pending.TryPop(result: out var range))
+        {
+            Scan(source: source, start: range.Start, end: range.End, parentIdentifier: range.ParentIdentifier, predicates: predicates, methodNames: methodNames, pending: pending);
+        }
+
         return predicates;
     }
 
@@ -54,13 +61,15 @@ internal static class TemplateInlinePredicateScanner
 
 #pragma warning disable MA0051 // Method is too long
     private static void Scan(
-        string content,
+        TemplateSourceIndex source,
         int start,
         int end,
         string? parentIdentifier,
         ICollection<TemplateInlinePredicate> predicates,
-        IDictionary<(string CollectionName, string Filter), string> methodNames)
+        IDictionary<(string CollectionName, string Filter), string> methodNames,
+        Stack<(int Start, int End, string? ParentIdentifier)> pending)
     {
+        var content = source.Content;
         var index = start;
         while (index < end)
         {
@@ -77,7 +86,7 @@ internal static class TemplateInlinePredicateScanner
 
             if (content[index: index] == '{')
             {
-                var codeEnd = TemplateCodeBlockScanner.FindBalancedEnd(content: content, openIndex: index);
+                var codeEnd = source.FindBlockEnd(openIndex: index);
                 index = codeEnd < 0 ? end : codeEnd + 1;
                 continue;
             }
@@ -91,14 +100,14 @@ internal static class TemplateInlinePredicateScanner
             var identifier = content[identifierStart..index];
             if (index < end && content[index: index] == '(')
             {
-                var filterEnd = TemplateCodeBlockScanner.FindBalancedEnd(content: content, openIndex: index);
+                var filterEnd = source.FindBlockEnd(openIndex: index);
                 if (filterEnd < 0)
                 {
                     return;
                 }
 
                 AddPredicate(
-                    content: content,
+                    source: source,
                     start: index + 1,
                     end: filterEnd,
                     identifier: identifier,
@@ -110,21 +119,26 @@ internal static class TemplateInlinePredicateScanner
 
             if (index < end && content[index: index] == '[')
             {
-                var blockEnd = TemplateBlockReader.FindEnd(content: content, openIndex: index, open: '[', close: ']');
+                var blockEnd = source.FindBlockEnd(openIndex: index);
                 if (blockEnd < 0)
                 {
                     return;
                 }
 
-                Scan(content: content, start: index + 1, end: blockEnd, parentIdentifier: identifier, predicates: predicates, methodNames: methodNames);
-                index = blockEnd + 1;
+                if (blockEnd + 1 < end)
+                {
+                    pending.Push(item: (blockEnd + 1, end, parentIdentifier));
+                }
+
+                pending.Push(item: (index + 1, blockEnd, identifier));
+                return;
             }
         }
     }
 #pragma warning restore MA0051 // Method is too long
 
     private static void AddPredicate(
-        string content,
+        TemplateSourceIndex source,
         int start,
         int end,
         string identifier,
@@ -132,6 +146,7 @@ internal static class TemplateInlinePredicateScanner
         ICollection<TemplateInlinePredicate> predicates,
         IDictionary<(string CollectionName, string Filter), string> methodNames)
     {
+        var content = source.Content;
         var filter = content[start..end].Trim();
         if (!filter.Contains(value: "=>", comparisonType: StringComparison.Ordinal))
         {
@@ -161,16 +176,7 @@ internal static class TemplateInlinePredicateScanner
             start++;
         }
 
-        var line = 1;
-        var lineStart = 0;
-        for (var index = 0; index < start; index++)
-        {
-            if (content[index: index] == '\n')
-            {
-                line++;
-                lineStart = index + 1;
-            }
-        }
+        var (line, column) = source.GetPosition(index: start);
 
         predicates.Add(
             item: new TemplateInlinePredicate(
@@ -179,6 +185,6 @@ internal static class TemplateInlinePredicateScanner
                 MethodName: methodName,
                 ItemTypeName: GetItemTypeName(identifier: identifier, parentIdentifier: parentIdentifier, lambda: lambda),
                 Line: line,
-                Column: start - lineStart + 1));
+                Column: column));
     }
 }
