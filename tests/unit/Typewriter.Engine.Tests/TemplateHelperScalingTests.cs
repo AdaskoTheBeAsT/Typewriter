@@ -8,6 +8,19 @@ namespace Typewriter.Engine.Tests;
 public sealed class TemplateHelperScalingTests
 {
     [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\r")]
+    public void LeadingSingleLineCommentsPreserveCompiledHelpers(string lineEnding)
+    {
+        var template = "${// comment" + lineEnding + "string Render(Class c) => \"ok\";}\n$Classes[$Render]";
+
+        var output = Render(template: template, project: AdapterTestData.CreateProject(types: [AdapterTestData.CreateType()]));
+
+        output.Trim().Should().Be("ok");
+    }
+
+    [Theory]
     [InlineData(TypeMetadataKind.Class, "Classes", "Class")]
     [InlineData(TypeMetadataKind.Record, "Records", "Record")]
     [InlineData(TypeMetadataKind.Struct, "Structs", "Struct")]

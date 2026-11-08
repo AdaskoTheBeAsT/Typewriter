@@ -143,7 +143,7 @@ internal static class TemplateCodeBlockScanner
 
             if (block[index..].StartsWith(value: "//", comparisonType: StringComparison.Ordinal))
             {
-                var end = block[(index + 2)..].IndexOf(value: '\n');
+                var end = block[(index + 2)..].IndexOfAny(value0: '\r', value1: '\n');
                 index = end < 0 ? block.Length : index + 2 + end;
                 continue;
             }

@@ -6,6 +6,56 @@ namespace Typewriter.Engine.Tests;
 
 public sealed class TemplateSyntaxIndexTests
 {
+    [Theory]
+    [InlineData("$Classes[export class $Name{$Properties[$Name;]}]", "export class Foo{Bar;}")]
+    [InlineData("$Classes[$Name{\"$Properties[$Name;]\"}]", "Foo{\"Bar;\"}")]
+    [InlineData("$RootNamespace($Classes[$Name)]", "Sample(Foo)")]
+    [InlineData("$RootNamespace{$Classes[$Name}]", "Sample{Foo}")]
+    [InlineData("${literal $Classes[$Name]}", "${literal Foo}")]
+    public void LiteralScalarDelimitersPreserveCollectionBlocks(string content, string expected)
+    {
+        var declaration = AdapterTestData.CreateType(name: "Foo") with
+        {
+            Properties =
+            [
+                new PropertyMetadata(
+                    Name: "Bar",
+                    FullName: "Sample.Foo.Bar",
+                    Type: AdapterTestData.CreateReference(),
+                    Accessibility: MetadataAccessibility.Public,
+                    HasGetter: true,
+                    HasSetter: true,
+                    IsRequired: false,
+                    Attributes: []),
+            ],
+        };
+        var diagnostics = new List<GenerationDiagnostic>();
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var document = new TemplateDocument(Path: "literal.tst", Content: content, OutputPath: null);
+
+        var output = renderer.Render(template: document, metadata: AdapterTestData.CreateProject(types: [declaration]), diagnostics: diagnostics);
+
+        output.Should().Be(expected);
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData('(')]
+    [InlineData('{')]
+    public void CollectionBlocksCanCloseAfterDeeplyNestedScalarDelimiters(char open)
+    {
+        const int count = 6000;
+        var close = open == '(' ? ')' : '}';
+        var prefix = string.Concat(values: Enumerable.Repeat(element: "$Name" + open, count: count));
+        var content = prefix + "$Parameters[$Name" + new string(c: close, count: count) + "]";
+        var before = GC.GetAllocatedBytesForCurrentThread();
+
+        var source = new TemplateSourceIndex(content: content);
+
+        source.FindBlockEnd(openIndex: content.IndexOf(value: '[')).Should().Be(content.LastIndexOf(value: ']'));
+        (GC.GetAllocatedBytesForCurrentThread() - before).Should().BeLessThan(expected: content.Length * 128L);
+    }
+
     [Fact]
     public void NestedLiteralCodeMarkersDoNotCopyEveryEnclosingBody()
     {

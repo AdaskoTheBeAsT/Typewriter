@@ -142,7 +142,7 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
             return cachedResult;
         }
 
-        var validationVersion = MetadataCacheInvalidation.CurrentVersion;
+        var validationVersion = validationSession.Version;
         var metadataCacheKey = new ProjectMetadataCacheKey(
             ProjectPath: projectPath,
             WorkspacePath: Path.GetFullPath(path: project.WorkspacePath),
@@ -1007,14 +1007,17 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
         private readonly Dictionary<ProjectInputManifest, ManifestValidation> _validations = new(comparer: ReferenceEqualityComparer.Instance);
         private readonly Dictionary<long, DirtyPathSnapshot> _snapshots = [];
 
+        // Later lookups may observe newer edits, but must never acknowledge them
+        // using a manifest result memoized earlier in this request.
+        public long Version { get; } = MetadataCacheInvalidation.CurrentVersion;
+
         public DirtyPathSnapshot GetSnapshot(long sinceVersion)
         {
             if (!_snapshots.TryGetValue(key: sinceVersion, value: out var snapshot))
             {
-                var currentVersion = MetadataCacheInvalidation.CurrentVersion;
                 var dirtyPaths = MetadataCacheInvalidation.GetDirtySince(sinceVersion: sinceVersion);
                 snapshot = new DirtyPathSnapshot(
-                    Version: currentVersion,
+                    Version: Version,
                     Paths: dirtyPaths is null ? null : new MetadataDirtyPathIndex(paths: dirtyPaths));
                 _snapshots.Add(key: sinceVersion, value: snapshot);
             }

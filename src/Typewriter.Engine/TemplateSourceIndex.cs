@@ -51,62 +51,55 @@ internal sealed class TemplateSourceIndex
     private static IReadOnlyDictionary<int, int> FindBlocks(string content)
     {
         var ends = new Dictionary<int, int>();
-        var ranges = new Stack<(int Start, int End)>();
-        ranges.Push(item: (0, content.Length));
-        while (ranges.TryPop(result: out var range))
+        var codeEnds = new Dictionary<int, int>();
+        for (var index = 0; index < content.Length; index++)
         {
-            IndexTemplateBlocks(content: content, start: range.Start, end: range.End, ends: ends, ranges: ranges);
+            if (content[index: index] == '$' && TryIndexCode(content: content, index: ref index, ends: ends, codeEnd: out var codeEnd))
+            {
+                codeEnds.Add(key: index, value: codeEnd);
+            }
+        }
+
+        // Each suffix owns a persistent stack of unmatched closing brackets. A code
+        // marker skips its body, but brackets inside retained scalar output still
+        // have their own matches, including matches beyond the code delimiter.
+        var followingClosings = new int[content.Length + 1];
+        followingClosings[content.Length] = -1;
+        for (var index = content.Length - 1; index >= 0; index--)
+        {
+            var next = followingClosings[index + 1];
+            if (codeEnds.TryGetValue(key: index, value: out var codeEnd))
+            {
+                next = followingClosings[codeEnd + 1];
+            }
+            else if (content[index: index] == ']')
+            {
+                next = index;
+            }
+            else if (content[index: index] == '[' && next >= 0)
+            {
+                ends.Add(key: index, value: next);
+                next = followingClosings[next + 1];
+            }
+
+            followingClosings[index] = next;
         }
 
         return ends;
     }
 
-    private static void IndexTemplateBlocks(
-        string content,
-        int start,
-        int end,
-        IDictionary<int, int> ends,
-        Stack<(int Start, int End)> ranges)
-    {
-        var pending = new Stack<int>();
-        for (var index = start; index < end; index++)
-        {
-            if (content[index: index] == '$'
-                && TrySkipCode(content: content, index: ref index, ends: ends, bodyStart: out var bodyStart))
-            {
-                if (bodyStart >= 0)
-                {
-                    // Scalars leave parentheses as output, so their contents may
-                    // contain live template blocks even inside literal quotes.
-                    ranges.Push(item: (bodyStart, index));
-                }
-
-                continue;
-            }
-
-            if (content[index: index] == '[')
-            {
-                pending.Push(item: index);
-            }
-            else if (content[index: index] == ']' && pending.TryPop(result: out var blockStart))
-            {
-                ends.Add(key: blockStart, value: index);
-            }
-        }
-    }
-
-    private static bool TrySkipCode(
+    private static bool TryIndexCode(
         string content,
         ref int index,
         IDictionary<int, int> ends,
-        out int bodyStart)
+        out int codeEnd)
     {
-        bodyStart = -1;
+        codeEnd = -1;
         var cursor = index + 1;
         if (cursor < content.Length && content[index: cursor] == '$')
         {
             index = cursor;
-            return true;
+            return false;
         }
 
         while (cursor < content.Length && (char.IsLetterOrDigit(c: content[index: cursor]) || content[index: cursor] == '_'))
@@ -129,13 +122,7 @@ internal sealed class TemplateSourceIndex
             return false;
         }
 
-        ends[key: cursor] = end;
-        if (content[index: cursor] == '(')
-        {
-            bodyStart = cursor + 1;
-        }
-
-        index = end;
+        codeEnd = end;
         return true;
     }
 }
