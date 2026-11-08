@@ -100,7 +100,7 @@ internal sealed class LanguageServerHost
             serverInfo = new
             {
                 name = "Typewriter Language Server",
-                version = "4.15.0",
+                version = "4.16.0",
             },
         };
 

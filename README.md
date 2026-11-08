@@ -75,6 +75,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.16.0](#4160)
     - [4.15.0](#4150)
     - [4.14.0](#4140)
     - [4.13.0](#4130)
@@ -1089,7 +1090,7 @@ Follow these three rules to avoid C# compiler or runtime conflicts:
 
    ```xml
    <ItemGroup>
-     <PackageReference Include="AdaskoTheBeAsT.Typewriter.CodeModel" Version="4.15.0" PrivateAssets="all" ExcludeAssets="runtime" />
+     <PackageReference Include="AdaskoTheBeAsT.Typewriter.CodeModel" Version="4.16.0" PrivateAssets="all" ExcludeAssets="runtime" />
    </ItemGroup>
    ```
 
@@ -1101,7 +1102,7 @@ Follow these three rules to avoid C# compiler or runtime conflicts:
 
      ```xml
      <ItemGroup>
-       <PackageReference Include="AdaskoTheBeAsT.Typewriter.CodeModel" Version="4.15.0" PrivateAssets="all" ExcludeAssets="runtime" />
+       <PackageReference Include="AdaskoTheBeAsT.Typewriter.CodeModel" Version="4.16.0" PrivateAssets="all" ExcludeAssets="runtime" />
        <Compile Remove="templates/**/*.cs" />
        <None Include="templates/**/*.cs" />
      </ItemGroup>
@@ -1559,6 +1560,18 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.16.0
+
+- Improved generation scaling and memory use with incremental Roslyn metadata updates, lazy code-model adapters, indexed template blocks, and cached assembly references (#139).
+- Kept source reparsing scoped to changed files and prevented edits during project-graph validation from leaving stale metadata cached.
+- Preserved nested collection output inside literal scalar braces and parentheses, including blocks that close beyond the scalar delimiter, and fixed compiled helpers preceded by CR-only single-line comments.
+- Preserved linked netmodules in cached assembly references without locking their files, including reference invalidation after module changes and recovery after missing or corrupt modules are repaired.
+- Fixed inline lambda filters in collection templates (#138, #142).
+- Fixed declaration parent navigation in templates (#136, #141).
+- Fixed enum attribute arguments that were exposed as raw values (#134, #137).
+- Enabled publishing the `AdaskoTheBeAsT.Typewriter.CodeModel` NuGet package for shared template helpers (#135, #140).
+- Synchronized tool, language-server, editor-package, and release-artifact versions to 4.16.0.
 
 ### 4.15.0
 
