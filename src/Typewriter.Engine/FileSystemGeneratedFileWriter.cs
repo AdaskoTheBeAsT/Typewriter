@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using Typewriter.Abstractions;
 
@@ -5,15 +6,24 @@ namespace Typewriter.Engine;
 
 public sealed class FileSystemGeneratedFileWriter : IGeneratedFileWriter
 {
-    public async Task<GeneratedFile> WriteAsync(
+    public Task<GeneratedFile> WriteAsync(
         GeneratedFile file,
         GenerationRequest request,
+        CancellationToken cancellationToken) =>
+        WriteAsync(file: file, request: request, statistics: null, cancellationToken: cancellationToken);
+
+    internal static async Task<GeneratedFile> WriteAsync(
+        GeneratedFile file,
+        GenerationRequest request,
+        TemplatePerformanceStatistics? statistics,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(argument: file);
         ArgumentNullException.ThrowIfNull(argument: request);
 
+        var formattingStarted = statistics is null ? 0 : Stopwatch.GetTimestamp();
         var content = OutputContentFormatter.Format(content: file.Content, output: request.Configuration.Output);
+        statistics?.RecordFormatting(started: formattingStarted);
         var (changed, existingContent) = await GetChangeStateAsync(file: file, content: content, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         var diff = changed && request.IncludeDiff
             ? UnifiedDiffBuilder.Build(path: file.Path, oldContent: existingContent ?? string.Empty, newContent: content)

@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Typewriter.Abstractions;
 using CodeAttribute = Typewriter.CodeModel.Attribute;
 using CodeClass = Typewriter.CodeModel.Class;
@@ -23,16 +24,23 @@ internal sealed class TemplateCodeModelAdapterFactory
 {
     private readonly ProjectMetadata _metadata;
     private readonly Typewriter.Configuration.Settings _settings;
+    private readonly Typewriter.Configuration.Settings _mappingSettings;
+    private readonly TemplateCodeModelAdapterFactory? _liveFactory;
+    private readonly bool _canDefer;
     private readonly string _assemblyName;
     private readonly ProjectMetadataIndex _metadataIndex;
     private readonly IReadOnlyDictionary<string, MethodMetadata> _methodsByFullName;
     private readonly IReadOnlyDictionary<string, PropertyMetadata> _propertiesByFullName;
-    private readonly IReadOnlyDictionary<string, SourceFileMetadata> _sourceFilesByPath;
-    private readonly Dictionary<string, CodeFile> _filesBySourcePath = new(comparer: StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<Typewriter.CodeModel.Item, object> _metadataByItem = new(comparer: ReferenceEqualityComparer.Instance);
-    private readonly TypeScriptTypeMapper _typeMapper = new();
+    private readonly ProjectSourceFileIndex _sourceFiles;
+    private readonly Lazy<string[]> _sourcePaths;
+    private readonly Dictionary<string, CodeFile> _filesBySourcePath;
+    private readonly ConditionalWeakTable<Typewriter.CodeModel.Item, object> _metadataByItem;
+    private readonly Lock _fileCacheLock;
+    private readonly TypeScriptTypeMapper _typeMapper;
     private CodeFile? _cachedFile;
     private ProjectMetadata? _cachedFileProject;
+    private ProjectMetadata? _preparedFileProject;
+    private TemplateCodeModelAdapterFactory? _preparedFileFactory;
 
     public TemplateCodeModelAdapterFactory(
         ProjectMetadata metadata,
@@ -59,16 +67,58 @@ internal sealed class TemplateCodeModelAdapterFactory
         ProjectMetadataIndex? metadataIndex)
     {
         _metadata = metadata;
+        _sourcePaths = new Lazy<string[]>(valueFactory: () => GetProjectSourcePaths(project: metadata));
         _settings = settings;
+        _mappingSettings = settings;
+        _filesBySourcePath = new Dictionary<string, CodeFile>(comparer: StringComparer.OrdinalIgnoreCase);
+        _metadataByItem = [];
+        _fileCacheLock = new Lock();
+        _canDefer = settings.GetType() == typeof(Typewriter.Configuration.Settings);
         _assemblyName = Path.GetFileNameWithoutExtension(path: metadata.ProjectPath);
         var index = metadataIndex ?? ProjectMetadataIndex.Create(metadata: metadata);
         _metadataIndex = index;
         _methodsByFullName = index.MethodsByFullName;
         _propertiesByFullName = index.PropertiesByFullName;
-        _sourceFilesByPath = index.Metadata.SourceFiles
-            .Concat(second: metadata.SourceFiles)
-            .GroupBy(keySelector: sourceFile => sourceFile.Path, comparer: StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(keySelector: group => group.Key, elementSelector: group => group.Last(), comparer: StringComparer.OrdinalIgnoreCase);
+        _sourceFiles = index.SourceFiles.WithOverrides(sourceFiles: metadata.SourceFiles);
+        _typeMapper = index.TypeMapper;
+    }
+
+    private TemplateCodeModelAdapterFactory(TemplateCodeModelAdapterFactory source)
+    {
+        _metadata = source._metadata;
+        _sourcePaths = source._sourcePaths;
+        _settings = source._settings;
+        _mappingSettings = source._mappingSettings.CaptureMappingSettings();
+        _liveFactory = source._liveFactory ?? source;
+        _canDefer = true;
+        _assemblyName = source._assemblyName;
+        _metadataIndex = source._metadataIndex;
+        _methodsByFullName = source._methodsByFullName;
+        _propertiesByFullName = source._propertiesByFullName;
+        _sourceFiles = source._sourceFiles;
+        _filesBySourcePath = source._filesBySourcePath;
+        _metadataByItem = source._metadataByItem;
+        _fileCacheLock = source._fileCacheLock;
+        _typeMapper = source._typeMapper;
+    }
+
+    private TemplateCodeModelAdapterFactory LiveFactory => _liveFactory ?? this;
+
+    public void PrepareFile(ProjectMetadata project)
+    {
+        // The old runtime always constructed this file before the host constructor.
+        // Capture that boundary even when the host does not accept a File argument.
+        if (!_canDefer)
+        {
+            _ = CreateFile(project: project);
+            return;
+        }
+
+        lock (_fileCacheLock)
+        {
+            _preparedFileProject = project;
+            _preparedFileFactory = CaptureFactory();
+        }
     }
 
     public bool TryAdapt(
@@ -86,6 +136,11 @@ internal sealed class TemplateCodeModelAdapterFactory
         {
             adapted = context;
             return true;
+        }
+
+        if (_canDefer && _liveFactory is null && context is not ProjectMetadata)
+        {
+            return CaptureFactory().TryAdapt(context: context, targetType: targetType, adapted: out adapted);
         }
 
         adapted = context switch
@@ -121,50 +176,60 @@ internal sealed class TemplateCodeModelAdapterFactory
 
     public CodeFile CreateFile(ProjectMetadata project)
     {
-        if (ReferenceEquals(objA: _cachedFileProject, objB: project) && _cachedFile is not null)
+        if (_liveFactory is not null)
         {
-            return _cachedFile;
+            return _liveFactory.CreateFile(project: project);
         }
 
-        var sourcePaths = GetProjectSourcePaths(project: project);
+        TemplateCodeModelAdapterFactory factory;
+        lock (_fileCacheLock)
+        {
+            if (ReferenceEquals(objA: _cachedFileProject, objB: project) && _cachedFile is not null)
+            {
+                return _cachedFile;
+            }
+
+            factory = ReferenceEquals(objA: project, objB: _preparedFileProject)
+                ? _preparedFileFactory!
+                : CaptureFactory();
+        }
+
+        var sourcePaths = ReferenceEquals(objA: project, objB: _metadata) ? _sourcePaths.Value : GetProjectSourcePaths(project: project);
         var filePath = sourcePaths.Length == 1 ? sourcePaths[0] : project.ProjectPath;
         var isSourceFile = sourcePaths.Length <= 1;
-        if (!isSourceFile || !_filesBySourcePath.TryGetValue(key: filePath, value: out var file))
+        var file = isSourceFile
+            ? GetOrCreateSourceFile(filePath: filePath, createFile: () => factory.CreateFileModel(project: project, filePath: filePath, attachParents: true))
+            : factory.CreateFileModel(project: project, filePath: filePath, attachParents: false);
+        lock (_fileCacheLock)
         {
-            file = CreateFileModel(project: project, filePath: filePath, attachParents: isSourceFile);
-        }
+            if (ReferenceEquals(objA: _cachedFileProject, objB: project) && _cachedFile is not null)
+            {
+                return _cachedFile;
+            }
 
-        _cachedFile = file;
-        _cachedFileProject = project;
-        if (isSourceFile)
-        {
-            _filesBySourcePath[filePath] = file;
+            _cachedFile = file;
+            _cachedFileProject = project;
+            return file;
         }
-
-        return file;
     }
 
     public CodeFile ResolveParentFile(TypeMetadata type)
     {
         var filePath = GetPrimaryFilePath(type: type);
-        var sourceFile = FindSourceFile(
+        var sourceFile = _sourceFiles.Find(
+            type: type,
             filePath: filePath,
-            containsDeclaration: source => source.Types.Any(
-                predicate: candidate => candidate.FullName.Equals(value: type.FullName, comparisonType: StringComparison.Ordinal)
-                    && candidate.Kind == type.Kind
-                    && candidate.TypeParameters.Count == type.TypeParameters.Count
-                    && candidate.AssemblyName.Equals(value: type.AssemblyName, comparisonType: StringComparison.Ordinal)));
+            preferredSource: _metadata.SourceFiles.Count == 1 ? _metadata.SourceFiles[index: 0] : null);
         return ResolveParentFile(sourceFile: sourceFile, filePath: filePath);
     }
 
     public CodeFile ResolveParentFile(DelegateMetadata @delegate)
     {
         var filePath = @delegate.Location?.Path;
-        var sourceFile = FindSourceFile(
+        var sourceFile = _sourceFiles.Find(
+            @delegate: @delegate,
             filePath: filePath,
-            containsDeclaration: source => source.Delegates.Any(
-                predicate: candidate => candidate.FullName.Equals(value: @delegate.FullName, comparisonType: StringComparison.Ordinal)
-                    && candidate.AssemblyName.Equals(value: @delegate.AssemblyName, comparisonType: StringComparison.Ordinal)));
+            preferredSource: _metadata.SourceFiles.Count == 1 ? _metadata.SourceFiles[index: 0] : null);
         return ResolveParentFile(sourceFile: sourceFile, filePath: filePath);
     }
 
@@ -177,17 +242,20 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadata type,
         TypeMetadataReference? reference = null)
     {
+        if (_canDefer && _liveFactory is null)
+        {
+            return CaptureFactory().CreateInterfaces(type: type, reference: reference);
+        }
+
         return new Typewriter.CodeModel.InterfaceCollection(
-            items: type.BaseTypes
-                .Where(predicate: IsInterfaceReference)
-                .Select(selector: baseInterface => CreateInterfaceReference(
+            items: Defer(source: type.BaseTypes.Where(predicate: IsInterfaceReference), selector: baseInterface => CreateInterfaceReference(
                     reference: SubstituteTypeArguments(type: type, reference: reference, target: baseInterface))));
     }
 
     public Typewriter.CodeModel.InterfaceCollection CreateInterfaces(TypeMetadataReference reference)
     {
         _ = TryResolveType(reference: reference, metadata: out var metadata);
-        return CreateInterfaces(reference: reference, metadata: metadata);
+        return CaptureFactory().CreateInterfaces(reference: reference, metadata: metadata);
     }
 
     private static IReadOnlyList<string> ResolveFileLocations(
@@ -197,24 +265,6 @@ internal sealed class TemplateCodeModelAdapterFactory
         return type.FileLocations.Count > 0
             ? type.FileLocations
             : metadata?.FileLocations ?? [];
-    }
-
-    private static Typewriter.CodeModel.DocComment? CreateDocComment(
-        DocCommentMetadata? docComment,
-        Typewriter.CodeModel.Item? parent)
-    {
-        return docComment is null
-            ? null
-            : new Typewriter.CodeModel.DocComment
-            {
-                Name = docComment.Summary,
-                Parent = parent,
-                Summary = docComment.Summary,
-                Returns = docComment.Returns,
-                Parameters = new Typewriter.CodeModel.ParameterCommentCollection(
-                    items: docComment.Parameters.Select(
-                        selector: parameter => CreateParameterComment(parameter: parameter, parent: parent))),
-            };
     }
 
     private static Typewriter.CodeModel.ParameterComment CreateParameterComment(
@@ -236,15 +286,6 @@ internal sealed class TemplateCodeModelAdapterFactory
             FullName = parameter.FullName,
             Parent = parent,
         };
-
-    private static Typewriter.CodeModel.TypeParameterCollection CreateTypeParameters(
-        IEnumerable<TypeParameterMetadata> typeParameters,
-        Typewriter.CodeModel.Item? parent)
-    {
-        return new Typewriter.CodeModel.TypeParameterCollection(
-            items: typeParameters.Select(
-                selector: parameter => CreateTypeParameter(parameter: parameter, parent: parent)));
-    }
 
     private static bool IsTaskLike(string fullName)
     {
@@ -339,70 +380,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             substitutions[type.TypeParameters[index: index].Name] = reference.TypeArguments[index: index];
         }
 
-        return SubstituteTypeArguments(target: target, substitutions: substitutions);
-    }
-
-    private static TypeMetadataReference SubstituteTypeArguments(
-        TypeMetadataReference target,
-        IReadOnlyDictionary<string, TypeMetadataReference> substitutions)
-    {
-        if (target.Arity == 0
-            && target.TypeArguments.Count == 0
-            && (substitutions.TryGetValue(key: target.Name, value: out var replacement)
-                || substitutions.TryGetValue(key: target.FullName, value: out replacement)))
-        {
-            return target.IsNullable && !replacement.IsNullable
-                ? replacement with
-                {
-                    IsNullable = true,
-                }
-                : replacement;
-        }
-
-        var hasChanges = false;
-        var typeArguments = target.TypeArguments;
-        if (target.TypeArguments.Count > 0)
-        {
-            var substitutedArguments = new TypeMetadataReference[target.TypeArguments.Count];
-            for (var index = 0; index < target.TypeArguments.Count; index++)
-            {
-                var originalArgument = target.TypeArguments[index: index];
-                var substitutedArgument = SubstituteTypeArguments(target: originalArgument, substitutions: substitutions);
-                substitutedArguments[index] = substitutedArgument;
-                if (!ReferenceEquals(objA: originalArgument, objB: substitutedArgument))
-                {
-                    hasChanges = true;
-                }
-            }
-
-            if (hasChanges)
-            {
-                typeArguments = substitutedArguments;
-            }
-        }
-
-        var elementType = target.ElementType;
-        if (elementType is not null)
-        {
-            var substitutedElement = SubstituteTypeArguments(target: elementType, substitutions: substitutions);
-            if (!ReferenceEquals(objA: elementType, objB: substitutedElement))
-            {
-                elementType = substitutedElement;
-                hasChanges = true;
-            }
-        }
-
-        if (!hasChanges)
-        {
-            return target;
-        }
-
-        return target with
-        {
-            TypeArguments = typeArguments,
-            ElementType = elementType,
-            Interfaces = new LazySubstitutedTypeReferenceList(source: target.Interfaces, substitutions: substitutions),
-        };
+        return new TypeArgumentSubstitution(substitutions: substitutions).Substitute(target: target);
     }
 
     private static string GetPrimaryFilePath(TypeMetadata type) =>
@@ -423,6 +401,11 @@ internal sealed class TemplateCodeModelAdapterFactory
         Typewriter.CodeModel.Item parent,
         IEnumerable<Typewriter.CodeModel.Item> children)
     {
+        if (children is Typewriter.CodeModel.IDeferredItemCollection deferred && deferred.TrySetParent(parent: parent))
+        {
+            return;
+        }
+
         foreach (var child in children)
         {
             child.SetParent(parent: parent);
@@ -437,11 +420,6 @@ internal sealed class TemplateCodeModelAdapterFactory
         where T : Typewriter.CodeModel.Item
     {
         SetChildParents(parent: item, children: attributes);
-        foreach (var attribute in attributes)
-        {
-            SetChildParents(parent: attribute, children: attribute.Arguments);
-        }
-
         if (docComment is not null)
         {
             docComment.SetParent(parent: item);
@@ -456,22 +434,70 @@ internal sealed class TemplateCodeModelAdapterFactory
         return item;
     }
 
-    private SourceFileMetadata? FindSourceFile(
-        string? filePath,
-        Func<SourceFileMetadata, bool> containsDeclaration)
+    private Typewriter.CodeModel.DocComment? CreateDocComment(
+        DocCommentMetadata? docComment,
+        Typewriter.CodeModel.Item? parent)
     {
-        ArgumentNullException.ThrowIfNull(argument: containsDeclaration);
+        return docComment is null
+            ? null
+            : new Typewriter.CodeModel.DocComment
+            {
+                Name = docComment.Summary,
+                Parent = parent,
+                Summary = docComment.Summary,
+                Returns = docComment.Returns,
+                Parameters = new Typewriter.CodeModel.ParameterCommentCollection(
+                    items: Defer(source: docComment.Parameters, selector: parameter => CreateParameterComment(parameter: parameter, parent: parent))),
+            };
+    }
 
-        // A partial declaration belongs to the file currently being rendered,
-        // even when Roslyn reports another part as its primary location.
-        if (_metadata.SourceFiles.Count == 1 && containsDeclaration.Invoke(arg: _metadata.SourceFiles[index: 0]))
+    private Typewriter.CodeModel.TypeParameterCollection CreateTypeParameters(
+        IEnumerable<TypeParameterMetadata> typeParameters,
+        Typewriter.CodeModel.Item? parent)
+    {
+        return new Typewriter.CodeModel.TypeParameterCollection(
+            items: Defer(source: typeParameters, selector: parameter => CreateTypeParameter(parameter: parameter, parent: parent)));
+    }
+
+    private TemplateCodeModelAdapterFactory CaptureFactory() =>
+        _canDefer && _liveFactory is null ? new TemplateCodeModelAdapterFactory(source: this) : this;
+
+    private IEnumerable<T> Defer<TSource, T>(IEnumerable<TSource> source, Func<TSource, T> selector)
+        where T : Typewriter.CodeModel.Item
+    {
+        if (!_canDefer)
         {
-            return _metadata.SourceFiles[index: 0];
+            return source.Select(selector: selector);
         }
 
-        return filePath is not null && _sourceFilesByPath.TryGetValue(key: filePath, value: out var sourceFile)
-            ? sourceFile
-            : _sourceFilesByPath.Values.FirstOrDefault(predicate: containsDeclaration);
+        return source.TryGetNonEnumeratedCount(count: out var count) && count == 0
+            ? []
+            : Typewriter.CodeModel.DeferredItems<T>.Create(source: source, selector: selector);
+    }
+
+    private CodeFile GetOrCreateSourceFile(string filePath, Func<CodeFile> createFile)
+    {
+        lock (_fileCacheLock)
+        {
+            if (_filesBySourcePath.TryGetValue(key: filePath, value: out var cachedFile))
+            {
+                return cachedFile;
+            }
+        }
+
+        // Never hold the cache lock while constructing a graph: custom settings
+        // and lazy parent navigation can re-enter the adapter.
+        var file = createFile.Invoke();
+        lock (_fileCacheLock)
+        {
+            if (_filesBySourcePath.TryGetValue(key: filePath, value: out var cachedFile))
+            {
+                return cachedFile;
+            }
+
+            _filesBySourcePath.Add(key: filePath, value: file);
+            return file;
+        }
     }
 
     private CodeFile ResolveParentFile(
@@ -493,54 +519,47 @@ internal sealed class TemplateCodeModelAdapterFactory
             return CreateFile(project: _metadata);
         }
 
-        if (_filesBySourcePath.TryGetValue(key: filePath, value: out var cachedFile))
+        lock (_fileCacheLock)
         {
-            return cachedFile;
+            if (_filesBySourcePath.TryGetValue(key: filePath, value: out var cachedFile))
+            {
+                return cachedFile;
+            }
         }
 
-        var sourcePaths = GetProjectSourcePaths(project: _metadata);
+        var sourcePaths = _sourcePaths.Value;
         if (sourcePaths.Length == 1 && sourcePaths[0].Equals(value: filePath, comparisonType: StringComparison.OrdinalIgnoreCase))
         {
             return CreateFile(project: _metadata);
         }
 
-        sourceFile ??= new SourceFileMetadata(
-            Path: filePath,
-            Types: _metadataIndex.Metadata.Types
-                .Where(predicate: type => GetPrimaryFilePath(type: type).Equals(value: filePath, comparisonType: StringComparison.OrdinalIgnoreCase)
-                    || type.FileLocations.Contains(value: filePath, comparer: StringComparer.OrdinalIgnoreCase))
-                .ToArray())
-        {
-            Delegates = _metadataIndex.Metadata.Delegates
-                .Where(predicate: @delegate => string.Equals(a: @delegate.Location?.Path, b: filePath, comparisonType: StringComparison.OrdinalIgnoreCase))
-                .ToArray(),
-        };
+        sourceFile ??= _sourceFiles.GetFallbackSource(metadata: _metadataIndex.Metadata, filePath: filePath);
         var project = _metadata with
         {
             SourceFiles = [sourceFile],
             Types = sourceFile.Types,
             Delegates = sourceFile.Delegates,
         };
-        var file = CreateFileModel(project: project, filePath: filePath, attachParents: true);
-        _filesBySourcePath[filePath] = file;
-        return file;
+        return GetOrCreateSourceFile(
+            filePath: filePath,
+            createFile: () => CaptureFactory().CreateFileModel(project: project, filePath: filePath, attachParents: true));
     }
 
     private Typewriter.CodeModel.Item? ResolveTypeParent(TypeMetadata type) =>
         string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName)
             ? ResolveParentFile(type: type)
-            : CreateParentTypeItem(fullName: type.ContainingTypeFullName, item: type);
+            : CaptureFactory().CreateParentTypeItem(fullName: type.ContainingTypeFullName, item: type);
 
     private void SetTypeParent(
         Typewriter.CodeModel.Item item,
         TypeMetadata type,
         CodeType? declarationType = null)
     {
-        _metadataByItem[item] = type;
+        _metadataByItem.AddOrUpdate(key: item, value: type);
 
         // Parent navigation is lazy so adapting a declaration does not recursively
         // construct the file that contains that same declaration.
-        item.SetParentFactory(parentFactory: () => ResolveTypeParent(type: type));
+        item.SetParentFactory(parentFactory: () => LiveFactory.ResolveTypeParent(type: type));
         declarationType?.SetParentFactory(parentFactory: () => item.Parent);
     }
 
@@ -559,30 +578,18 @@ internal sealed class TemplateCodeModelAdapterFactory
             FullName = filePath,
             Path = filePath,
             Classes = new Typewriter.CodeModel.ClassCollection(
-                items: rootTypes
-                    .Where(predicate: type => type.Kind == TypeMetadataKind.Class)
-                    .Select(selector: CreateClass)),
+                items: Defer(source: rootTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Class), selector: CreateClass)),
             Records = new Typewriter.CodeModel.RecordCollection(
-                items: rootTypes
-                    .Where(predicate: type => type.Kind == TypeMetadataKind.Record)
-                    .Select(selector: CreateRecord)),
+                items: Defer(source: rootTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Record), selector: CreateRecord)),
             Structs = new Typewriter.CodeModel.StructCollection(
-                items: rootTypes
-                    .Where(predicate: type => type.Kind == TypeMetadataKind.Struct)
-                    .Select(selector: CreateStruct)),
+                items: Defer(source: rootTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Struct), selector: CreateStruct)),
             Delegates = new Typewriter.CodeModel.DelegateCollection(
-                items: project.Delegates
-                    .Where(predicate: @delegate => string.IsNullOrWhiteSpace(value: @delegate.ParentTypeFullName))
-                    .Select(selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
+                items: Defer(source: project.Delegates.Where(predicate: @delegate => string.IsNullOrWhiteSpace(value: @delegate.ParentTypeFullName)), selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
             Interfaces = new Typewriter.CodeModel.InterfaceCollection(
-                items: rootTypes
-                    .Where(predicate: type => type.Kind == TypeMetadataKind.Interface)
-                    .Select(selector: CreateInterface)),
+                items: Defer(source: rootTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Interface), selector: CreateInterface)),
             Enums = new Typewriter.CodeModel.EnumCollection(
-                items: rootTypes
-                    .Where(predicate: type => type.Kind == TypeMetadataKind.Enum)
-                    .Select(selector: CreateEnum)),
-            Types = new Typewriter.CodeModel.TypeCollection(items: rootTypes.Select(selector: CreateType)),
+                items: Defer(source: rootTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Enum), selector: CreateEnum)),
+            Types = new Typewriter.CodeModel.TypeCollection(items: Defer(source: rootTypes, selector: CreateType)),
         };
         if (attachParents)
         {
@@ -649,30 +656,37 @@ internal sealed class TemplateCodeModelAdapterFactory
             FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
-            BaseClass = CreateBaseClass(type: type, reference: reference),
-            ContainingClass = CreateContainingClass(type: type),
+            BaseClass = _canDefer ? null : CreateBaseClass(type: type, reference: reference),
+            ContainingClass = _canDefer ? null : CreateContainingClass(type: type),
             DocComment = CreateDocComment(docComment: type.DocComment, parent: null),
             Interfaces = CreateInterfaces(type: type, reference: reference),
             IsAbstract = type.IsAbstract,
             IsGeneric = classType.IsGeneric,
             IsStatic = type.IsStatic,
-            Constants = new Typewriter.CodeModel.ConstantCollection(items: type.Constants.Select(selector: constant => CreateConstant(constant: constant, parent: null))),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: type.Delegates.Select(selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
-            Events = new Typewriter.CodeModel.EventCollection(items: type.Events.Select(selector: @event => CreateEvent(@event: @event, parent: null))),
-            Fields = new Typewriter.CodeModel.FieldCollection(items: type.Fields.Select(selector: field => CreateField(field: field, parent: null))),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: type.Methods.Select(selector: method => CreateMethod(method: method, parent: null))),
-            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: type.NestedClasses.Select(selector: CreateClass)),
-            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: type.NestedEnums.Select(selector: CreateEnum)),
-            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: type.NestedInterfaces.Select(selector: CreateInterface)),
-            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: type.NestedRecords.Select(selector: CreateRecord)),
-            NestedStructs = new Typewriter.CodeModel.StructCollection(items: type.NestedStructs.Select(selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: type.Properties.Select(selector: property => CreateProperty(property: property, parent: null))),
+            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: type.Constants, selector: constant => CreateConstant(constant: constant, parent: null))),
+            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: type.Delegates, selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
+            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: type.Events, selector: @event => CreateEvent(@event: @event, parent: null))),
+            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: type.Fields, selector: field => CreateField(field: field, parent: null))),
+            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: type.Methods, selector: method => CreateMethod(method: method, parent: null))),
+            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: type.NestedClasses, selector: CreateClass)),
+            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: type.NestedEnums, selector: CreateEnum)),
+            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: type.NestedInterfaces, selector: CreateInterface)),
+            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: type.NestedRecords, selector: CreateRecord)),
+            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: type.NestedStructs, selector: CreateStruct)),
+            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: type.Properties, selector: property => CreateProperty(property: property, parent: null))),
             StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
-                items: type.StaticReadOnlyFields.Select(selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
+                items: Defer(source: type.StaticReadOnlyFields, selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
             Type = classType,
             TypeArguments = classType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
+        if (_canDefer)
+        {
+            item.SetNavigationFactories(
+                baseTypeFactory: () => CreateBaseClass(type: type, reference: reference),
+                containingTypeFactory: () => CreateContainingClass(type: type));
+        }
+
         SetTypeParent(item: item, type: type, declarationType: classType);
         return AttachChildren(
             item: item,
@@ -702,29 +716,36 @@ internal sealed class TemplateCodeModelAdapterFactory
             FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
-            BaseRecord = CreateBaseRecord(type: type, reference: reference),
-            ContainingRecord = CreateContainingRecord(type: type),
+            BaseRecord = _canDefer ? null : CreateBaseRecord(type: type, reference: reference),
+            ContainingRecord = _canDefer ? null : CreateContainingRecord(type: type),
             DocComment = CreateDocComment(docComment: type.DocComment, parent: null),
             Interfaces = CreateInterfaces(type: type, reference: reference),
             IsAbstract = type.IsAbstract,
             IsGeneric = recordType.IsGeneric,
-            Constants = new Typewriter.CodeModel.ConstantCollection(items: type.Constants.Select(selector: constant => CreateConstant(constant: constant, parent: null))),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: type.Delegates.Select(selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
-            Events = new Typewriter.CodeModel.EventCollection(items: type.Events.Select(selector: @event => CreateEvent(@event: @event, parent: null))),
-            Fields = new Typewriter.CodeModel.FieldCollection(items: type.Fields.Select(selector: field => CreateField(field: field, parent: null))),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: type.Methods.Select(selector: method => CreateMethod(method: method, parent: null))),
-            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: type.NestedClasses.Select(selector: CreateClass)),
-            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: type.NestedEnums.Select(selector: CreateEnum)),
-            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: type.NestedInterfaces.Select(selector: CreateInterface)),
-            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: type.NestedRecords.Select(selector: CreateRecord)),
-            NestedStructs = new Typewriter.CodeModel.StructCollection(items: type.NestedStructs.Select(selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: type.Properties.Select(selector: property => CreateProperty(property: property, parent: null))),
+            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: type.Constants, selector: constant => CreateConstant(constant: constant, parent: null))),
+            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: type.Delegates, selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
+            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: type.Events, selector: @event => CreateEvent(@event: @event, parent: null))),
+            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: type.Fields, selector: field => CreateField(field: field, parent: null))),
+            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: type.Methods, selector: method => CreateMethod(method: method, parent: null))),
+            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: type.NestedClasses, selector: CreateClass)),
+            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: type.NestedEnums, selector: CreateEnum)),
+            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: type.NestedInterfaces, selector: CreateInterface)),
+            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: type.NestedRecords, selector: CreateRecord)),
+            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: type.NestedStructs, selector: CreateStruct)),
+            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: type.Properties, selector: property => CreateProperty(property: property, parent: null))),
             StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
-                items: type.StaticReadOnlyFields.Select(selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
+                items: Defer(source: type.StaticReadOnlyFields, selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
             Type = recordType,
             TypeArguments = recordType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
+        if (_canDefer)
+        {
+            item.SetNavigationFactories(
+                baseTypeFactory: () => CreateBaseRecord(type: type, reference: reference),
+                containingTypeFactory: () => CreateContainingRecord(type: type));
+        }
+
         SetTypeParent(item: item, type: type, declarationType: recordType);
         return AttachChildren(
             item: item,
@@ -756,12 +777,12 @@ internal sealed class TemplateCodeModelAdapterFactory
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             ContainingClass = CreateContainingClass(type: type),
             DocComment = CreateDocComment(docComment: type.DocComment, parent: null),
-            Events = new Typewriter.CodeModel.EventCollection(items: type.Events.Select(selector: @event => CreateEvent(@event: @event, parent: null))),
+            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: type.Events, selector: @event => CreateEvent(@event: @event, parent: null))),
             IsGeneric = interfaceType.IsGeneric,
             Interfaces = CreateInterfaces(type: type, reference: reference),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: type.Methods.Select(selector: method => CreateMethod(method: method, parent: null))),
-            NestedStructs = new Typewriter.CodeModel.StructCollection(items: type.NestedStructs.Select(selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: type.Properties.Select(selector: property => CreateProperty(property: property, parent: null))),
+            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: type.Methods, selector: method => CreateMethod(method: method, parent: null))),
+            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: type.NestedStructs, selector: CreateStruct)),
+            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: type.Properties, selector: property => CreateProperty(property: property, parent: null))),
             Type = interfaceType,
             TypeArguments = interfaceType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
@@ -797,19 +818,19 @@ internal sealed class TemplateCodeModelAdapterFactory
             Interfaces = CreateInterfaces(type: type, reference: reference),
             IsGeneric = structType.IsGeneric,
             IsStatic = type.IsStatic,
-            Constants = new Typewriter.CodeModel.ConstantCollection(items: type.Constants.Select(selector: constant => CreateConstant(constant: constant, parent: null))),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: type.Delegates.Select(selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
-            Events = new Typewriter.CodeModel.EventCollection(items: type.Events.Select(selector: @event => CreateEvent(@event: @event, parent: null))),
-            Fields = new Typewriter.CodeModel.FieldCollection(items: type.Fields.Select(selector: field => CreateField(field: field, parent: null))),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: type.Methods.Select(selector: method => CreateMethod(method: method, parent: null))),
-            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: type.NestedClasses.Select(selector: CreateClass)),
-            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: type.NestedEnums.Select(selector: CreateEnum)),
-            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: type.NestedInterfaces.Select(selector: CreateInterface)),
-            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: type.NestedRecords.Select(selector: CreateRecord)),
-            NestedStructs = new Typewriter.CodeModel.StructCollection(items: type.NestedStructs.Select(selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: type.Properties.Select(selector: property => CreateProperty(property: property, parent: null))),
+            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: type.Constants, selector: constant => CreateConstant(constant: constant, parent: null))),
+            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: type.Delegates, selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
+            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: type.Events, selector: @event => CreateEvent(@event: @event, parent: null))),
+            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: type.Fields, selector: field => CreateField(field: field, parent: null))),
+            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: type.Methods, selector: method => CreateMethod(method: method, parent: null))),
+            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: type.NestedClasses, selector: CreateClass)),
+            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: type.NestedEnums, selector: CreateEnum)),
+            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: type.NestedInterfaces, selector: CreateInterface)),
+            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: type.NestedRecords, selector: CreateRecord)),
+            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: type.NestedStructs, selector: CreateStruct)),
+            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: type.Properties, selector: property => CreateProperty(property: property, parent: null))),
             StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
-                items: type.StaticReadOnlyFields.Select(selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
+                items: Defer(source: type.StaticReadOnlyFields, selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
             Type = structType,
             TypeArguments = structType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
@@ -839,7 +860,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             DocComment = CreateDocComment(docComment: type.DocComment, parent: null),
             IsFlags = HasAttribute(attributes: type.Attributes, name: "Flags"),
             Type = CreateType(type: type),
-            Values = new Typewriter.CodeModel.EnumValueCollection(items: type.EnumValues.Select(selector: value => CreateEnumValue(enumValue: value, parent: null))),
+            Values = new Typewriter.CodeModel.EnumValueCollection(items: Defer(source: type.EnumValues, selector: value => CreateEnumValue(enumValue: value, parent: null))),
         };
         SetTypeParent(item: enumModel, type: type, declarationType: enumModel.Type);
         return AttachChildren(
@@ -859,8 +880,8 @@ internal sealed class TemplateCodeModelAdapterFactory
             FullName = FormatGenericFullName(type: type),
             Namespace = type.Namespace,
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
-            BaseClass = CreateBaseClass(type: type),
-            ContainingClass = CreateContainingClass(type: type),
+            BaseClass = _canDefer ? null : CreateBaseClass(type: type),
+            ContainingClass = _canDefer ? null : CreateContainingClass(type: type),
             DocComment = CreateDocComment(docComment: type.DocComment, parent: null),
             FileLocations = type.FileLocations,
             IsDefined = true,
@@ -868,23 +889,30 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
             IsStruct = type.Kind == TypeMetadataKind.Struct,
             Interfaces = CreateInterfaces(type: type),
-            Constants = new Typewriter.CodeModel.ConstantCollection(items: type.Constants.Select(selector: constant => CreateConstant(constant: constant, parent: null))),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: type.Delegates.Select(selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
-            Fields = new Typewriter.CodeModel.FieldCollection(items: type.Fields.Select(selector: field => CreateField(field: field, parent: null))),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: type.Methods.Select(selector: method => CreateMethod(method: method, parent: null))),
-            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: type.NestedClasses.Select(selector: CreateClass)),
-            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: type.NestedEnums.Select(selector: CreateEnum)),
-            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: type.NestedInterfaces.Select(selector: CreateInterface)),
-            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: type.NestedRecords.Select(selector: CreateRecord)),
-            NestedStructs = new Typewriter.CodeModel.StructCollection(items: type.NestedStructs.Select(selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: type.Properties.Select(selector: property => CreateProperty(property: property, parent: null))),
+            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: type.Constants, selector: constant => CreateConstant(constant: constant, parent: null))),
+            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: type.Delegates, selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
+            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: type.Fields, selector: field => CreateField(field: field, parent: null))),
+            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: type.Methods, selector: method => CreateMethod(method: method, parent: null))),
+            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: type.NestedClasses, selector: CreateClass)),
+            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: type.NestedEnums, selector: CreateEnum)),
+            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: type.NestedInterfaces, selector: CreateInterface)),
+            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: type.NestedRecords, selector: CreateRecord)),
+            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: type.NestedStructs, selector: CreateStruct)),
+            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: type.Properties, selector: property => CreateProperty(property: property, parent: null))),
             StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
-                items: type.StaticReadOnlyFields.Select(selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
+                items: Defer(source: type.StaticReadOnlyFields, selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: Defer(source: type.TypeArguments, selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
             DefaultValue = GetDefaultValue(type: type),
             Settings = _settings,
         };
+        if (_canDefer)
+        {
+            item.SetNavigationFactories(
+                baseTypeFactory: () => CreateBaseClass(type: type),
+                containingTypeFactory: () => CreateContainingClass(type: type));
+        }
+
         SetTypeParent(item: item, type: type);
         return AttachChildren(
             item: item,
@@ -902,19 +930,19 @@ internal sealed class TemplateCodeModelAdapterFactory
         FrontendRuntimeTypeKind runtimeType = FrontendRuntimeTypeKind.Auto)
     {
         var typeArguments = new Typewriter.CodeModel.TypeCollection(
-            items: type.TypeArguments.Select(selector: argument => CreateType(type: argument, runtimeType: runtimeType)));
+            items: Defer(source: type.TypeArguments, selector: argument => CreateType(type: argument, runtimeType: runtimeType)));
         _ = TryResolveType(reference: type, metadata: out var typeMetadata);
         var fileLocations = ResolveFileLocations(type: type, metadata: typeMetadata);
         var mappedName = _typeMapper.Map(
             type: type,
-            strictNull: _settings.StrictNullGeneration,
-            dateMapping: _settings.GetDateMapping(),
-            decimalType: _settings.DecimalTypeGeneration,
-            guidType: _settings.GuidTypeGeneration,
+            strictNull: _mappingSettings.StrictNullGeneration,
+            dateMapping: _mappingSettings.GetDateMapping(),
+            decimalType: _mappingSettings.DecimalTypeGeneration,
+            guidType: _mappingSettings.GuidTypeGeneration,
             runtimeType: runtimeType);
         var isStruct = typeMetadata?.Kind == TypeMetadataKind.Struct;
         var item = new MappedCodeType(
-            interfacesFactory: () => CreateInterfaces(reference: type, metadata: typeMetadata))
+            interfacesFactory: () => LiveFactory.CaptureFactory().CreateInterfaces(reference: type, metadata: typeMetadata))
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = GetLegacyTypeName(mappedName: mappedName),
@@ -923,7 +951,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             Attributes = typeMetadata is null
                 ? new Typewriter.CodeModel.AttributeCollection()
                 : CreateTypeReferenceAttributes(attributes: typeMetadata.Attributes),
-            ElementType = type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType),
+            ElementType = _canDefer || type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType),
             FileLocations = fileLocations,
             IsDate = type.IsDateLike,
             IsDefined = typeMetadata is not null || fileLocations.Count > 0,
@@ -940,23 +968,24 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsTimeSpan = type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal),
             IsValueTuple = type.IsValueTuple,
             OriginalName = type.Name,
-            TupleElements = new Typewriter.CodeModel.FieldCollection(items: type.TupleElements.Select(selector: field => CreateField(field: field, parent: null))),
+            TupleElements = new Typewriter.CodeModel.FieldCollection(items: Defer(source: type.TupleElements, selector: field => CreateField(field: field, parent: null))),
             TypeArguments = typeArguments,
             DefaultValue = GetDefaultValue(type: type, runtimeType: runtimeType),
             Settings = _settings,
-            UseResolvedDefault = _settings.DateLibraryGeneration != Typewriter.Configuration.DateLibrary.Legacy
+            UseResolvedDefault = _mappingSettings.DateLibraryGeneration != Typewriter.Configuration.DateLibrary.Legacy
                                  || runtimeType != FrontendRuntimeTypeKind.Auto,
         };
+        if (_canDefer)
+        {
+            item.SetElementTypeFactory(elementTypeFactory: () => type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType));
+        }
+
         if (typeMetadata is not null)
         {
             SetTypeParent(item: item, type: typeMetadata);
         }
 
-        return AttachChildren(
-            item: item,
-            attributes: item.Attributes,
-            docComment: item.DocComment,
-            childCollections: [item.TupleElements]);
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment, childCollections: [item.TupleElements]);
     }
 
     private bool TryResolveType(
@@ -992,13 +1021,13 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsRequired = property.IsRequired,
             IsVirtual = property.IsVirtual,
             Parameters = includeParameters
-                ? new Typewriter.CodeModel.ParameterCollection(items: property.Parameters.Select(selector: parameter => CreateParameter(parameter: parameter, parent: null)))
+                ? new Typewriter.CodeModel.ParameterCollection(items: Defer(source: property.Parameters, selector: parameter => CreateParameter(parameter: parameter, parent: null)))
                 : new Typewriter.CodeModel.ParameterCollection(),
             Type = CreateType(type: property.Type, runtimeType: FrontendRuntimeTypeResolver.Resolve(attributes: property.Attributes)),
             Value = property.Value ?? string.Empty,
         };
-        _metadataByItem[item] = property;
-        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: property.ParentTypeFullName, item: property));
+        _metadataByItem.AddOrUpdate(key: item, value: property);
+        item.SetParentFactory(parentFactory: () => parent ?? LiveFactory.CaptureFactory().CreateParentTypeItem(fullName: property.ParentTypeFullName, item: property));
         return AttachChildren(
             item: item,
             attributes: item.Attributes,
@@ -1028,13 +1057,13 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsAbstract = method.IsAbstract,
             IsGeneric = method.IsGeneric,
             Parameters = includeParameters
-                ? new Typewriter.CodeModel.ParameterCollection(items: method.Parameters.Select(selector: parameter => CreateParameter(parameter: parameter, parent: null)))
+                ? new Typewriter.CodeModel.ParameterCollection(items: Defer(source: method.Parameters, selector: parameter => CreateParameter(parameter: parameter, parent: null)))
                 : new Typewriter.CodeModel.ParameterCollection(),
             Type = CreateType(type: method.ReturnType),
             TypeParameters = CreateTypeParameters(typeParameters: method.TypeParameters, parent: null),
         };
-        _metadataByItem[item] = method;
-        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: method.ParentTypeFullName, item: method));
+        _metadataByItem.AddOrUpdate(key: item, value: method);
+        item.SetParentFactory(parentFactory: () => parent ?? LiveFactory.CaptureFactory().CreateParentTypeItem(fullName: method.ParentTypeFullName, item: method));
         return AttachChildren(
             item: item,
             attributes: item.Attributes,
@@ -1056,11 +1085,11 @@ internal sealed class TemplateCodeModelAdapterFactory
             HasDefaultValue = parameter.HasDefaultValue,
             Type = CreateType(type: parameter.Type, runtimeType: FrontendRuntimeTypeResolver.Resolve(attributes: parameter.Attributes)),
         };
-        _metadataByItem[item] = parameter;
+        _metadataByItem.AddOrUpdate(key: item, value: parameter);
         item.SetParentFactory(
             parentFactory: () => parent
-                ?? (Typewriter.CodeModel.Item?)CreateParentMethod(fullName: parameter.ParentMethodFullName)
-                ?? CreateParentProperty(fullName: parameter.ParentPropertyFullName));
+                ?? (Typewriter.CodeModel.Item?)LiveFactory.CaptureFactory().CreateParentMethod(fullName: parameter.ParentMethodFullName)
+                ?? LiveFactory.CaptureFactory().CreateParentProperty(fullName: parameter.ParentPropertyFullName));
         return AttachChildren(item: item, attributes: item.Attributes, docComment: null);
     }
 
@@ -1078,8 +1107,8 @@ internal sealed class TemplateCodeModelAdapterFactory
             Type = CreateType(type: constant.Type),
             Value = constant.Value ?? string.Empty,
         };
-        _metadataByItem[item] = constant;
-        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: constant.ParentTypeFullName, item: constant));
+        _metadataByItem.AddOrUpdate(key: item, value: constant);
+        item.SetParentFactory(parentFactory: () => parent ?? LiveFactory.CaptureFactory().CreateParentTypeItem(fullName: constant.ParentTypeFullName, item: constant));
         return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment);
     }
 
@@ -1097,8 +1126,8 @@ internal sealed class TemplateCodeModelAdapterFactory
             Type = CreateType(type: field.Type, runtimeType: FrontendRuntimeTypeResolver.Resolve(attributes: field.Attributes)),
             Value = field.Value ?? string.Empty,
         };
-        _metadataByItem[item] = field;
-        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: field.ParentTypeFullName, item: field));
+        _metadataByItem.AddOrUpdate(key: item, value: field);
+        item.SetParentFactory(parentFactory: () => parent ?? LiveFactory.CaptureFactory().CreateParentTypeItem(fullName: field.ParentTypeFullName, item: field));
         return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment);
     }
 
@@ -1116,8 +1145,8 @@ internal sealed class TemplateCodeModelAdapterFactory
             Type = CreateType(type: field.Type),
             Value = field.Value ?? string.Empty,
         };
-        _metadataByItem[item] = field;
-        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: field.ParentTypeFullName, item: field));
+        _metadataByItem.AddOrUpdate(key: item, value: field);
+        item.SetParentFactory(parentFactory: () => parent ?? LiveFactory.CaptureFactory().CreateParentTypeItem(fullName: field.ParentTypeFullName, item: field));
         return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment);
     }
 
@@ -1134,8 +1163,8 @@ internal sealed class TemplateCodeModelAdapterFactory
             DocComment = CreateDocComment(docComment: @event.DocComment, parent: null),
             Type = CreateType(type: @event.Type),
         };
-        _metadataByItem[item] = @event;
-        item.SetParentFactory(parentFactory: () => parent ?? CreateParentTypeItem(fullName: @event.ParentTypeFullName, item: @event));
+        _metadataByItem.AddOrUpdate(key: item, value: @event);
+        item.SetParentFactory(parentFactory: () => parent ?? LiveFactory.CaptureFactory().CreateParentTypeItem(fullName: @event.ParentTypeFullName, item: @event));
         return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment);
     }
 
@@ -1151,16 +1180,16 @@ internal sealed class TemplateCodeModelAdapterFactory
             Attributes = CreateAttributes(attributes: @delegate.Attributes, parent: null),
             DocComment = CreateDocComment(docComment: @delegate.DocComment, parent: null),
             IsGeneric = @delegate.IsGeneric,
-            Parameters = new Typewriter.CodeModel.ParameterCollection(items: @delegate.Parameters.Select(selector: parameter => CreateParameter(parameter: parameter, parent: null))),
+            Parameters = new Typewriter.CodeModel.ParameterCollection(items: Defer(source: @delegate.Parameters, selector: parameter => CreateParameter(parameter: parameter, parent: null))),
             Type = CreateType(type: @delegate.ReturnType),
             TypeParameters = CreateTypeParameters(typeParameters: @delegate.TypeParameters, parent: null),
         };
-        _metadataByItem[item] = @delegate;
+        _metadataByItem.AddOrUpdate(key: item, value: @delegate);
         item.SetParentFactory(
             parentFactory: () => parent
                 ?? (string.IsNullOrWhiteSpace(value: @delegate.ParentTypeFullName)
-                    ? ResolveParentFile(@delegate: @delegate)
-                    : CreateParentTypeItem(fullName: @delegate.ParentTypeFullName, item: @delegate)));
+                    ? LiveFactory.ResolveParentFile(@delegate: @delegate)
+                    : LiveFactory.CaptureFactory().CreateParentTypeItem(fullName: @delegate.ParentTypeFullName, item: @delegate)));
         return AttachChildren(
             item: item,
             attributes: item.Attributes,
@@ -1178,47 +1207,74 @@ internal sealed class TemplateCodeModelAdapterFactory
             Name = attribute.Name,
             FullName = attribute.FullName,
             Parent = parent,
-            Arguments = new Typewriter.CodeModel.AttributeArgumentCollection(items: attribute.Arguments.Select(selector: CreateAttributeArgument)),
-            Type = attribute.Type is null ? null : CreateType(type: attribute.Type),
-            Value = TemplateAttributeValueFormatter.Format(attribute: attribute),
+            Arguments = new Typewriter.CodeModel.AttributeArgumentCollection(items: Defer(source: attribute.Arguments, selector: CreateAttributeArgument)),
+            Type = attribute.Type is null || _canDefer ? null : CreateType(type: attribute.Type),
+            Value = _canDefer ? string.Empty : TemplateAttributeValueFormatter.Format(attribute: attribute),
         };
-        _metadataByItem[item] = attribute;
+        _metadataByItem.AddOrUpdate(key: item, value: attribute);
+        if (_canDefer)
+        {
+            item.SetValueFactory(valueFactory: () => TemplateAttributeValueFormatter.Format(attribute: attribute));
+            if (attribute.Type is { } reference)
+            {
+                item.SetTypeFactory(typeFactory: () => CreateType(type: reference));
+            }
+        }
+
         SetChildParents(parent: item, children: item.Arguments);
         return item;
     }
 
     private Typewriter.CodeModel.AttributeArgument CreateAttributeArgument(AttributeArgumentMetadata argument)
     {
-        return new Typewriter.CodeModel.AttributeArgument
+        var item = new Typewriter.CodeModel.AttributeArgument
         {
             AssemblyName = ResolveAssemblyName(assemblyName: argument.AssemblyName),
             Name = argument.Name ?? string.Empty,
-            Type = argument.Type is null ? null : CreateType(type: argument.Type),
-            TypeValue = argument.TypeValue is null ? null : CreateType(type: argument.TypeValue),
+            Type = argument.Type is null || _canDefer ? null : CreateType(type: argument.Type),
+            TypeValue = argument.TypeValue is null || _canDefer ? null : CreateType(type: argument.TypeValue),
             Value = TemplateAttributeArgumentValueResolver.Resolve(argument: argument),
         };
+        if (_canDefer && argument.Type is { } reference)
+        {
+            item.SetTypeFactory(typeFactory: () => CreateType(type: reference));
+        }
+
+        if (_canDefer && argument.TypeValue is { } valueReference)
+        {
+            item.SetTypeValueFactory(typeValueFactory: () => CreateType(type: valueReference));
+        }
+
+        return item;
     }
 
     private Typewriter.CodeModel.AttributeCollection CreateTypeReferenceAttributes(
-        IEnumerable<AttributeMetadata> attributes)
+        IEnumerable<AttributeMetadata> attributes) =>
+        new(items: Defer(source: attributes, selector: CreateTypeReferenceAttribute));
+
+    private CodeAttribute CreateTypeReferenceAttribute(AttributeMetadata attribute)
     {
-        return new Typewriter.CodeModel.AttributeCollection(
-            items: attributes.Select(
-                selector: attribute => new CodeAttribute
-                {
-                    AssemblyName = ResolveAssemblyName(assemblyName: attribute.AssemblyName),
-                    Name = attribute.Name,
-                    FullName = attribute.FullName,
-                    Arguments = new Typewriter.CodeModel.AttributeArgumentCollection(
-                        items: attribute.Arguments.Select(
-                            selector: argument => new Typewriter.CodeModel.AttributeArgument
-                            {
-                                AssemblyName = ResolveAssemblyName(assemblyName: argument.AssemblyName),
-                                Name = argument.Name ?? string.Empty,
-                                Value = TemplateAttributeArgumentValueResolver.Resolve(argument: argument),
-                            })),
-                    Value = TemplateAttributeValueFormatter.Format(attribute: attribute),
-                }));
+        var item = new CodeAttribute
+        {
+            AssemblyName = ResolveAssemblyName(assemblyName: attribute.AssemblyName),
+            Name = attribute.Name,
+            FullName = attribute.FullName,
+            Arguments = new Typewriter.CodeModel.AttributeArgumentCollection(
+                items: Defer(source: attribute.Arguments, selector: argument => new Typewriter.CodeModel.AttributeArgument
+                    {
+                        AssemblyName = ResolveAssemblyName(assemblyName: argument.AssemblyName),
+                        Name = argument.Name ?? string.Empty,
+                        Value = TemplateAttributeArgumentValueResolver.Resolve(argument: argument),
+                    })),
+            Value = _canDefer ? string.Empty : TemplateAttributeValueFormatter.Format(attribute: attribute),
+        };
+        if (_canDefer)
+        {
+            item.SetValueFactory(valueFactory: () => TemplateAttributeValueFormatter.Format(attribute: attribute));
+        }
+
+        SetChildParents(parent: item, children: item.Arguments);
+        return item;
     }
 
     private Typewriter.CodeModel.EnumValue CreateEnumValue(
@@ -1236,8 +1292,8 @@ internal sealed class TemplateCodeModelAdapterFactory
             DocComment = CreateDocComment(docComment: enumValue.DocComment, parent: null),
             Value = enumValue.Value ?? 0,
         };
-        _metadataByItem[item] = enumValue;
-        item.SetParentFactory(parentFactory: () => parent ?? CreateParentEnum(fullName: enumValue.ParentTypeFullName, item: enumValue));
+        _metadataByItem.AddOrUpdate(key: item, value: enumValue);
+        item.SetParentFactory(parentFactory: () => parent ?? LiveFactory.CaptureFactory().CreateParentEnum(fullName: enumValue.ParentTypeFullName, item: enumValue));
         return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment);
     }
 
@@ -1247,7 +1303,7 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         if (reference.Interfaces.Count > 0)
         {
-            return new Typewriter.CodeModel.InterfaceCollection(items: reference.Interfaces.Select(selector: CreateInterfaceReference));
+            return new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: reference.Interfaces, selector: CreateInterfaceReference));
         }
 
         return metadata is null
@@ -1293,7 +1349,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         IEnumerable<AttributeMetadata> attributes,
         Typewriter.CodeModel.Item? parent)
     {
-        return new Typewriter.CodeModel.AttributeCollection(items: attributes.Select(selector: attribute => CreateAttribute(attribute: attribute, parent: parent)));
+        return new Typewriter.CodeModel.AttributeCollection(items: Defer(source: attributes, selector: attribute => CreateAttribute(attribute: attribute, parent: parent)));
     }
 
     private Typewriter.CodeModel.Item? CreateParentTypeItem(
@@ -1379,7 +1435,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
             IsStatic = type.IsStatic,
             Type = CreateTypeShell(type: type),
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: Defer(source: type.TypeArguments, selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
         SetTypeParent(item: item, type: type, declarationType: item.Type);
@@ -1398,7 +1454,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsAbstract = type.IsAbstract,
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
             Type = CreateTypeShell(type: type),
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: Defer(source: type.TypeArguments, selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
         SetTypeParent(item: item, type: type, declarationType: item.Type);
@@ -1417,7 +1473,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
             IsStatic = type.IsStatic,
             Type = CreateTypeShell(type: type),
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: Defer(source: type.TypeArguments, selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
         SetTypeParent(item: item, type: type, declarationType: item.Type);
@@ -1435,7 +1491,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
             Type = CreateTypeShell(type: type),
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: Defer(source: type.TypeArguments, selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
         SetTypeParent(item: item, type: type, declarationType: item.Type);
@@ -1475,7 +1531,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsStruct = type.Kind == TypeMetadataKind.Struct,
             DefaultValue = GetDefaultValue(type: type),
             Settings = _settings,
-            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: type.TypeArguments.Select(selector: argument => CreateType(type: argument))),
+            TypeArguments = new Typewriter.CodeModel.TypeCollection(items: Defer(source: type.TypeArguments, selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
         };
         SetTypeParent(item: item, type: type);
@@ -1505,7 +1561,7 @@ internal sealed class TemplateCodeModelAdapterFactory
                     Namespace = baseType.Namespace,
                     IsGeneric = baseType.Arity > 0,
                     Type = CreateType(type: baseType),
-                    TypeArguments = new Typewriter.CodeModel.TypeCollection(items: baseType.TypeArguments.Select(selector: argument => CreateType(type: argument))),
+                    TypeArguments = new Typewriter.CodeModel.TypeCollection(items: Defer(source: baseType.TypeArguments, selector: argument => CreateType(type: argument))),
                 };
     }
 
@@ -1532,7 +1588,7 @@ internal sealed class TemplateCodeModelAdapterFactory
                     Namespace = baseType.Namespace,
                     IsGeneric = baseType.Arity > 0,
                     Type = CreateType(type: baseType),
-                    TypeArguments = new Typewriter.CodeModel.TypeCollection(items: baseType.TypeArguments.Select(selector: argument => CreateType(type: argument))),
+                    TypeArguments = new Typewriter.CodeModel.TypeCollection(items: Defer(source: baseType.TypeArguments, selector: argument => CreateType(type: argument))),
                 };
     }
 
@@ -1588,18 +1644,18 @@ internal sealed class TemplateCodeModelAdapterFactory
             return "[]";
         }
 
-        var stringLiteralCharacter = _settings.StringLiteralCharacter;
+        var stringLiteralCharacter = _mappingSettings.StringLiteralCharacter;
         var overriddenDefault = GetRuntimeOverrideDefault(runtimeType: runtimeType, stringLiteralCharacter: stringLiteralCharacter);
         if (overriddenDefault is not null)
         {
             return overriddenDefault;
         }
 
-        if ((_settings.DateLibraryGeneration != Typewriter.Configuration.DateLibrary.Legacy
+        if ((_mappingSettings.DateLibraryGeneration != Typewriter.Configuration.DateLibrary.Legacy
              || runtimeType != FrontendRuntimeTypeKind.Auto)
             && DateSemanticTypeResolver.Resolve(type: type, runtimeType: runtimeType) is { } semanticKind)
         {
-            return _settings.GetDateInitializer(kind: semanticKind);
+            return _mappingSettings.GetDateInitializer(kind: semanticKind);
         }
 
         if (TryGetSpecialDefault(type: type, stringLiteralCharacter: stringLiteralCharacter, value: out var specialDefault))
@@ -1638,11 +1694,11 @@ internal sealed class TemplateCodeModelAdapterFactory
         runtimeType switch
         {
             FrontendRuntimeTypeKind.Decimal => ScalarInitializer.ResolveDecimal(
-                decimalType: _settings.DecimalTypeGeneration,
-                decimalInitializer: _settings.DecimalInitializerGeneration),
+                decimalType: _mappingSettings.DecimalTypeGeneration,
+                decimalInitializer: _mappingSettings.DecimalInitializerGeneration),
             FrontendRuntimeTypeKind.Uuid => ScalarInitializer.ResolveGuid(
-                guidType: _settings.GuidTypeGeneration,
-                guidInitializer: _settings.GuidInitializerGeneration,
+                guidType: _mappingSettings.GuidTypeGeneration,
+                guidInitializer: _mappingSettings.GuidInitializerGeneration,
                 stringLiteralCharacter: stringLiteralCharacter),
             FrontendRuntimeTypeKind.String => $"{stringLiteralCharacter}{stringLiteralCharacter}",
             _ => null,
@@ -1656,8 +1712,8 @@ internal sealed class TemplateCodeModelAdapterFactory
         if (type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal))
         {
             value = ScalarInitializer.ResolveGuid(
-                guidType: _settings.GuidTypeGeneration,
-                guidInitializer: _settings.GuidInitializerGeneration,
+                guidType: _mappingSettings.GuidTypeGeneration,
+                guidInitializer: _mappingSettings.GuidInitializerGeneration,
                 stringLiteralCharacter: stringLiteralCharacter);
             return true;
         }
@@ -1670,14 +1726,14 @@ internal sealed class TemplateCodeModelAdapterFactory
 
         if (TypeScriptTemporalTypes.IsDateOnly(fullName: type.FullName))
         {
-            value = _settings.DateOnlyInitializerGeneration;
+            value = _mappingSettings.DateOnlyInitializerGeneration;
             return true;
         }
 
         if (TypeScriptTemporalTypes.IsTimeOnly(fullName: type.FullName))
         {
             value = TypeScriptTemporalTypes.FormatTimeOnlyInitializer(
-                initializer: _settings.TimeOnlyInitializerGeneration,
+                initializer: _mappingSettings.TimeOnlyInitializerGeneration,
                 stringLiteralCharacter: stringLiteralCharacter);
             return true;
         }
@@ -1691,12 +1747,12 @@ internal sealed class TemplateCodeModelAdapterFactory
         if (type.FullName.Equals(value: "System.Decimal", comparisonType: StringComparison.Ordinal))
         {
             return ScalarInitializer.ResolveDecimal(
-                decimalType: _settings.DecimalTypeGeneration,
-                decimalInitializer: _settings.DecimalInitializerGeneration);
+                decimalType: _mappingSettings.DecimalTypeGeneration,
+                decimalInitializer: _mappingSettings.DecimalInitializerGeneration);
         }
 
         return type.IsDateLike || TypeScriptTemporalTypes.IsDateTime(fullName: type.FullName)
-            ? _settings.DateInitializerGeneration
+            ? _mappingSettings.DateInitializerGeneration
             : null;
     }
 
@@ -1710,26 +1766,5 @@ internal sealed class TemplateCodeModelAdapterFactory
         return TryResolveType(reference: type, metadata: out var enumMetadata)
             ? ResolveEnumDefault(enumName: type.Name, enumValues: enumMetadata.EnumValues)
             : null;
-    }
-
-    private sealed class LazySubstitutedTypeReferenceList(
-        IReadOnlyList<TypeMetadataReference> source,
-        IReadOnlyDictionary<string, TypeMetadataReference> substitutions)
-        : IReadOnlyList<TypeMetadataReference>
-    {
-        private readonly Lazy<IReadOnlyList<TypeMetadataReference>> _items = new(
-            valueFactory: () => source.Count == 0
-                ? []
-                : source
-                    .Select(selector: item => SubstituteTypeArguments(target: item, substitutions: substitutions))
-                    .ToArray());
-
-        public int Count => _items.Value.Count;
-
-        public TypeMetadataReference this[int index] => _items.Value[index];
-
-        public IEnumerator<TypeMetadataReference> GetEnumerator() => _items.Value.GetEnumerator();
-
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

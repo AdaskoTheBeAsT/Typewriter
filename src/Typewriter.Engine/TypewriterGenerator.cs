@@ -482,7 +482,10 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                 ProjectPath: projectPath,
                 WorkspacePath: workspace.RootPath,
                 TargetFramework: request.Configuration.DefaultTargetFramework,
-                RunFullDiagnostics: request.Mode == GenerationMode.Validate),
+                RunFullDiagnostics: request.Mode == GenerationMode.Validate)
+            {
+                PerformanceSink = performanceTrace.MetadataSink,
+            },
             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         performanceTrace.Add(stage: $"Metadata load ({Path.GetFileName(path: projectPath)})", elapsed: metadataStopwatch.Elapsed);
         foreach (var diagnostic in project.Diagnostics)
@@ -501,6 +504,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         foreach (var templateFile in templates)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var templateStatistics = performanceTrace.CreateTemplateStatistics(templatePath: templateFile.Path);
             var templateDiagnostics = new List<GenerationDiagnostic>();
             var templateParseStopwatch = Stopwatch.StartNew();
             var template = ParseTemplate(templateFile: templateFile, diagnostics: templateDiagnostics);
@@ -555,6 +559,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                         includedProjectNames: renderInspection.IncludedProjects,
                         includedProjectCache: includedProjectCache,
                         diagnostics: diagnostics,
+                        performanceTrace: performanceTrace,
                         cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
                 }
 
@@ -586,7 +591,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         var sourceDiagnostics = new List<GenerationDiagnostic>();
-                        var sourceRenderStopwatch = Stopwatch.StartNew();
+                        var sourceRenderStarted = performanceTrace.Start();
                         var sourceRenderResult = _templateRenderer.RenderTemplate(
                             template: template,
                             metadata: sourceContext.Project,
@@ -594,7 +599,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                             defaults: renderDefaults,
                             compiledTemplateFactory: compiledTemplateFactory,
                             metadataIndex: sourceContext.MetadataIndex);
-                        performanceTrace.Add(stage: $"Render source file ({Path.GetFileName(path: sourceContext.SourceFile.Path)})", elapsed: sourceRenderStopwatch.Elapsed);
+                        templateStatistics?.RecordRender(sourcePath: sourceContext.SourceFile.Path, started: sourceRenderStarted);
                         foreach (var sourceDiagnostic in sourceDiagnostics)
                         {
                             diagnostics.Add(item: sourceDiagnostic);
@@ -622,13 +627,14 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                             diagnostics: diagnostics,
                             generatedFiles: generatedFiles,
                             plannedOutputPaths: plannedOutputPaths,
+                            statistics: templateStatistics,
                             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
                     }
 
                     continue;
                 }
 
-                var renderStopwatch = Stopwatch.StartNew();
+                var renderStarted = performanceTrace.Start();
                 var renderResult = _templateRenderer.RenderTemplate(
                     template: template,
                     metadata: templateProject,
@@ -636,7 +642,8 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                     defaults: renderDefaults,
                     compiledTemplateFactory: compiledTemplateFactory,
                     metadataIndex: templateIndex);
-                performanceTrace.Add(stage: $"Render template ({Path.GetFileName(path: template.Path)})", elapsed: renderStopwatch.Elapsed);
+                templateStatistics?.RecordRender(sourcePath: template.Path, started: renderStarted);
+                performanceTrace.AddElapsed(stage: $"Render template ({Path.GetFileName(path: template.Path)})", started: renderStarted);
                 foreach (var templateDiagnostic in templateDiagnostics)
                 {
                     diagnostics.Add(item: templateDiagnostic);
@@ -650,6 +657,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                     diagnostics: diagnostics,
                     generatedFiles: generatedFiles,
                     plannedOutputPaths: plannedOutputPaths,
+                    statistics: templateStatistics,
                     cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             }
             finally
@@ -669,6 +677,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         IReadOnlyList<string> includedProjectNames,
         IDictionary<string, TemplateProjectContext> includedProjectCache,
         ICollection<GenerationDiagnostic> diagnostics,
+        GenerationPerformanceTrace performanceTrace,
         CancellationToken cancellationToken)
 #pragma warning restore S107
     {
@@ -701,6 +710,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
             workspace: workspace,
             includedProjectPaths: additionalProjectPaths,
             diagnostics: diagnostics,
+            performanceTrace: performanceTrace,
             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         var mergedProject = ProjectMetadataMerger.Merge(project: project, includedProjects: includedMetadata);
         var templateProjectContext = new TemplateProjectContext(
@@ -715,6 +725,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         WorkspaceContext workspace,
         IReadOnlyList<string> includedProjectPaths,
         ICollection<GenerationDiagnostic> diagnostics,
+        GenerationPerformanceTrace performanceTrace,
         CancellationToken cancellationToken)
     {
         var includedMetadata = new List<ProjectMetadata>();
@@ -726,7 +737,10 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                     ProjectPath: includedProjectPath,
                     WorkspacePath: workspace.RootPath,
                     TargetFramework: request.Configuration.DefaultTargetFramework,
-                    RunFullDiagnostics: request.Mode == GenerationMode.Validate),
+                    RunFullDiagnostics: request.Mode == GenerationMode.Validate)
+                {
+                    PerformanceSink = performanceTrace.MetadataSink,
+                },
                 cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             foreach (var diagnostic in included.Diagnostics)
             {
@@ -753,10 +767,12 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         ICollection<GenerationDiagnostic> diagnostics,
         ICollection<GeneratedFile> generatedFiles,
         IDictionary<string, string> plannedOutputPaths,
+        TemplatePerformanceStatistics? statistics,
         CancellationToken cancellationToken)
 #pragma warning restore S107
     {
-        if (!_planner.TryPlan(
+        var planningStarted = statistics is null ? 0 : Stopwatch.GetTimestamp();
+        var planned = _planner.TryPlan(
                 workspace: templateWorkspace,
                 template: template,
                 outputPath: renderResult.OutputPath,
@@ -764,7 +780,9 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                 fileNameConvention: request.Configuration.Output.FileNameConvention,
                 utf8Bom: renderResult.Utf8Bom,
                 generatedFile: out var plannedFile,
-                diagnostic: out var diagnostic))
+                diagnostic: out var diagnostic);
+        statistics?.RecordPlanning(started: planningStarted);
+        if (!planned)
         {
             if (diagnostic is not null)
             {
@@ -777,77 +795,19 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         if (plannedFile is not null)
         {
             ReportDuplicateOutputPath(template: template, plannedFile: plannedFile, diagnostics: diagnostics, plannedOutputPaths: plannedOutputPaths);
-            var generatedFile = await _fileWriter.WriteAsync(
-                file: plannedFile,
-                request: request,
-                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            var writingStarted = statistics is null ? 0 : Stopwatch.GetTimestamp();
+            var generatedFile = _fileWriter is FileSystemGeneratedFileWriter
+                ? await FileSystemGeneratedFileWriter.WriteAsync(
+                    file: plannedFile,
+                    request: request,
+                    statistics: statistics,
+                    cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false)
+                : await _fileWriter.WriteAsync(
+                    file: plannedFile,
+                    request: request,
+                    cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            statistics?.RecordWrite(started: writingStarted);
             generatedFiles.Add(item: generatedFile);
-        }
-    }
-
-    private sealed class GenerationPerformanceTrace
-    {
-        private const string EnvironmentVariableName = "TYPEWRITER_TRACE_PERF";
-        private readonly List<(string Stage, TimeSpan Elapsed)> _entries = [];
-
-        private GenerationPerformanceTrace(bool enabled)
-        {
-            Enabled = enabled;
-        }
-
-        private bool Enabled { get; }
-
-        public static GenerationPerformanceTrace Create()
-        {
-            var value = Environment.GetEnvironmentVariable(variable: EnvironmentVariableName);
-            var enabled = value is not null
-                && (value.Equals(value: "1", comparisonType: StringComparison.OrdinalIgnoreCase)
-                    || value.Equals(value: "true", comparisonType: StringComparison.OrdinalIgnoreCase)
-                    || value.Equals(value: "yes", comparisonType: StringComparison.OrdinalIgnoreCase));
-            return new GenerationPerformanceTrace(enabled: enabled);
-        }
-
-        public void Add(
-            string stage,
-            TimeSpan elapsed)
-        {
-            if (Enabled)
-            {
-                _entries.Add(item: (stage, elapsed));
-            }
-        }
-
-        public void AddDiagnostics(
-            ICollection<GenerationDiagnostic> diagnostics,
-            string file)
-        {
-            if (!Enabled)
-            {
-                return;
-            }
-
-            foreach (var entry in _entries)
-            {
-                diagnostics.Add(
-                    item: new GenerationDiagnostic(
-                        File: file,
-                        Line: null,
-                        Column: null,
-                        Severity: DiagnosticSeverity.Info,
-                        Message: string.Create(
-                            provider: CultureInfo.InvariantCulture,
-                            handler: $"{entry.Stage}: {entry.Elapsed.TotalMilliseconds:F1} ms"),
-                        Code: "TWPERF"));
-            }
-
-            diagnostics.Add(
-                item: new GenerationDiagnostic(
-                    File: file,
-                    Line: null,
-                    Column: null,
-                    Severity: DiagnosticSeverity.Info,
-                    Message: "Metadata cache: " + MetadataCacheMetrics.CreateSummary(),
-                    Code: "TWPERF"));
         }
     }
 

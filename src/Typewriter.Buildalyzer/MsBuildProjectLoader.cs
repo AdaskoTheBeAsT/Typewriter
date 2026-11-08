@@ -9,6 +9,8 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
     private const string PrepareForRunDependsOnPropertyName = "PrepareForRunDependsOn";
     private static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
 
+    IProjectWorkspaceLoader IProjectWorkspaceLoader.CreateSession() => new LoadSession();
+
     public Task<ProjectLoadResult> LoadAsync(
         ProjectContext project,
         CancellationToken cancellationToken)
@@ -19,9 +21,35 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         return Task.FromResult(result: LoadCore(project: project, cancellationToken: cancellationToken));
     }
 
+    internal static bool IsInAnyDirectory(
+        string path,
+        HashSet<string> directories)
+    {
+        if (directories.Count == 0)
+        {
+            return false;
+        }
+
+        // Probe ancestors instead of scanning every referenced directory per file.
+        var directory = path;
+        while (!string.IsNullOrEmpty(value: directory))
+        {
+            if (directories.TryGetValue(equalValue: directory, actualValue: out var root)
+                && IsSameOrChildPath(path: path, root: root))
+            {
+                return true;
+            }
+
+            directory = Path.GetDirectoryName(path: directory);
+        }
+
+        return false;
+    }
+
     private static ProjectLoadResult LoadCore(
         ProjectContext project,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        LoadSession? session = null)
     {
         var projectPath = Path.GetFullPath(path: project.ProjectPath);
         if (!File.Exists(path: projectPath))
@@ -35,7 +63,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         try
         {
             var workspacePath = Path.GetFullPath(path: project.WorkspacePath);
-            var manager = CreateAnalyzerManager(workspacePath: workspacePath);
+            var manager = session?.GetManager(workspacePath: workspacePath) ?? CreateAnalyzerManager(workspacePath: workspacePath);
             var solutionProperties = CreateSolutionProperties(workspacePath: workspacePath);
             LoadProject(
                 manager: manager,
@@ -170,8 +198,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             .Where(predicate: directory => !string.IsNullOrWhiteSpace(value: directory))
             .Select(selector: directory => Path.GetFullPath(path: directory!))
             .Where(predicate: directory => !PathEquals(left: directory, right: currentProjectDirectory))
-            .Distinct(comparer: PathComparer)
-            .ToArray();
+            .ToHashSet(comparer: PathComparer);
 
         state.SourceFiles.UnionWith(
             other: result.SourceFiles
@@ -468,11 +495,6 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             && !fileName.EndsWith(value: ".AssemblyAttributes.cs", comparisonType: StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsInAnyDirectory(
-        string path,
-        IEnumerable<string> directories) =>
-        directories.Any(predicate: directory => IsSameOrChildPath(path: path, root: directory));
-
     private static bool IsSameOrChildPath(
         string path,
         string root)
@@ -490,6 +512,37 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             a: Path.TrimEndingDirectorySeparator(path: Path.GetFullPath(path: left)),
             b: Path.TrimEndingDirectorySeparator(path: Path.GetFullPath(path: right)),
             comparisonType: StringComparison.OrdinalIgnoreCase);
+
+    internal sealed class LoadSession : IProjectWorkspaceLoader
+    {
+        private readonly Lock _sync = new();
+        private string? _workspacePath;
+        private global::Buildalyzer.AnalyzerManager? _manager;
+
+        public Task<ProjectLoadResult> LoadAsync(ProjectContext project, CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(argument: project);
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_sync)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.FromResult(result: LoadCore(project: project, cancellationToken: cancellationToken, session: this));
+            }
+        }
+
+        public global::Buildalyzer.AnalyzerManager GetManager(string workspacePath)
+        {
+            if (_manager is null || !PathComparer.Equals(x: _workspacePath, y: workspacePath))
+            {
+                // Keep at most one workspace, and never reuse across metadata requests.
+                var manager = CreateAnalyzerManager(workspacePath: workspacePath);
+                _workspacePath = workspacePath;
+                _manager = manager;
+            }
+
+            return _manager;
+        }
+    }
 
     private sealed class LoadState
     {

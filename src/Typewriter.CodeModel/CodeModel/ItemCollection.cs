@@ -2,7 +2,7 @@ using System.Collections;
 
 namespace Typewriter.CodeModel;
 
-public class ItemCollection<T> : IItemCollection<T>
+public class ItemCollection<T> : IItemCollection<T>, IDeferredItemCollection
     where T : Item
 {
     private readonly IReadOnlyList<T> _items;
@@ -14,7 +14,9 @@ public class ItemCollection<T> : IItemCollection<T>
 
     public ItemCollection(IEnumerable<T> items)
     {
-        _items = items.ToArray();
+        // Public enumerable constructors retain their eager snapshot semantics.
+        // Only engine-created deferred sequences opt in to lazy materialization.
+        _items = items is DeferredItems<T> deferred ? deferred : items.ToArray();
     }
 
     public int Count => _items.Count;
@@ -30,6 +32,17 @@ public class ItemCollection<T> : IItemCollection<T>
     public IEnumerator<T> GetEnumerator() => _items.GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    bool IDeferredItemCollection.TrySetParent(Item parent)
+    {
+        if (_items is not DeferredItems<T> deferred)
+        {
+            return false;
+        }
+
+        deferred.SetParent(parent: parent);
+        return true;
+    }
 
     protected static IEnumerable<string> GetAttributeNames(IAttributeCollection attributes)
     {

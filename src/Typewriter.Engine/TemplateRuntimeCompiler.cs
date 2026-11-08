@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -145,7 +144,11 @@ internal static class TemplateRuntimeCompiler
             decimalInitializerGeneration: defaults.DecimalInitializerGeneration,
             dateLibraryGeneration: defaults.DateLibraryGeneration);
         var adapterFactory = new TemplateCodeModelAdapterFactory(metadata: metadata, settings: settings, metadataIndex: metadataIndex);
-        var host = CreateHost(hostType: hostType, settings: settings, file: adapterFactory.CreateFile(project: metadata));
+        adapterFactory.PrepareFile(project: metadata);
+        var host = CreateHost(
+            hostType: hostType,
+            settings: settings,
+            fileFactory: () => adapterFactory.CreateFile(project: metadata));
         return new CompiledTemplateHelper(
             host: host,
             adapterFactory: adapterFactory,
@@ -380,34 +383,8 @@ internal static class TemplateRuntimeCompiler
     private static object CreateHost(
         System.Type hostType,
         Typewriter.Configuration.Settings settings,
-        Typewriter.CodeModel.File file)
-    {
-#pragma warning disable S3011 // Reflection should not be used to increase accessibility of classes, methods, or fields
-        var fileConstructor = hostType.GetConstructor(
-            bindingAttr: BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-            binder: null,
-            types: [typeof(Typewriter.Configuration.Settings), typeof(Typewriter.CodeModel.File)],
-            modifiers: null);
-#pragma warning restore S3011 // Reflection should not be used to increase accessibility of classes, methods, or fields
-        if (fileConstructor is not null)
-        {
-            return fileConstructor.Invoke(parameters: [settings, file]);
-        }
-
-#pragma warning disable S3011 // Reflection should not be used to increase accessibility of classes, methods, or fields
-        var settingsConstructor = hostType.GetConstructor(
-            bindingAttr: BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-            binder: null,
-            types: [typeof(Typewriter.Configuration.Settings)],
-            modifiers: null);
-#pragma warning restore S3011 // Reflection should not be used to increase accessibility of classes, methods, or fields
-        if (settingsConstructor is not null)
-        {
-            return settingsConstructor.Invoke(parameters: [settings]);
-        }
-
-        return Activator.CreateInstance(type: hostType, nonPublic: true)!;
-    }
+        Func<Typewriter.CodeModel.File> fileFactory) =>
+        CompiledTemplateBindings.For(hostType: hostType).CreateHost(settings: settings, fileFactory: fileFactory);
 
 #pragma warning disable MA0051 // Method is too long
     private static string BuildSource(
@@ -928,7 +905,7 @@ internal static class TemplateRuntimeCompiler
                 ", File ",
                 match.Groups[groupname: "file"].Value,
                 ")"),
-            options: RegexOptions.CultureInvariant,
+            options: RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
             matchTimeout: RegexTimeout);
 #pragma warning restore SA1118 // Parameter should not span multiple lines
 
@@ -944,7 +921,7 @@ internal static class TemplateRuntimeCompiler
                 "(Settings ",
                 match.Groups[groupname: "parameter"].Value,
                 ")"),
-            options: RegexOptions.CultureInvariant,
+            options: RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
             matchTimeout: RegexTimeout);
 #pragma warning restore SA1118 // Parameter should not span multiple lines
     }

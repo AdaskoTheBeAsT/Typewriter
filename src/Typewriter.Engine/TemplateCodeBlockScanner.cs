@@ -42,21 +42,36 @@ internal static class TemplateCodeBlockScanner
     ];
 
     public static bool IsCompatibilityCodeBlock(
-        string block,
+        ReadOnlySpan<char> block,
         bool allowPartial = false)
     {
-        ArgumentNullException.ThrowIfNull(argument: block);
-
         var startIndex = SkipLeadingTrivia(block: block);
         if (startIndex >= block.Length)
         {
             return false;
         }
 
-        var lineEnd = block.IndexOfAny(anyOf: ['\r', '\n'], startIndex: startIndex);
-        var firstLine = lineEnd < 0 ? block[startIndex..] : block[startIndex..lineEnd];
-        return CompatibilityPrefixes.Any(predicate: prefix => firstLine.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal))
-            || (allowPartial && PartialCompatibilityPrefixes.Any(predicate: prefix => firstLine.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal)));
+        var remaining = block[startIndex..];
+        foreach (var prefix in CompatibilityPrefixes)
+        {
+            if (remaining.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        if (allowPartial)
+        {
+            foreach (var prefix in PartialCompatibilityPrefixes)
+            {
+                if (remaining.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     public static int FindBalancedEnd(
@@ -76,7 +91,47 @@ internal static class TemplateCodeBlockScanner
         return ScanBalancedBlock(content: content, startIndex: openIndex + 1, open: open, close: open == '{' ? '}' : ')');
     }
 
-    private static int SkipLeadingTrivia(string block)
+    public static int IndexBalancedEnd(
+        string content,
+        int openIndex,
+        IDictionary<int, int> ends)
+    {
+        var braces = new Stack<int>();
+        var parentheses = new Stack<int>();
+        var index = openIndex;
+        while (index < content.Length)
+        {
+            if (TrySkipNonCodeConstruct(content: content, index: ref index))
+            {
+                continue;
+            }
+
+            var current = content[index: index];
+            if (current is '{' or '(')
+            {
+                ends[key: index] = -1;
+                (current == '{' ? braces : parentheses).Push(item: index);
+            }
+            else if (current is '}' or ')')
+            {
+                var pending = current == '}' ? braces : parentheses;
+                if (pending.TryPop(result: out var start))
+                {
+                    ends[key: start] = index;
+                    if (start == openIndex)
+                    {
+                        return index;
+                    }
+                }
+            }
+
+            index++;
+        }
+
+        return -1;
+    }
+
+    private static int SkipLeadingTrivia(ReadOnlySpan<char> block)
     {
         var index = 0;
         while (index < block.Length)
@@ -86,15 +141,17 @@ internal static class TemplateCodeBlockScanner
                 index++;
             }
 
-            if (StartsWith(content: block, index: index, value: "//"))
+            if (block[index..].StartsWith(value: "//", comparisonType: StringComparison.Ordinal))
             {
-                index = SkipSingleLineComment(content: block, index: index + 2);
+                var end = block[(index + 2)..].IndexOfAny(value0: '\r', value1: '\n');
+                index = end < 0 ? block.Length : index + 2 + end;
                 continue;
             }
 
-            if (StartsWith(content: block, index: index, value: "/*"))
+            if (block[index..].StartsWith(value: "/*", comparisonType: StringComparison.Ordinal))
             {
-                index = SkipMultiLineComment(content: block, index: index + 2);
+                var end = block[(index + 2)..].IndexOf(value: "*/", comparisonType: StringComparison.Ordinal);
+                index = end < 0 ? block.Length : index + 4 + end;
                 continue;
             }
 

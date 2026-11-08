@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\..\shared\StampedAssemblyReferenceCacheTests.cs" Link="StampedAssemblyReferenceCacheTests.cs" />
     <ProjectReference Include="..\..\..\src\Typewriter.Abstractions\Typewriter.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\src\Typewriter.Roslyn\Typewriter.Roslyn.csproj" />
   </ItemGroup>

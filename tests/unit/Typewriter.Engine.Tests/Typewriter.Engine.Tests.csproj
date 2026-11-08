@@ -16,6 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\shared\StampedAssemblyReferenceCacheTests.cs" Link="StampedAssemblyReferenceCacheTests.cs" />
     <ProjectReference Include="..\..\..\src\Typewriter.Abstractions\Typewriter.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\src\Typewriter.Engine\Typewriter.Engine.csproj" />
   </ItemGroup>

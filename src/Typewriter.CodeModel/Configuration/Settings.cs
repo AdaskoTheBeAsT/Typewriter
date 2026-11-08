@@ -302,6 +302,18 @@ public class Settings
         }
     }
 
+    // Only the exact built-in Settings type may be captured. Subclasses can have
+    // stateful virtual getters and must retain eager code-model construction.
+    internal Settings CaptureMappingSettings()
+    {
+        if (GetType() != typeof(Settings))
+        {
+            throw new InvalidOperationException(message: "Custom settings require eager code-model construction.");
+        }
+
+        return (Settings)MemberwiseClone();
+    }
+
     internal TypeScriptDateMapping GetDateMapping() =>
         new(
             Library: DateLibraryGeneration,

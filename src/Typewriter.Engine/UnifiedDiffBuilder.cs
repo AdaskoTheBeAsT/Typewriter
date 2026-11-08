@@ -24,6 +24,11 @@ public static class UnifiedDiffBuilder
         ArgumentNullException.ThrowIfNull(argument: oldContent);
         ArgumentNullException.ThrowIfNull(argument: newContent);
 
+        if (oldContent.Equals(value: newContent, comparisonType: StringComparison.Ordinal))
+        {
+            return string.Empty;
+        }
+
         var oldLines = SplitLines(content: oldContent);
         var newLines = SplitLines(content: newContent);
         var operations = ComputeOperations(oldLines: oldLines, newLines: newLines);

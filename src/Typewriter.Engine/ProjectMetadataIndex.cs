@@ -7,6 +7,7 @@ namespace Typewriter.Engine;
 internal sealed class ProjectMetadataIndex
 {
     private readonly Lazy<SourceFileDependencyIndex> _dependencyIndex;
+    private readonly Lazy<ProjectSourceFileIndex> _sourceFiles;
     private readonly Lazy<IReadOnlyDictionary<object, TypeMetadata>> _parentTypesByItem;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<TypeMetadata>> _typesByHierarchyKey;
     private readonly IReadOnlyDictionary<(string FullName, int Arity), TypeMetadata> _unambiguousNestedTypesByFullNameAndArity;
@@ -25,6 +26,8 @@ internal sealed class ProjectMetadataIndex
         _unambiguousNestedTypesByFullNameAndArity = unambiguousNestedTypesByFullNameAndArity;
         MethodsByFullName = methodsByFullName;
         PropertiesByFullName = propertiesByFullName;
+        _sourceFiles = new Lazy<ProjectSourceFileIndex>(
+            valueFactory: () => new ProjectSourceFileIndex(sourceFiles: metadata.SourceFiles));
         _parentTypesByItem = new Lazy<IReadOnlyDictionary<object, TypeMetadata>>(
             valueFactory: () => CreateParentTypeIndex(types: typesByHierarchyKey.Values.SelectMany(selector: types => types)));
         _dependencyIndex = new Lazy<SourceFileDependencyIndex>(
@@ -39,6 +42,10 @@ internal sealed class ProjectMetadataIndex
     public IReadOnlyDictionary<string, MethodMetadata> MethodsByFullName { get; }
 
     public IReadOnlyDictionary<string, PropertyMetadata> PropertiesByFullName { get; }
+
+    public ProjectSourceFileIndex SourceFiles => _sourceFiles.Value;
+
+    public TypeScriptTypeMapper TypeMapper { get; } = new();
 
     public static ProjectMetadataIndex Create(ProjectMetadata metadata)
     {
@@ -269,14 +276,14 @@ internal sealed class ProjectMetadataIndex
     private sealed class SourceFileDependencyIndex
     {
         private readonly IReadOnlyDictionary<string, HashSet<string>> _declaredTypesBySourceFile;
-        private readonly IReadOnlyDictionary<string, HashSet<string>> _referencedTypesBySourceFile;
+        private readonly IReadOnlyDictionary<string, List<string>> _sourceFilesByReferencedType;
 
         private SourceFileDependencyIndex(
             IReadOnlyDictionary<string, HashSet<string>> declaredTypesBySourceFile,
-            IReadOnlyDictionary<string, HashSet<string>> referencedTypesBySourceFile)
+            IReadOnlyDictionary<string, List<string>> sourceFilesByReferencedType)
         {
             _declaredTypesBySourceFile = declaredTypesBySourceFile;
-            _referencedTypesBySourceFile = referencedTypesBySourceFile;
+            _sourceFilesByReferencedType = sourceFilesByReferencedType;
         }
 
         public static SourceFileDependencyIndex Build(ProjectMetadata metadata)
@@ -306,44 +313,59 @@ internal sealed class ProjectMetadataIndex
 
             return new SourceFileDependencyIndex(
                 declaredTypesBySourceFile: declaredTypesBySourceFile,
-                referencedTypesBySourceFile: referencedTypesBySourceFile);
+                sourceFilesByReferencedType: CreateReferencingFileIndex(referencedTypesBySourceFile: referencedTypesBySourceFile));
         }
 
         public IReadOnlyCollection<string> GetAffectedSourceFiles(IReadOnlyCollection<string> changedSourcePaths)
         {
             var affectedFiles = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
-            var dirtyTypes = new HashSet<string>(comparer: StringComparer.Ordinal);
-            foreach (var changedPath in changedSourcePaths)
+            var pendingFiles = new Queue<string>();
+            foreach (var changedPath in changedSourcePaths.Where(predicate: changedPath =>
+                         _declaredTypesBySourceFile.ContainsKey(key: changedPath) && affectedFiles.Add(item: changedPath)))
             {
-                if (_declaredTypesBySourceFile.TryGetValue(key: changedPath, value: out var declaredTypes)
-                    && affectedFiles.Add(item: changedPath))
-                {
-                    dirtyTypes.UnionWith(other: declaredTypes);
-                }
+                pendingFiles.Enqueue(item: changedPath);
             }
 
-            var expanded = affectedFiles.Count > 0;
-            while (expanded)
+            var expandedTypes = new HashSet<string>(comparer: StringComparer.Ordinal);
+            while (pendingFiles.TryDequeue(result: out var sourcePath))
             {
-                expanded = false;
-                foreach (var pair in _referencedTypesBySourceFile)
+                foreach (var type in _declaredTypesBySourceFile[key: sourcePath])
                 {
-                    if (affectedFiles.Contains(item: pair.Key) || !pair.Value.Overlaps(other: dirtyTypes))
+                    if (!expandedTypes.Add(item: type)
+                        || !_sourceFilesByReferencedType.TryGetValue(key: type, value: out var referencingFiles))
                     {
                         continue;
                     }
 
-                    _ = affectedFiles.Add(item: pair.Key);
-                    if (_declaredTypesBySourceFile.TryGetValue(key: pair.Key, value: out var declaredTypes))
+                    foreach (var referencingFile in referencingFiles.Where(predicate: affectedFiles.Add))
                     {
-                        dirtyTypes.UnionWith(other: declaredTypes);
+                        pendingFiles.Enqueue(item: referencingFile);
                     }
-
-                    expanded = true;
                 }
             }
 
             return affectedFiles;
+        }
+
+        private static IReadOnlyDictionary<string, List<string>> CreateReferencingFileIndex(
+            IReadOnlyDictionary<string, HashSet<string>> referencedTypesBySourceFile)
+        {
+            var sourceFilesByType = new Dictionary<string, List<string>>(comparer: StringComparer.Ordinal);
+            foreach (var pair in referencedTypesBySourceFile)
+            {
+                foreach (var type in pair.Value)
+                {
+                    if (!sourceFilesByType.TryGetValue(key: type, value: out var sources))
+                    {
+                        sources = [];
+                        sourceFilesByType.Add(key: type, value: sources);
+                    }
+
+                    sources.Add(item: pair.Key);
+                }
+            }
+
+            return sourceFilesByType;
         }
 
         private static void CollectType(
@@ -352,6 +374,11 @@ internal sealed class ProjectMetadataIndex
             ISet<string> referencedTypes,
             ISet<object> visitedReferences)
         {
+            if (!visitedReferences.Add(item: type))
+            {
+                return;
+            }
+
             _ = declaredTypes.Add(item: type.FullName);
             CollectReferences(references: type.BaseTypes, referencedTypes: referencedTypes, visitedReferences: visitedReferences);
             CollectReferences(references: type.TypeArguments, referencedTypes: referencedTypes, visitedReferences: visitedReferences);

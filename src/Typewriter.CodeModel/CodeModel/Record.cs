@@ -6,6 +6,11 @@ namespace Typewriter.CodeModel;
 /// </summary>
 public class Record : Item
 {
+    private Record? _baseType;
+    private Record? _containingType;
+    private Lazy<Record?>? _baseTypeFactory;
+    private Lazy<Record?>? _containingTypeFactory;
+
     /// <summary>
     /// Gets the attributes applied to the record.
     /// Template shorthand: <c>$Attributes[...]</c>.
@@ -17,7 +22,11 @@ public class Record : Item
     /// The base record exposes the same members, so <c>$BaseRecord[...]</c> can walk
     /// inheritance chains.
     /// </summary>
-    public virtual Record? BaseRecord { get; init; }
+    public virtual Record? BaseRecord
+    {
+        get => _baseTypeFactory is null ? _baseType : _baseTypeFactory.Value;
+        init => _baseType = value;
+    }
 
     /// <summary>
     /// Gets the <c>const</c> members declared on the record.
@@ -28,7 +37,11 @@ public class Record : Item
     /// <summary>
     /// Gets the record this record is nested inside, or <c>null</c> for top-level records.
     /// </summary>
-    public virtual Record? ContainingRecord { get; init; }
+    public virtual Record? ContainingRecord
+    {
+        get => _containingTypeFactory is null ? _containingType : _containingTypeFactory.Value;
+        init => _containingType = value;
+    }
 
     /// <summary>
     /// Gets the delegates declared inside the record.
@@ -139,4 +152,12 @@ public class Record : Item
     /// Converts the record to its <see cref="Type"/> reference.
     /// </summary>
     public static implicit operator Type?(Record? instance) => instance?.Type;
+
+    internal void SetNavigationFactories(
+        Func<Record?> baseTypeFactory,
+        Func<Record?> containingTypeFactory)
+    {
+        _baseTypeFactory = new Lazy<Record?>(valueFactory: baseTypeFactory);
+        _containingTypeFactory = new Lazy<Record?>(valueFactory: containingTypeFactory);
+    }
 }
