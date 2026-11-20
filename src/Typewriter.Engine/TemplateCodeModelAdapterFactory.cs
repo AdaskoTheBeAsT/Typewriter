@@ -925,10 +925,12 @@ internal sealed class TemplateCodeModelAdapterFactory
             ]);
     }
 
+#pragma warning disable MA0051 // Method is too long
     private CodeType CreateType(
         TypeMetadataReference type,
         FrontendRuntimeTypeKind runtimeType = FrontendRuntimeTypeKind.Auto)
     {
+#pragma warning restore MA0051 // Method is too long
         var typeArguments = new Typewriter.CodeModel.TypeCollection(
             items: Defer(source: type.TypeArguments, selector: argument => CreateType(type: argument, runtimeType: runtimeType)));
         _ = TryResolveType(reference: type, metadata: out var typeMetadata);
@@ -974,7 +976,17 @@ internal sealed class TemplateCodeModelAdapterFactory
             Settings = _settings,
             UseResolvedDefault = _mappingSettings.DateLibraryGeneration != Typewriter.Configuration.DateLibrary.Legacy
                                  || runtimeType != FrontendRuntimeTypeKind.Auto,
+
+            Fields = typeMetadata is null
+                ? new Typewriter.CodeModel.FieldCollection()
+                : new Typewriter.CodeModel.FieldCollection(
+                    items: Defer(source: typeMetadata.Fields, selector: field => CreateField(field: field, parent: null))),
+            Properties = typeMetadata is null
+                ? new Typewriter.CodeModel.PropertyCollection()
+                : new Typewriter.CodeModel.PropertyCollection(
+                    items: Defer(source: typeMetadata.Properties, selector: property => CreateProperty(property: property, parent: null))),
         };
+
         if (_canDefer)
         {
             item.SetElementTypeFactory(elementTypeFactory: () => type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType));
