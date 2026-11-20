@@ -77,7 +77,7 @@ public sealed partial class CSharpProjectMetadataProvider
             }
 
             metadata = null!;
-            if (symbol.DeclaredAccessibility is not (Accessibility.Public or Accessibility.Internal)
+            if (symbol.DeclaredAccessibility is not Accessibility.Public
                 || symbol.IsImplicitlyDeclared)
             {
                 return false;
@@ -151,7 +151,7 @@ public sealed partial class CSharpProjectMetadataProvider
         {
             metadata = null!;
             if (symbol.TypeKind != Microsoft.CodeAnalysis.TypeKind.Delegate
-                || symbol.DeclaredAccessibility is not (Accessibility.Public or Accessibility.Internal)
+                || symbol.DeclaredAccessibility is not Accessibility.Public
                 || symbol.IsImplicitlyDeclared)
             {
                 return false;
@@ -449,7 +449,7 @@ public sealed partial class CSharpProjectMetadataProvider
         {
             return members.OfType<IPropertySymbol>()
                 .Where(predicate: property => !property.IsStatic)
-                .Where(predicate: property => property.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
+                .Where(predicate: property => property.DeclaredAccessibility is Accessibility.Public)
                 .Where(predicate: property => property.GetMethod is not null)
                 .Select(
                     selector: property =>
@@ -487,7 +487,7 @@ public sealed partial class CSharpProjectMetadataProvider
             return members.OfType<IMethodSymbol>()
                 .Where(predicate: method => method.MethodKind == MethodKind.Ordinary)
                 .Where(predicate: method => !method.IsImplicitlyDeclared)
-                .Where(predicate: method => method.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
+                .Where(predicate: method => method.DeclaredAccessibility is Accessibility.Public)
                 .Select(
                     selector: method =>
                     {
@@ -562,7 +562,7 @@ public sealed partial class CSharpProjectMetadataProvider
 
             return members.OfType<IFieldSymbol>()
                 .Where(predicate: field => field.HasConstantValue)
-                .Where(predicate: field => field.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
+                .Where(predicate: field => field.DeclaredAccessibility is Accessibility.Public)
                 .Select(
                     selector: field =>
                     {
@@ -597,7 +597,7 @@ public sealed partial class CSharpProjectMetadataProvider
                 .Where(predicate: field => !field.IsImplicitlyDeclared)
                 .Where(predicate: field => !field.IsConst)
                 .Where(predicate: field => !field.IsStatic)
-                .Where(predicate: field => field.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
+                .Where(predicate: field => field.DeclaredAccessibility is Accessibility.Public)
                 .Select(
                     selector: field =>
                     {
@@ -633,7 +633,7 @@ public sealed partial class CSharpProjectMetadataProvider
                 .Where(predicate: field => field.IsStatic)
                 .Where(predicate: field => field.IsReadOnly)
                 .Where(predicate: field => !field.IsConst)
-                .Where(predicate: field => field.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
+                .Where(predicate: field => field.DeclaredAccessibility is Accessibility.Public)
                 .Select(
                     selector: field =>
                     {
@@ -661,7 +661,7 @@ public sealed partial class CSharpProjectMetadataProvider
         {
             return members.OfType<IEventSymbol>()
                 .Where(predicate: @event => !@event.IsImplicitlyDeclared)
-                .Where(predicate: @event => @event.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
+                .Where(predicate: @event => @event.DeclaredAccessibility is Accessibility.Public)
                 .Select(
                     selector: @event =>
                     {
