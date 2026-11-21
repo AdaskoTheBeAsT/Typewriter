@@ -44,7 +44,7 @@
       "patterns": [
         {
           "name": "meta.embedded.block.csharp.typewriter",
-          "begin": "\\$\\{\\s*(?=(?:using\\s|#r\\s|#reference\\s|Template\\b|public\\s|private\\s|internal\\s|protected\\s|static\\s|const\\s|bool\\s|string\\s|char\\s|int\\s|long\\s|void\\s|List<|IEnumerable<))",
+          "begin": "\\$\\{\\s*(?=(?:using\\s|#r\\s|#reference\\s|#load\\s|#[ \\t]*if[ \\t(!]|Template\\b|public\\s|private\\s|internal\\s|protected\\s|static\\s|const\\s|bool\\s|string\\s|char\\s|int\\s|long\\s|void\\s|List<|IEnumerable<))",
           "end": "\\}",
           "patterns": [
             {

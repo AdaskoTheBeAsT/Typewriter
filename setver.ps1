@@ -129,11 +129,6 @@ Set-XmlAttributeValue `
     -AttributeName "Version"
 
 Set-RegexValue `
-    -RelativePath "src/Typewriter.VisualStudio/TypewriterPackage.cs" `
-    -Pattern '(productId:\s*")[^"]+(")' `
-    -Replacement { param($match) "$($match.Groups[1].Value)$Version$($match.Groups[2].Value)" }
-
-Set-RegexValue `
     -RelativePath "src/Typewriter.LanguageServer/LanguageServerHost.cs" `
     -Pattern '(\bversion\s*=\s*")[^"]+(",)' `
     -Replacement { param($match) "$($match.Groups[1].Value)$Version$($match.Groups[2].Value)" }

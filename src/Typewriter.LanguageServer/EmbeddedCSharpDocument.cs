@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Typewriter.Engine;
 
 namespace Typewriter.LanguageServer;
 
@@ -68,6 +69,7 @@ internal sealed class EmbeddedCSharpDocument
 
         var source = new StringBuilder();
         var mappings = new List<EmbeddedSpanMapping>();
+        source.Append(value: "#define ").Append(value: TemplateRuntimeCompiler.PreprocessorSymbol).Append(value: '\n');
         source.Append(value: "#nullable disable\n");
         foreach (var usingLine in usings)
         {
@@ -152,8 +154,17 @@ internal sealed class EmbeddedCSharpDocument
         EmbeddedLanguageRegion region,
         ISet<string> usings)
     {
+        var disabledSpans = TemplateRuntimeCompiler.GetDisabledPreprocessorSpans(
+            code: templateText[region.ContentStart..region.ContentEnd]);
         foreach (var line in EnumerateLines(templateText: templateText, region: region))
         {
+            if (TemplateRuntimeCompiler.IsOffsetInDisabledSpan(
+                    disabledSpans: disabledSpans,
+                    offset: line.Start - region.ContentStart))
+            {
+                continue;
+            }
+
             var trimmed = templateText[line.Start..line.End].Trim();
             if (IsUsingDirective(line: trimmed))
             {
@@ -168,10 +179,15 @@ internal sealed class EmbeddedCSharpDocument
         StringBuilder source,
         ICollection<EmbeddedSpanMapping> mappings)
     {
+        var disabledSpans = TemplateRuntimeCompiler.GetDisabledPreprocessorSpans(
+            code: templateText[region.ContentStart..region.ContentEnd]);
         foreach (var line in EnumerateLines(templateText: templateText, region: region))
         {
+            var isDisabled = TemplateRuntimeCompiler.IsOffsetInDisabledSpan(
+                disabledSpans: disabledSpans,
+                offset: line.Start - region.ContentStart);
             var trimmed = templateText[line.Start..line.End].Trim();
-            if (IsUsingDirective(line: trimmed) || IsReferenceDirective(line: trimmed))
+            if (!isDisabled && (IsUsingDirective(line: trimmed) || IsReferenceDirective(line: trimmed)))
             {
                 source.Append(value: '\n');
                 continue;
@@ -211,7 +227,7 @@ internal sealed class EmbeddedCSharpDocument
     private static bool IsReferenceDirective(string line) =>
         Regex.IsMatch(
             input: line,
-            pattern: @"^(?:#r|#reference)\s",
+            pattern: @"^(?:#r|#reference|#load)\s",
             options: RegexOptions.CultureInvariant,
             matchTimeout: RegexTimeout);
 }

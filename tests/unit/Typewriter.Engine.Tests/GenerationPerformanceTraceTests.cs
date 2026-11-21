@@ -12,6 +12,12 @@ public sealed class GenerationPerformanceTraceTests
     public void DisabledTraceDoesNotAllocatePerSourceStatistics()
     {
         var trace = new GenerationPerformanceTrace(enabled: false);
+        for (var warmup = 0; warmup < 1000; warmup++)
+        {
+            _ = trace.Start();
+            _ = trace.CreateTemplateStatistics(templatePath: "Unused.tst");
+        }
+
         var before = GC.GetAllocatedBytesForCurrentThread();
         for (var index = 0; index < 10000; index++)
         {

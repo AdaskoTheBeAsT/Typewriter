@@ -167,8 +167,8 @@ public sealed record TemplateDocument(
                     continue;
                 }
 
-                var block = content.Substring(startIndex: index, length: end - index + 1);
-                outputPath ??= FindSingleFileMode(block: block);
+                var block = content.Substring(startIndex: index + 2, length: end - index - 2);
+                outputPath ??= FindSingleFileMode(block: TemplateRuntimeCompiler.StripDisabledPreprocessorText(code: block));
 #pragma warning disable S127 // "for" loop stop conditions should be invariant
                 index = end;
 #pragma warning restore S127 // "for" loop stop conditions should be invariant
@@ -184,7 +184,7 @@ public sealed record TemplateDocument(
     private static IReadOnlyDictionary<string, TemplateCompatibilityMethod> FindCompatibilityMethods(IEnumerable<TemplateCodeBlock> codeBlocks)
     {
         var methods = new Dictionary<string, TemplateCompatibilityMethod>(comparer: StringComparer.Ordinal);
-        foreach (var block in codeBlocks.Select(selector: codeBlock => codeBlock.Content))
+        foreach (var block in codeBlocks.Select(selector: codeBlock => TemplateRuntimeCompiler.StripDisabledPreprocessorText(code: codeBlock.Content)))
         {
             AddExpressionBodiedMethods(block: block, methods: methods);
             AddReturnStatementMethods(block: block, methods: methods);

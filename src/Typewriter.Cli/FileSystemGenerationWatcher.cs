@@ -11,7 +11,9 @@ internal sealed class FileSystemGenerationWatcher : IDisposable
     private readonly string[] _excludePatterns;
     private readonly FileSystemWatcher[] _watchers;
     private readonly HashSet<string> _watchedExtensions;
+#pragma warning disable IDE0028
     private readonly Dictionary<string, ChangedInputKind> _changedInputs = new(comparer: StringComparer.OrdinalIgnoreCase);
+#pragma warning restore IDE0028
     private bool _changedInputsOverflowed;
     private TaskCompletionSource _changeSignal = CreateSignal();
 

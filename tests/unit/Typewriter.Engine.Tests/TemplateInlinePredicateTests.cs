@@ -251,6 +251,29 @@ public sealed class TemplateInlinePredicateTests
         diagnostics.Should().BeEmpty();
     }
 
+    [Fact]
+    public void RenderSupportsInlineLambdaCallingHelperUnderTypewriterPreprocessorDirective()
+    {
+        const string template = """
+            ${
+                #if !TYPEWRITER
+                public partial class _
+                {
+                    bool IsPost(Method m) => false;
+                }
+                #else
+                bool IsPost(Method m) => m.Name == "Post";
+                #endif
+            }
+            $Classes[$Methods(m => IsPost(m))[$Name;]]
+            """;
+
+        var (output, diagnostics) = Render(template: template);
+
+        diagnostics.Should().BeEmpty();
+        output.Trim().Should().Be("Post;");
+    }
+
     private static (string Output, List<GenerationDiagnostic> Diagnostics) Render(
         string template,
         ProjectMetadata? metadata = null)

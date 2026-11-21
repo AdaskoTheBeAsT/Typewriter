@@ -29,6 +29,10 @@ public sealed class ProjectSourceDirectoryTests
     {
         var path = Path.Combine(path1: Path.GetTempPath(), path2: "Model.cs");
 
-        MsBuildProjectLoader.IsInAnyDirectory(path: path, directories: []).Should().BeFalse();
+#pragma warning disable IDE0028
+        MsBuildProjectLoader.IsInAnyDirectory(
+            path: path,
+            directories: new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase)).Should().BeFalse();
+#pragma warning restore IDE0028
     }
 }

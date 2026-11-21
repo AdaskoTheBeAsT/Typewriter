@@ -5,7 +5,9 @@ namespace Typewriter.Engine;
 
 internal sealed class TemplatePerformanceStatistics(string templatePath)
 {
+#pragma warning disable IDE0028
     private readonly List<(string Path, TimeSpan Elapsed)> _slowest = new(capacity: 5);
+#pragma warning restore IDE0028
     private TimeSpan _render;
     private TimeSpan _planning;
     private TimeSpan _formatting;

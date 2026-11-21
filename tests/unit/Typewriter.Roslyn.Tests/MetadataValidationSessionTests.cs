@@ -47,7 +47,9 @@ public sealed class MetadataValidationSessionTests
 
     private sealed class Workspace : IProjectWorkspaceLoader, IDisposable
     {
+#pragma warning disable IDE0028
         private readonly Dictionary<string, ProjectLoadResult> _projects = new(comparer: StringComparer.OrdinalIgnoreCase);
+#pragma warning restore IDE0028
 
         public Workspace()
         {

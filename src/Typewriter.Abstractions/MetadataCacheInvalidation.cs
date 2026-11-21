@@ -12,7 +12,9 @@ public static class MetadataCacheInvalidation
 {
     private const int MaxTrackedPaths = 8192;
     private static readonly Lock Sync = new();
+#pragma warning disable IDE0028
     private static readonly Dictionary<string, long> DirtyPaths = new(comparer: StringComparer.OrdinalIgnoreCase);
+#pragma warning restore IDE0028
     private static long _version;
     private static long _unknownBeforeVersion;
     private static bool _trackingEnabled;
