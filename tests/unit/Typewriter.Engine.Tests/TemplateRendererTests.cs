@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AwesomeAssertions;
 using Typewriter.Abstractions;
 using Typewriter.Configuration;
@@ -2014,11 +2015,11 @@ public sealed class TemplateRendererTests
     public void RenderRestoresNuGetReferenceFromConfiguredPackageSource()
     {
         const string PackageId = "xunit.v3.extensibility.core";
-        const string PackageVersion = "4.0.2";
+        var packageVersion = GetRestoredPackageVersion(packageId: PackageId);
         var sourcePackageRoot = GetCurrentNuGetPackageRoot();
-        Directory.Exists(path: Path.Combine(path1: sourcePackageRoot, path2: PackageId, path3: PackageVersion))
+        Directory.Exists(path: Path.Combine(path1: sourcePackageRoot, path2: PackageId, path3: packageVersion))
             .Should()
-            .BeTrue(because: $"package source '{sourcePackageRoot}' should contain {PackageId} {PackageVersion}.");
+            .BeTrue(because: $"package source '{sourcePackageRoot}' should contain {PackageId} {packageVersion}.");
 
         var testRoot = Path.Combine(path1: Path.GetTempPath(), path2: "Typewriter.Engine.Tests", path3: Guid.NewGuid().ToString(format: "N"));
         var templateDirectory = Path.Combine(path1: testRoot, path2: "template");
@@ -2072,9 +2073,9 @@ public sealed class TemplateRendererTests
                         IsNullableAware: true),
                 ],
                 Diagnostics: []);
-            const string template = $$"""
+            var template = $$"""
                 ${
-                    #r "nuget: {{PackageId}}, {{PackageVersion}}"
+                    #r "nuget: {{PackageId}}, {{packageVersion}}"
                     using Xunit;
 
                     string FactName(Property property) => typeof(FactAttribute).Name + property.Name;
@@ -2090,7 +2091,7 @@ public sealed class TemplateRendererTests
             var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
 
             diagnostics.Should().BeEmpty();
-            Directory.Exists(path: Path.Combine(path1: restoredPackageRoot, path2: PackageId, path3: PackageVersion)).Should().BeTrue();
+            Directory.Exists(path: Path.Combine(path1: restoredPackageRoot, path2: PackageId, path3: packageVersion)).Should().BeTrue();
             output.TrimEnd().Should().Be("FactAttributeName;");
         }
         finally
@@ -3369,6 +3370,30 @@ public sealed class TemplateRendererTests
             or "System.Decimal"
             or "System.String"
             or "System.Char";
+    }
+
+    private static string GetRestoredPackageVersion(string packageId)
+    {
+        var depsJsonPath = Path.ChangeExtension(path: typeof(TemplateRendererTests).Assembly.Location, extension: ".deps.json");
+        File.Exists(path: depsJsonPath)
+            .Should()
+            .BeTrue(because: $"test assembly dependency manifest '{depsJsonPath}' must exist.");
+
+#pragma warning disable SEC0116
+        using var document = JsonDocument.Parse(json: File.ReadAllText(path: depsJsonPath));
+#pragma warning restore SEC0116
+        var prefix = packageId + "/";
+        using var enumerator = document.RootElement.GetProperty(propertyName: "libraries").EnumerateObject();
+        while (enumerator.MoveNext())
+        {
+            var libraryName = enumerator.Current.Name;
+            if (libraryName.StartsWith(value: prefix, comparisonType: StringComparison.OrdinalIgnoreCase))
+            {
+                return libraryName[prefix.Length..];
+            }
+        }
+
+        throw new InvalidOperationException(message: $"Package '{packageId}' was not found in '{depsJsonPath}'.");
     }
 
     private static string GetCurrentNuGetPackageRoot()
