@@ -33,7 +33,33 @@ Because `#load` files often contain bare methods (such as `string ToCustomName(C
 
 Choose one of the following patterns to get full IDE IntelliSense on `Typewriter.CodeModel` types without breaking your build:
 
-- **Option A — Static class inside `#load` with thin template wrappers**:
+- **Option A — Conditional `#if !TYPEWRITER` class wrapper (recommended for `#load` helper files)**:
+  Typewriter automatically defines the `TYPEWRITER` preprocessor symbol when compiling `.tst` templates and `#load` files. Wrap your bare helper methods in `#if !TYPEWRITER ... #endif` with a `partial class` so multiple `#load` files compile cleanly inside a standard `.csproj` without requiring any custom `<DefineConstants>` or thin `.tst` wrapper methods:
+
+  ```csharp
+  // templates/_helpers/ModelHelpers.cs
+  using Typewriter.CodeModel;
+
+  #if !TYPEWRITER
+  public partial class _
+  {
+  #endif
+      public string CustomTypeName(Class c) => $"I{c.Name}Dto";
+  #if !TYPEWRITER
+  }
+  #endif
+  ```
+
+  Then load and use the helper directly in your `.tst` template:
+
+  ```csharp
+  ${
+      #load "_helpers/ModelHelpers.cs"
+  }
+  $Classes[$CustomTypeName]
+  ```
+
+- **Option B — Static class inside `#load` with thin template wrappers**:
   Write a `static class` inside your `.cs` helper file so it compiles cleanly as valid C# in any project that references `AdaskoTheBeAsT.Typewriter.CodeModel`:
 
   ```csharp
@@ -55,7 +81,7 @@ Choose one of the following patterns to get full IDE IntelliSense on `Typewriter
   }
   ```
 
-- **Option B — Compiled helper class library with `#r` (recommended for large or unit-tested helpers)**:
+- **Option C — Compiled helper class library with `#r` (recommended for large or unit-tested helpers)**:
   Put your helper methods in a `public static` class inside a dedicated helper project (`netstandard2.0` or `net10.0`) that references `AdaskoTheBeAsT.Typewriter.CodeModel` with `PrivateAssets="all" ExcludeAssets="runtime"`:
 
   ```csharp
@@ -80,8 +106,8 @@ Choose one of the following patterns to get full IDE IntelliSense on `Typewriter
   }
   ```
 
-- **Option C — Bare `#load` methods excluded from the application build**:
-  If `TemplateHelpers.cs` contains bare methods without a wrapping `class`, exclude the template helper folder from `Compile` in your application `.csproj` so `dotnet build` ignores it while the project still holds the `AdaskoTheBeAsT.Typewriter.CodeModel` package reference:
+- **Option D — Bare `#load` methods excluded from the application build**:
+  If `TemplateHelpers.cs` contains bare methods without a wrapping `class` or `#if !TYPEWRITER` guard, exclude the template helper folder from `Compile` in your application `.csproj` so `dotnet build` ignores it while the project still holds the `AdaskoTheBeAsT.Typewriter.CodeModel` package reference:
 
   ```xml
   <ItemGroup>

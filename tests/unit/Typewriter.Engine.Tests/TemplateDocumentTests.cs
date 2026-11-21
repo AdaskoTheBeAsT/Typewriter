@@ -28,6 +28,100 @@ public sealed class TemplateDocumentTests
     }
 
     [Fact]
+    public void ParseEvaluatesTypewriterPreprocessorSymbolForCodeBlocksAndSingleFileMode()
+    {
+        const string content = """
+            ${
+                #if !TYPEWRITER
+                Template(Settings settings) {
+                    settings.SingleFileMode("inactive.d.ts");
+                }
+                #else
+                Template(Settings settings) {
+                    settings.SingleFileMode("active.d.ts");
+                }
+                #endif
+            }
+            export interface Marker {}
+            """;
+        var diagnostics = new List<GenerationDiagnostic>();
+
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "models.tst", Content: content), diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        document.CodeBlocks.Should().ContainSingle();
+        document.OutputPath.Should().Be("active.d.ts");
+        document.Content.Trim().Should().Be("export interface Marker {}");
+    }
+
+    [Fact]
+    public void ParseEvaluatesInlineTypewriterPreprocessorDirectiveForSingleFileMode()
+    {
+        const string content = """
+            ${ #if !TYPEWRITER
+                Template(Settings settings) {
+                    settings.SingleFileMode("inactive.d.ts");
+                }
+            #else
+                Template(Settings settings) {
+                    settings.SingleFileMode("active.d.ts");
+                }
+            #endif }
+            export interface Marker {}
+            """;
+        var diagnostics = new List<GenerationDiagnostic>();
+
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "models.tst", Content: content), diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        document.CodeBlocks.Should().ContainSingle();
+        document.OutputPath.Should().Be("active.d.ts");
+        document.Content.Trim().Should().Be("export interface Marker {}");
+    }
+
+    [Theory]
+    [InlineData("#if !TYPEWRITER")]
+    [InlineData("#if(!TYPEWRITER)")]
+    [InlineData("#if!TYPEWRITER")]
+    [InlineData("#if\t!TYPEWRITER")]
+    [InlineData("# if !TYPEWRITER")]
+    public void ParseRecognizesPreprocessorIfDirectiveVariationsInCodeBlocks(string ifDirective)
+    {
+        var content = $$"""
+            ${
+                {{ifDirective}}
+                string Inactive(Class c) => c.Name;
+                #else
+                string Active(Class c) => c.Name;
+                #endif
+            }
+            $Classes[$Active]
+            """;
+        var diagnostics = new List<GenerationDiagnostic>();
+
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "models.tst", Content: content), diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        document.CodeBlocks.Should().ContainSingle();
+        document.CompatibilityMethods.Should().ContainKey("Active");
+        document.CompatibilityMethods.Should().NotContainKey("Inactive");
+        document.Content.Trim().Should().Be("$Classes[$Active]");
+    }
+
+    [Fact]
+    public void ParseDoesNotTreatNonIfHashPrefixAsCompatibilityCodeBlock()
+    {
+        const string content = "const x = `${#ifdef foo}`;";
+        var diagnostics = new List<GenerationDiagnostic>();
+
+        var document = TemplateDocument.Parse(template: new TemplateFile(Path: "models.tst", Content: content), diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        document.CodeBlocks.Should().BeEmpty();
+        document.Content.Trim().Should().Be(content);
+    }
+
+    [Fact]
     public void ParseKeepsTypeScriptTemplateLiteralInterpolation()
     {
         const string content = """

@@ -689,6 +689,79 @@ public sealed class TemplateFeatureServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetCompletionsAsyncOnlyIncludesHelpersFromActiveTypewriterPreprocessorBranch()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            const string Template = """
+                ${
+                    #if !TYPEWRITER
+                    string InactiveHelper(Class c) => c.Name;
+                    #else
+                    string ActiveHelper(Class c) => c.Name;
+                    #endif
+                }
+                $Classes[$Act]
+                """;
+            var document = CreateDocument(path: project.TemplatePath, text: Template);
+            var settings = CreateSettings(directory: directory, projectPath: project.ProjectPath);
+            var position = PositionOf(text: Template, marker: "$Act");
+
+            using var service = new TemplateFeatureService();
+            var completions = await service.GetCompletionsAsync(
+                document: document,
+                settings: settings,
+                position: position with { Character = position.Character + 4 },
+                cancellationToken: CancellationToken.None);
+
+            completions.Items.Should().Contain(item => item.Label == "ActiveHelper");
+            completions.Items.Should().NotContain(item => item.Label == "InactiveHelper");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task GetCompletionsAsyncHandlesInlineTypewriterPreprocessorDirectiveAndIgnoresTemplateBody()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            const string Template = """
+                export const greeting = 'hello';
+                ${ #if(!TYPEWRITER)
+                    string InactiveHelper(Class c) => c.Name;
+                #else
+                    string ActiveHelper(Class c) => c.Name;
+                #endif }
+                $Classes[$Act]
+                """;
+            var document = CreateDocument(path: project.TemplatePath, text: Template);
+            var settings = CreateSettings(directory: directory, projectPath: project.ProjectPath);
+            var position = PositionOf(text: Template, marker: "$Act");
+
+            using var service = new TemplateFeatureService();
+            var completions = await service.GetCompletionsAsync(
+                document: document,
+                settings: settings,
+                position: position with { Character = position.Character + 4 },
+                cancellationToken: CancellationToken.None);
+
+            completions.Items.Should().Contain(item => item.Label == "ActiveHelper");
+            completions.Items.Should().NotContain(item => item.Label == "InactiveHelper");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static async Task<SampleProject> CreateSimpleProjectAsync(string directory)
     {
         Directory.CreateDirectory(path: directory);

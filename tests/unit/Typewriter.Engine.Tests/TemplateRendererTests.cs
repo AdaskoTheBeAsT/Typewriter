@@ -1173,6 +1173,69 @@ public sealed class TemplateRendererTests
     }
 
     [Fact]
+    public async Task RenderDefinesTypewriterSymbolForLoadFilesWithPartialClassWrapper()
+    {
+        var metadata = SampleUserMetadata();
+        var directory = Directory.CreateTempSubdirectory(prefix: "typewriter-load-symbol-test");
+        try
+        {
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory.FullName, path2: "first.cs"),
+                contents: """
+                          using Typewriter.CodeModel;
+                          #if !TYPEWRITER
+                          using NonExistent.Namespace.ThatShouldNotBeHoisted;
+                          #r "nonexistent-reference.dll"
+                          #load "nonexistent-helper.cs"
+                          public partial class _
+                          {
+                          #endif
+                              public string FirstPrefix(Class c) => "first-" + c.Name;
+                          #if !TYPEWRITER
+                          }
+                          #endif
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory.FullName, path2: "second.cs"),
+                contents: """
+                          #if !TYPEWRITER
+                          public partial class _
+                          {
+                          #endif
+                              public string Combined(Class c) => FirstPrefix(c) + "-second";
+                          #if !TYPEWRITER
+                          }
+                          #endif
+                          """);
+            const string template = """
+                ${
+                    #if TYPEWRITER
+                    #load "first.cs"
+                    #load "second.cs"
+                    #else
+                    string Combined(Class c) => "inactive";
+                    #endif
+                }
+                $Classes[$Combined]
+                """;
+            var diagnostics = new List<GenerationDiagnostic>();
+            var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+            var document = TemplateDocument.Parse(
+                template: new TemplateFile(Path: Path.Combine(path1: directory.FullName, path2: "models.tst"), Content: template),
+                diagnostics: diagnostics);
+
+            var output = renderer.Render(template: document, metadata: metadata, diagnostics: diagnostics);
+
+            diagnostics.Should().BeEmpty();
+            output.Should().Contain("first-User-second");
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RenderSupportsLoadDirectiveForRemoteSharedHelpers()
     {
         var metadata = SampleUserMetadata();

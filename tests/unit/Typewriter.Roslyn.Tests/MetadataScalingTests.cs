@@ -281,7 +281,9 @@ public sealed class MetadataScalingTests
 
     private sealed class MetadataWorkspace : IProjectWorkspaceLoader, IAsyncDisposable
     {
+#pragma warning disable IDE0028
         private readonly Dictionary<string, ProjectLoadResult> _projects = new(comparer: StringComparer.OrdinalIgnoreCase);
+#pragma warning restore IDE0028
         private readonly CSharpProjectMetadataProvider _provider;
 
         public MetadataWorkspace()
@@ -295,7 +297,9 @@ public sealed class MetadataScalingTests
 
         public string DirectoryPath { get; }
 
+#pragma warning disable IDE0028
         public Dictionary<string, int> LoadCounts { get; } = new(comparer: StringComparer.OrdinalIgnoreCase);
+#pragma warning restore IDE0028
 
         public async Task<string> AddProjectAsync(
             string name,

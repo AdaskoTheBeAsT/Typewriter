@@ -1693,6 +1693,10 @@ function skipLeadingCSharpTrivia(block) {
     return index;
 }
 
+function startsWithPreprocessorIfDirective(line) {
+    return /^#[ \t]*if[ \t(!]/.test(line);
+}
+
 function isCSharpHelperBlock(block, allowPartial) {
     const startIndex = skipLeadingCSharpTrivia(block);
     if (startIndex >= block.length) {
@@ -1702,6 +1706,10 @@ function isCSharpHelperBlock(block, allowPartial) {
     const firstLine = block.slice(startIndex).split(/\r?\n/, 1)[0] ?? "";
     if (!firstLine) {
         return false;
+    }
+
+    if (startsWithPreprocessorIfDirective(firstLine)) {
+        return true;
     }
 
     const starts = [
@@ -1731,6 +1739,156 @@ function isCSharpHelperBlock(block, allowPartial) {
 
     return allowPartial && ["boo", "cha", "con", "int", "lon", "pri", "pro", "pub", "sta", "str", "usi", "voi"]
         .some(prefix => firstLine.startsWith(prefix));
+}
+
+function stripDisabledPreprocessorText(code) {
+    if (!code || !code.includes("#")) {
+        return code ?? "";
+    }
+
+    const lines = code.split(/\r?\n/);
+    const frames = [];
+    const output = [];
+    for (const line of lines) {
+        const directiveMatch = /^[ \t]*#[ \t]*(if|elif|else|endif)(?=$|[^A-Za-z0-9_])(.*)$/.exec(line);
+        if (directiveMatch) {
+            const keyword = directiveMatch[1];
+            const rest = directiveMatch[2];
+            const isActive = frames.length === 0 || frames[frames.length - 1].currentActive;
+            if (keyword === "if") {
+                const taken = isActive && evaluatePreprocessorExpression(rest);
+                frames.push({ parentActive: isActive, branchTaken: taken, currentActive: taken });
+            } else if (keyword === "elif" && frames.length > 0) {
+                const top = frames.pop();
+                const taken = top.parentActive && !top.branchTaken && evaluatePreprocessorExpression(rest);
+                frames.push({ parentActive: top.parentActive, branchTaken: top.branchTaken || taken, currentActive: taken });
+            } else if (keyword === "else" && frames.length > 0) {
+                const top = frames.pop();
+                const taken = top.parentActive && !top.branchTaken;
+                frames.push({ parentActive: top.parentActive, branchTaken: true, currentActive: taken });
+            } else if (keyword === "endif" && frames.length > 0) {
+                frames.pop();
+            }
+
+            output.push("");
+            continue;
+        }
+
+        const isActive = frames.length === 0 || frames[frames.length - 1].currentActive;
+        output.push(isActive ? line : "");
+    }
+
+    return output.join("\n");
+}
+
+function evaluatePreprocessorExpression(expression) {
+    const commentIndex = expression.indexOf("//");
+    const text = commentIndex >= 0 ? expression.slice(0, commentIndex) : expression;
+    let index = 0;
+
+    function skipWhitespace() {
+        while (index < text.length && /\s/.test(text[index])) {
+            index++;
+        }
+    }
+
+    function consume(token) {
+        skipWhitespace();
+        if (text.startsWith(token, index)) {
+            index += token.length;
+            return true;
+        }
+
+        return false;
+    }
+
+    function parseOr() {
+        let value = parseAnd();
+        while (consume("||")) {
+            const right = parseAnd();
+            value = value || right;
+        }
+
+        return value;
+    }
+
+    function parseAnd() {
+        let value = parseEquality();
+        while (consume("&&")) {
+            const right = parseEquality();
+            value = value && right;
+        }
+
+        return value;
+    }
+
+    function parseEquality() {
+        let value = parseUnary();
+        while (true) {
+            if (consume("==")) {
+                const right = parseUnary();
+                value = value === right;
+            } else if (consume("!=")) {
+                const right = parseUnary();
+                value = value !== right;
+            } else {
+                break;
+            }
+        }
+
+        return value;
+    }
+
+    function parseUnary() {
+        skipWhitespace();
+        if (consume("!")) {
+            return !parseUnary();
+        }
+
+        if (consume("(")) {
+            const inner = parseOr();
+            consume(")");
+            return inner;
+        }
+
+        const start = index;
+        if (index < text.length && /[A-Za-z_]/.test(text[index])) {
+            index++;
+            while (index < text.length && /[A-Za-z0-9_]/.test(text[index])) {
+                index++;
+            }
+        }
+
+        const identifier = text.slice(start, index);
+        return identifier === "TYPEWRITER" || identifier === "true";
+    }
+
+    return parseOr();
+}
+
+function extractActiveCSharpHelperBlocks(text) {
+    const blocks = [];
+    let index = 0;
+    while (index < text.length) {
+        const start = text.indexOf("${", index);
+        if (start < 0) {
+            break;
+        }
+
+        const end = findBalancedEnd(text, start + 1, "{", "}");
+        const contentStart = start + 2;
+        const contentEnd = end < 0 ? text.length : end;
+        const block = text.slice(contentStart, contentEnd);
+        if (!isCSharpHelperBlock(block, isStandaloneBlockStart(text, start))) {
+            index = start + 2;
+            continue;
+        }
+
+        blocks.push(stripDisabledPreprocessorText(block));
+        index = end < 0 ? text.length : end + 1;
+    }
+
+    return blocks;
 }
 
 function findBalancedEnd(text, openIndex, open, close) {
@@ -2090,7 +2248,8 @@ function createCSharpFallbackCompletions(text) {
         "Settings",
         "Type",
     ];
-    const helpers = Array.from(text.matchAll(/(?:public\s+|private\s+|internal\s+|protected\s+|static\s+)*[A-Za-z_][A-Za-z0-9_<>,.\s?]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g))
+    const helpers = extractActiveCSharpHelperBlocks(text)
+        .flatMap(block => Array.from(block.matchAll(/(?:public\s+|private\s+|internal\s+|protected\s+|static\s+)*[A-Za-z_][A-Za-z0-9_<>,.\s?]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g)))
         .map(match => match[1])
         .filter(name => !["Template", "if", "for", "foreach", "while", "switch"].includes(name));
 

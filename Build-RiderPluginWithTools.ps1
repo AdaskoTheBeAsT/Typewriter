@@ -3,7 +3,7 @@ param(
     [ValidateSet("Debug", "Release")]
     [string] $Configuration = "Release",
 
-    [string] $Framework = "net10.0",
+    [string] $Framework = "net11.0",
 
     [string] $OutputDirectory
 )

@@ -4,7 +4,9 @@ namespace Typewriter.Engine;
 
 internal sealed class TypeArgumentSubstitution(IReadOnlyDictionary<string, TypeMetadataReference> substitutions)
 {
+#pragma warning disable IDE0028
     private readonly Dictionary<TypeMetadataReference, TypeMetadataReference> _completed = new(comparer: ReferenceEqualityComparer.Instance);
+#pragma warning restore IDE0028
     private readonly Lock _sync = new();
 
     public TypeMetadataReference Substitute(TypeMetadataReference target)

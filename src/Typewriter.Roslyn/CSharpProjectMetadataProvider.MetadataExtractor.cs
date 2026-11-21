@@ -13,8 +13,10 @@ public sealed partial class CSharpProjectMetadataProvider
 {
     private sealed class MetadataExtractor
     {
+#pragma warning disable IDE0028
         private readonly Dictionary<INamedTypeSymbol, TypeMetadata> _types = new(comparer: SymbolEqualityComparer.Default);
         private readonly Dictionary<INamedTypeSymbol, IReadOnlyList<EnumValueMetadata>> _enumValues = new(comparer: SymbolEqualityComparer.Default);
+#pragma warning restore IDE0028
 
         // Lazy reference edges capture this extractor. Keep that ownership graph ordinary:
         // dependent handles in a weak-key table can prolong earlier extraction graphs.
@@ -193,10 +195,12 @@ public sealed partial class CSharpProjectMetadataProvider
             };
         }
 
+#pragma warning disable IDE0028
         private static HashSet<ITypeSymbol> RentVisitedSymbols() =>
             TypeReferenceVisitedSymbolSets.TryTake(result: out var visitedSymbols)
                 ? visitedSymbols
                 : new HashSet<ITypeSymbol>(comparer: SymbolEqualityComparer.Default);
+#pragma warning restore IDE0028
 
         private static void ReturnVisitedSymbols(HashSet<ITypeSymbol> visitedSymbols)
         {

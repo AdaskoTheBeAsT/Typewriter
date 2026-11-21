@@ -5,7 +5,9 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Emit;
+using Microsoft.CodeAnalysis.Text;
 using Typewriter.Abstractions;
 
 namespace Typewriter.Engine;
@@ -13,6 +15,12 @@ namespace Typewriter.Engine;
 internal static class TemplateRuntimeCompiler
 {
     internal const string HostTypeFullName = "Typewriter.Engine.TemplateRuntime.Generated.TypewriterTemplateHost";
+    internal const string PreprocessorSymbol = "TYPEWRITER";
+    internal static readonly CSharpParseOptions TemplateParseOptions =
+        CSharpParseOptions.Default
+            .WithLanguageVersion(version: LanguageVersion.Preview)
+            .WithPreprocessorSymbols(PreprocessorSymbol);
+
     private const string HostTypeName = "TypewriterTemplateHost";
     private const int MaxCompiledTemplateCacheEntries = 128;
     private const int MaxRemoteLoadBytes = 1024 * 1024;
@@ -189,6 +197,138 @@ internal static class TemplateRuntimeCompiler
         }
     }
 
+    internal static IReadOnlyList<TextSpan> GetDisabledPreprocessorSpans(string code)
+    {
+        if (!code.Contains(value: '#', comparisonType: StringComparison.Ordinal))
+        {
+            return [];
+        }
+
+        var tree = CSharpSyntaxTree.ParseText(text: code, options: TemplateParseOptions);
+        var root = tree.GetRoot();
+        if (!root.ContainsDirectives)
+        {
+            return [];
+        }
+
+        var spans = new List<TextSpan>();
+        var disabledDepth = 0;
+        var disabledStart = -1;
+        foreach (var trivia in root.DescendantTrivia(descendIntoTrivia: true))
+        {
+            if (trivia.GetStructure() is DirectiveTriviaSyntax directive)
+            {
+                UpdateDisabledPreprocessorSpanState(
+                    directive: directive,
+                    spans: spans,
+                    disabledDepth: ref disabledDepth,
+                    disabledStart: ref disabledStart);
+            }
+        }
+
+        if (disabledDepth > 0)
+        {
+            AddDisabledSpan(spans: spans, start: disabledStart, end: code.Length);
+        }
+
+        return spans;
+    }
+
+    internal static bool IsOffsetInDisabledSpan(
+        IReadOnlyList<TextSpan> disabledSpans,
+        int offset) =>
+        disabledSpans.Any(predicate: span => offset >= span.Start && offset < span.End);
+
+    internal static string StripDisabledPreprocessorText(string code)
+    {
+        var disabledSpans = GetDisabledPreprocessorSpans(code: code);
+        if (disabledSpans.Count == 0)
+        {
+            return code;
+        }
+
+        var buffer = code.ToCharArray();
+        foreach (var span in disabledSpans)
+        {
+            var end = Math.Min(val1: span.End, val2: buffer.Length);
+            for (var index = Math.Max(val1: span.Start, val2: 0); index < end; index++)
+            {
+                if (buffer[index] is not '\r' and not '\n')
+                {
+                    buffer[index] = ' ';
+                }
+            }
+        }
+
+        return new string(value: buffer);
+    }
+
+    private static void UpdateDisabledPreprocessorSpanState(
+        DirectiveTriviaSyntax directive,
+        ICollection<TextSpan> spans,
+        ref int disabledDepth,
+        ref int disabledStart)
+    {
+        switch (directive)
+        {
+            case IfDirectiveTriviaSyntax ifDirective:
+                if (disabledDepth > 0)
+                {
+                    disabledDepth++;
+                }
+                else if (!ifDirective.BranchTaken)
+                {
+                    disabledDepth = 1;
+                    disabledStart = ifDirective.FullSpan.End;
+                }
+
+                break;
+
+            case BranchingDirectiveTriviaSyntax branchDirective:
+                if (disabledDepth == 1 && branchDirective.BranchTaken)
+                {
+                    AddDisabledSpan(spans: spans, start: disabledStart, end: branchDirective.SpanStart);
+                    disabledDepth = 0;
+                    disabledStart = -1;
+                }
+                else if (disabledDepth == 0 && !branchDirective.BranchTaken)
+                {
+                    disabledDepth = 1;
+                    disabledStart = branchDirective.FullSpan.End;
+                }
+
+                break;
+
+            case EndIfDirectiveTriviaSyntax endIfDirective:
+                if (disabledDepth == 1)
+                {
+                    AddDisabledSpan(spans: spans, start: disabledStart, end: endIfDirective.SpanStart);
+                    disabledDepth = 0;
+                    disabledStart = -1;
+                }
+                else if (disabledDepth > 1)
+                {
+                    disabledDepth--;
+                }
+
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    private static void AddDisabledSpan(
+        ICollection<TextSpan> spans,
+        int start,
+        int end)
+    {
+        if (start >= 0 && end > start)
+        {
+            spans.Add(item: TextSpan.FromBounds(start: start, end: end));
+        }
+    }
+
     private static CompiledTemplateCacheEntry? GetOrCompileCacheEntry(
         TemplateDocument template,
         ICollection<GenerationDiagnostic> diagnostics)
@@ -275,7 +415,7 @@ internal static class TemplateRuntimeCompiler
         CompiledTemplateCacheMissCounts.AddOrUpdate(key: cacheKey, addValue: 1, updateValueFactory: (_, count) => count + 1);
         var syntaxTree = CSharpSyntaxTree.ParseText(
             text: source,
-            options: CSharpParseOptions.Default.WithLanguageVersion(version: LanguageVersion.Preview),
+            options: TemplateParseOptions,
             path: templatePath,
             encoding: Encoding.UTF8);
         var assemblyName = "TypewriterTemplate_" + cacheKey[..32];
@@ -439,6 +579,7 @@ internal static class TemplateRuntimeCompiler
         }
 
         var source = new StringBuilder();
+        source.AppendLine(value: "#define " + PreprocessorSymbol);
         source.AppendLine(value: "#nullable disable");
         foreach (var usingLine in usings)
         {
@@ -464,31 +605,43 @@ internal static class TemplateRuntimeCompiler
         ICollection<string> references,
         ICollection<LoadDirective> loads)
     {
+        var disabledSpans = GetDisabledPreprocessorSpans(code: codeBlock);
         var members = new StringBuilder(capacity: codeBlock.Length);
-        using var reader = new StringReader(s: codeBlock);
-        string? line;
-        while ((line = reader.ReadLine()) is not null)
+        var index = 0;
+        while (index < codeBlock.Length)
         {
-            var trimmed = line.Trim();
-            if (TryReadUsing(line: trimmed, usingLine: out var usingLine))
-            {
-                usings.Add(item: usingLine);
-                members.AppendLine();
-                continue;
-            }
+            var lineStart = index;
+            var newLineIndex = codeBlock.IndexOf(value: '\n', startIndex: index);
+            var lineEnd = newLineIndex < 0 ? codeBlock.Length : newLineIndex;
+            var contentEnd = lineEnd > lineStart && codeBlock[index: lineEnd - 1] == '\r'
+                ? lineEnd - 1
+                : lineEnd;
+            var line = codeBlock[lineStart..contentEnd];
+            index = newLineIndex < 0 ? codeBlock.Length : newLineIndex + 1;
 
-            if (TryReadReference(line: trimmed, reference: out var reference))
+            if (!IsOffsetInDisabledSpan(disabledSpans: disabledSpans, offset: lineStart))
             {
-                references.Add(item: reference);
-                members.AppendLine();
-                continue;
-            }
+                var trimmed = line.Trim();
+                if (TryReadUsing(line: trimmed, usingLine: out var usingLine))
+                {
+                    usings.Add(item: usingLine);
+                    members.AppendLine();
+                    continue;
+                }
 
-            if (TryReadLoad(line: trimmed, load: out var load))
-            {
-                loads.Add(item: load);
-                members.AppendLine();
-                continue;
+                if (TryReadReference(line: trimmed, reference: out var reference))
+                {
+                    references.Add(item: reference);
+                    members.AppendLine();
+                    continue;
+                }
+
+                if (TryReadLoad(line: trimmed, load: out var load))
+                {
+                    loads.Add(item: load);
+                    members.AppendLine();
+                    continue;
+                }
             }
 
             members.AppendLine(value: line);

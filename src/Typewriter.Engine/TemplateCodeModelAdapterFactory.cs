@@ -70,7 +70,9 @@ internal sealed class TemplateCodeModelAdapterFactory
         _sourcePaths = new Lazy<string[]>(valueFactory: () => GetProjectSourcePaths(project: metadata));
         _settings = settings;
         _mappingSettings = settings;
+#pragma warning disable IDE0028
         _filesBySourcePath = new Dictionary<string, CodeFile>(comparer: StringComparer.OrdinalIgnoreCase);
+#pragma warning restore IDE0028
         _metadataByItem = [];
         _fileCacheLock = new Lock();
         _canDefer = settings.GetType() == typeof(Typewriter.Configuration.Settings);

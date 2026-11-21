@@ -3206,8 +3206,10 @@ public sealed class TemplateRenderer
         private readonly IReadOnlyDictionary<string, PropertyMetadata> _propertiesByFullName;
         private readonly IReadOnlyDictionary<(string CollectionName, string Filter), string> _inlinePredicateMethods;
         private readonly Stack<object> _parentContexts = new();
-        private readonly HashSet<string> _reportedCompiledInvocationErrors = [];
-        private readonly HashSet<string> _reportedUnknownIdentifiers = [];
+#pragma warning disable IDE0028
+        private readonly HashSet<string> _reportedCompiledInvocationErrors = new(comparer: StringComparer.Ordinal);
+        private readonly HashSet<string> _reportedUnknownIdentifiers = new(comparer: StringComparer.Ordinal);
+#pragma warning restore IDE0028
         private readonly IReadOnlyDictionary<string, TemplateCompatibilityMethod> _compatibilityMethods;
         private readonly TemplateSourceIndex _templateSource;
         private readonly string _templatePath;

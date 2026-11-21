@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.Linq;
-using System.Text.RegularExpressions;
 using Microsoft.VisualStudio.Language.Intellisense;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Utilities;
@@ -278,7 +277,7 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
         CSharpKeywords
             .Select(selector: keyword => CreateCompletion(displayText: keyword, insertionText: keyword, description: "C# keyword"))
             .Concat(second: CodeModelTypes.Select(selector: type => CreateCompletion(displayText: type, insertionText: type, description: "Typewriter.CodeModel type")))
-            .Concat(second: GetHelperNames(text: text).Select(selector: helper => CreateCompletion(displayText: helper, insertionText: helper, description: "Template helper")))
+            .Concat(second: CSharpBlockScanner.GetHelperNames(text: text).Select(selector: helper => CreateCompletion(displayText: helper, insertionText: helper, description: "Template helper")))
             .GroupBy(keySelector: completion => completion.DisplayText, comparer: StringComparer.Ordinal)
             .Select(selector: group => group.First())
             .OrderBy(keySelector: completion => completion.DisplayText, comparer: StringComparer.OrdinalIgnoreCase)
@@ -322,7 +321,7 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
         string text,
         int position)
     {
-        if (IsInsideCSharpBlock(text: text, position: position))
+        if (CSharpBlockScanner.IsInsideCSharpBlock(text: text, position: position))
         {
             return CompletionContext.CSharp;
         }
@@ -354,72 +353,6 @@ internal sealed class TypewriterCompletionSource : ICompletionSource
 
         return start >= 0 && text[index: start] == '$';
     }
-
-    private static bool IsInsideCSharpBlock(
-        string text,
-        int position)
-    {
-        var index = 0;
-        while (index < text.Length)
-        {
-            var start = text.IndexOf(value: "${", startIndex: index, comparisonType: StringComparison.Ordinal);
-            if (start < 0)
-            {
-                return false;
-            }
-
-            var end = CSharpBlockScanner.FindBalancedEnd(content: text, openIndex: start + 1);
-            if (end < 0)
-            {
-                return false;
-            }
-
-            if (position >= start
-                && position <= end + 1
-                && CSharpBlockScanner.IsCSharpBlock(
-                    block: text.Substring(startIndex: start + 2, length: end - start - 2),
-                    allowPartial: IsStandaloneBlockStart(text: text, dollarIndex: start)))
-            {
-                return true;
-            }
-
-            index = end + 1;
-        }
-
-        return false;
-    }
-
-    private static bool IsStandaloneBlockStart(
-        string text,
-        int dollarIndex)
-    {
-        for (var index = dollarIndex - 1; index >= 0 && text[index: index] is not '\r' and not '\n'; index--)
-        {
-            if (!char.IsWhiteSpace(c: text[index: index]))
-            {
-                return false;
-            }
-        }
-
-        for (var index = dollarIndex + 2; index < text.Length && text[index: index] is not '\r' and not '\n'; index++)
-        {
-            if (!char.IsWhiteSpace(c: text[index: index]))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static IEnumerable<string> GetHelperNames(string text) =>
-        Regex.Matches(
-                input: text,
-                pattern: @"(?:public\s+|private\s+|internal\s+|protected\s+|static\s+)*[A-Za-z_][A-Za-z0-9_<>,\.\s\?]*\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(",
-                options: RegexOptions.CultureInvariant)
-            .Cast<Match>()
-            .Select(selector: match => match.Groups[groupname: "name"].Value)
-            .Where(predicate: name => name is not "Template" and not "if" and not "for" and not "foreach" and not "while" and not "switch");
 
     private static bool IsIdentifierPart(char value) =>
         char.IsLetterOrDigit(c: value) || value == '_';

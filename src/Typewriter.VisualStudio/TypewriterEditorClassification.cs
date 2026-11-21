@@ -194,7 +194,7 @@ internal sealed class TypewriterClassifier : IClassifier
         _string = GetClassificationType(registry: classificationRegistry, classificationName: "string", fallbackName: "text");
     }
 
-    public event EventHandler<ClassificationChangedEventArgs> ClassificationChanged
+    public event EventHandler<ClassificationChangedEventArgs>? ClassificationChanged
     {
         add { }
         remove { }
