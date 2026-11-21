@@ -1004,7 +1004,9 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
 
     private sealed class ManifestValidationSession(CancellationToken cancellationToken)
     {
+#pragma warning disable IDE0028
         private readonly Dictionary<ProjectInputManifest, ManifestValidation> _validations = new(comparer: ReferenceEqualityComparer.Instance);
+#pragma warning restore IDE0028
         private readonly Dictionary<long, DirtyPathSnapshot> _snapshots = [];
 
         // Later lookups may observe newer edits, but must never acknowledge them

@@ -182,6 +182,36 @@ public sealed class EmbeddedDocumentServiceTests
         typescriptSnapshot.Content.Should().Contain("export class $ModelName");
     }
 
+    [Fact]
+    public void GetSnapshotForCSharpDefinesTypewriterSymbolAndSkipsDisabledUsingsAndBlanksLoadDirectives()
+    {
+        const string template = """
+            ${
+                #if !TYPEWRITER
+                using Inactive.Namespace;
+                public partial class _
+                {
+                #endif
+                #load "shared.cs"
+                string LoudName(Class c) => c.Name;
+                #if !TYPEWRITER
+                }
+                #endif
+            }
+            $Classes[$LoudName]
+            """;
+        var document = CreateDocument(text: template);
+
+        var csharpSnapshot = EmbeddedDocumentService.GetSnapshot(document: document, kind: "csharp");
+
+        csharpSnapshot.Should().NotBeNull();
+        csharpSnapshot.LanguageId.Should().Be("csharp");
+        csharpSnapshot.Content.Should().StartWith("#define TYPEWRITER\n");
+        csharpSnapshot.Content.Should().NotContain("#load \"shared.cs\"");
+        csharpSnapshot.Content.Split(separator: "namespace Typewriter.Engine.TemplateRuntime.Generated")[0]
+            .Should().NotContain("using Inactive.Namespace;");
+    }
+
     private static TextDocumentState CreateDocument(string text) =>
         new(
             Uri: "file:///c%3A/templates/Models.tst",

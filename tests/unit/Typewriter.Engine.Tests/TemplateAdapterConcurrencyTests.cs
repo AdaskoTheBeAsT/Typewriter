@@ -113,22 +113,26 @@ public sealed class TemplateAdapterConcurrencyTests
                     ParentTypeFullName = fullName,
                 })
                 .ToArray(),
-            Methods = [new MethodMetadata(
-                Name: "Run",
-                FullName: fullName + ".Run",
-                ReturnType: AdapterTestData.CreateReference(),
-                Accessibility: MetadataAccessibility.Public,
-                IsStatic: false,
-                IsAbstract: false,
-                IsGeneric: false,
-                Parameters: [parameter],
-                Attributes: [],
-                ParentTypeFullName: fullName),
+            Methods =
+            [
+                new MethodMetadata(
+                    Name: "Run",
+                    FullName: fullName + ".Run",
+                    ReturnType: AdapterTestData.CreateReference(),
+                    Accessibility: MetadataAccessibility.Public,
+                    IsStatic: false,
+                    IsAbstract: false,
+                    IsGeneric: false,
+                    Parameters: [parameter],
+                    Attributes: [],
+                    ParentTypeFullName: fullName),
             ],
-            Attributes = [new AttributeMetadata(
-                Name: "Example",
-                FullName: "Sample.Example",
-                Arguments: [new AttributeArgumentMetadata(Name: null, Value: "text")]),
+            Attributes =
+            [
+                new AttributeMetadata(
+                    Name: "Example",
+                    FullName: "Sample.Example",
+                    Arguments: [new AttributeArgumentMetadata(Name: null, Value: "text")]),
             ],
         };
     }

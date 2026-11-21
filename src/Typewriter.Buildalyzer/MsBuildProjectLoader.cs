@@ -161,18 +161,22 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
             // instead of silently treating the project as empty. See: https://github.com/AdaskoTheBeAsT/Typewriter/issues/69
             if (!result.Succeeded || capturedDiagnostics.Count > 0)
             {
-                state.Diagnostics.AddRange(
-                    collection: capturedDiagnostics.Count > 0
-                        ? capturedDiagnostics
-                        : [
-                            new GenerationDiagnostic(
-                                File: projectPath,
-                                Line: null,
-                                Column: null,
-                                Severity: DiagnosticSeverity.Error,
-                                Message: $"Buildalyzer could not evaluate project: {projectPath}.",
-                                Code: "TW0003"),
-                            ]);
+                if (capturedDiagnostics.Count > 0)
+                {
+                    state.Diagnostics.AddRange(collection: capturedDiagnostics);
+                }
+                else
+                {
+                    state.Diagnostics.Add(
+                        item: new GenerationDiagnostic(
+                            File: projectPath,
+                            Line: null,
+                            Column: null,
+                            Severity: DiagnosticSeverity.Error,
+                            Message: $"Buildalyzer could not evaluate project: {projectPath}.",
+                            Code: "TW0003"));
+                }
+
                 return;
             }
         }
@@ -254,17 +258,21 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         string fallbackMessage)
     {
         var diagnostics = GetCapturedBuildErrorDiagnostics(results: results, projectPath: projectPath);
-        return diagnostics.Count > 0
-            ? diagnostics
-            : [
-                new GenerationDiagnostic(
-                    File: projectPath,
-                    Line: null,
-                    Column: null,
-                    Severity: DiagnosticSeverity.Error,
-                    Message: fallbackMessage,
-                    Code: "TW0003"),
-                ];
+        if (diagnostics.Count > 0)
+        {
+            return diagnostics;
+        }
+
+        return
+        [
+            new GenerationDiagnostic(
+                File: projectPath,
+                Line: null,
+                Column: null,
+                Severity: DiagnosticSeverity.Error,
+                Message: fallbackMessage,
+                Code: "TW0003"),
+        ];
     }
 
     private static IReadOnlyList<GenerationDiagnostic> GetCapturedBuildErrorDiagnostics(
@@ -562,6 +570,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
 
         public bool ImplicitUsingsEnabled { get; set; }
 
+#pragma warning disable IDE0028
         public HashSet<string> VisitedProjects { get; } = new(comparer: PathComparer);
 
         public HashSet<string> SourceFiles { get; } = new(comparer: PathComparer);
@@ -579,6 +588,7 @@ public sealed class MsBuildProjectLoader : IProjectWorkspaceLoader
         public HashSet<string> AdditionalFiles { get; } = new(comparer: PathComparer);
 
         public HashSet<string> AnalyzerConfigFiles { get; } = new(comparer: PathComparer);
+#pragma warning restore IDE0028
 
         public List<GenerationDiagnostic> Diagnostics { get; } = [];
 

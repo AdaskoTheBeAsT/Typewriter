@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
@@ -13,10 +13,10 @@
     <PackageReference Remove="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Remove="Microsoft.CodeAnalysis.CSharp.Workspaces" />
     <PackageReference Remove="Microsoft.CodeAnalysis.Workspaces.Common" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="5.9.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="5.9.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="5.12.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.12.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.12.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="5.12.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -293,7 +293,7 @@ internal sealed class EmbeddedCSharpLanguageService : IDisposable
                     compilationOptions: new CSharpCompilationOptions(
                         outputKind: OutputKind.DynamicallyLinkedLibrary,
                         nullableContextOptions: NullableContextOptions.Disable))
-                .WithParseOptions(parseOptions: CSharpParseOptions.Default.WithLanguageVersion(version: LanguageVersion.Preview))
+                .WithParseOptions(parseOptions: TemplateRuntimeCompiler.TemplateParseOptions)
                 .WithMetadataReferences(metadataReferences: CreateWorkspaceReferences(projectCompilations: projectCompilations));
             var project = workspace.AddProject(projectInfo: projectInfo);
             var roslynDocument = workspace.AddDocument(

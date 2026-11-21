@@ -1097,8 +1097,23 @@ Follow these three rules to avoid C# compiler or runtime conflicts:
    This gives your IDE and compiler the `Typewriter.CodeModel` types at design/compile time without copying `Typewriter.CodeModel.dll` into your application's runtime `bin/` output or flowing the dependency transitively to other projects.
 
 2. **Prevent standard C# project build errors on `#load` files:**
+   - **Conditional `#if !TYPEWRITER` class wrapper (recommended for `#load` helper files):** Typewriter automatically defines the `TYPEWRITER` preprocessor symbol when compiling `.tst` templates and `#load` files. Wrap your bare helper methods in `#if !TYPEWRITER ... #endif` with a `partial class` so multiple `#load` files compile cleanly inside a standard `.csproj` (with full IDE IntelliSense and no custom MSBuild symbols required) while still being spliced directly into `TypewriterTemplateHost` at template generation time:
+
+     ```csharp
+     using Typewriter.CodeModel;
+
+     #if !TYPEWRITER
+     public partial class _
+     {
+     #endif
+         public string ContractName(Class c) => $"I{c.Name}Dto";
+     #if !TYPEWRITER
+     }
+     #endif
+     ```
+
    - **Static class in `#load` or compiled `#r` library:** Wrap your helper logic inside a `static class` (for example `static class NameHelpers { public static string ContractName(Class c) => ...; }`) so it is valid C# inside a `.csproj`, and call it from a thin one-line wrapper method in your `.tst` template (`string ContractName(Class c) => NameHelpers.ContractName(c);`).
-   - **Bare methods in `#load` files:** Because `#load` splices bare methods directly into Typewriter's generated `TypewriterTemplateHost` class, a standard `.csproj` build will reject bare methods with `CS0116` / `CS8803`. If your `#load` `.cs` files contain bare methods, exclude them from your application's `Compile` items so `dotnet build` ignores them:
+   - **Bare methods in `#load` files without `#if !TYPEWRITER`:** Because `#load` splices bare methods directly into Typewriter's generated `TypewriterTemplateHost` class, a standard `.csproj` build will reject unwrapped bare methods with `CS0116` / `CS8803`. If your `#load` `.cs` files contain unwrapped bare methods, exclude them from your application's `Compile` items so `dotnet build` ignores them:
 
      ```xml
      <ItemGroup>

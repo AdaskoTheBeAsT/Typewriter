@@ -5,8 +5,10 @@ namespace Typewriter.Roslyn;
 /// </summary>
 internal sealed class MetadataDirtyPathIndex
 {
+#pragma warning disable IDE0028
     private readonly Dictionary<string, int> _paths = new(comparer: StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _directories = new(comparer: StringComparer.OrdinalIgnoreCase);
+#pragma warning restore IDE0028
     private readonly string[] _orderedPaths;
 
     public MetadataDirtyPathIndex(IReadOnlyList<string> paths)

@@ -52,6 +52,11 @@ internal static class TemplateCodeBlockScanner
         }
 
         var remaining = block[startIndex..];
+        if (StartsWithPreprocessorIfDirective(remaining: remaining))
+        {
+            return true;
+        }
+
         foreach (var prefix in CompatibilityPrefixes)
         {
             if (remaining.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal))
@@ -129,6 +134,25 @@ internal static class TemplateCodeBlockScanner
         }
 
         return -1;
+    }
+
+    private static bool StartsWithPreprocessorIfDirective(ReadOnlySpan<char> remaining)
+    {
+        if (remaining.IsEmpty || remaining[index: 0] != '#')
+        {
+            return false;
+        }
+
+        var index = 1;
+        while (index < remaining.Length && remaining[index: index] is ' ' or '\t')
+        {
+            index++;
+        }
+
+        return index + 2 < remaining.Length
+            && remaining[index: index] == 'i'
+            && remaining[index: index + 1] == 'f'
+            && remaining[index: index + 2] is ' ' or '\t' or '(' or '!';
     }
 
     private static int SkipLeadingTrivia(ReadOnlySpan<char> block)

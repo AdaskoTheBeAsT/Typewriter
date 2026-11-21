@@ -31,7 +31,7 @@ internal static class TemplateInlinePredicateCompiler
             {
                 declarations ??= CSharpCompilation.Create(
                     assemblyName: "TypewriterInlinePredicateBinding",
-                    syntaxTrees: [CSharpSyntaxTree.ParseText(text: source)],
+                    syntaxTrees: [CSharpSyntaxTree.ParseText(text: source, options: TemplateRuntimeCompiler.TemplateParseOptions)],
                     references: references,
                     options: new CSharpCompilationOptions(outputKind: OutputKind.DynamicallyLinkedLibrary));
                 itemTypeNames = ResolveHelperItemTypes(declarations: declarations, collectionName: predicate.CollectionName);

@@ -435,30 +435,51 @@ internal sealed class TemplateFeatureService : IDisposable
         ICollection<TemplateAnalysisItem> items,
         string content)
     {
-        foreach (Match match in Regex.Matches(
-                     input: content,
-                     pattern: @"(?:public\s+|private\s+|internal\s+|protected\s+|static\s+)*[A-Za-z_][A-Za-z0-9_<>,\.\s\?]*\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(",
-                     options: RegexOptions.CultureInvariant,
-                     matchTimeout: RegexTimeout))
+        foreach (var activeBlock in EnumerateActiveCSharpBlocks(content: content))
         {
-            var name = match.Groups[groupname: "name"].Value;
-            if (name.Equals(value: "Template", comparisonType: StringComparison.Ordinal)
-                || name.Equals(value: "if", comparisonType: StringComparison.Ordinal)
-                || name.Equals(value: "for", comparisonType: StringComparison.Ordinal)
-                || name.Equals(value: "foreach", comparisonType: StringComparison.Ordinal)
-                || name.Equals(value: "while", comparisonType: StringComparison.Ordinal)
-                || name.Equals(value: "switch", comparisonType: StringComparison.Ordinal))
+            foreach (Match match in Regex.Matches(
+                         input: activeBlock,
+                         pattern: @"(?:public\s+|private\s+|internal\s+|protected\s+|static\s+)*[A-Za-z_][A-Za-z0-9_<>,\.\s\?]*\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(",
+                         options: RegexOptions.CultureInvariant,
+                         matchTimeout: RegexTimeout))
             {
+                var name = match.Groups[groupname: "name"].Value;
+                if (name.Equals(value: "Template", comparisonType: StringComparison.Ordinal)
+                    || name.Equals(value: "if", comparisonType: StringComparison.Ordinal)
+                    || name.Equals(value: "for", comparisonType: StringComparison.Ordinal)
+                    || name.Equals(value: "foreach", comparisonType: StringComparison.Ordinal)
+                    || name.Equals(value: "while", comparisonType: StringComparison.Ordinal)
+                    || name.Equals(value: "switch", comparisonType: StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                items.Add(
+                    item: new TemplateAnalysisItem(
+                        Label: name,
+                        CompletionKind: CompletionKind.Function,
+                        Detail: "Template helper",
+                        Documentation: "Helper method declared in this .tst template.",
+                        TargetKind: TemplateAnalysisTargetKind.Helper));
+            }
+        }
+    }
+
+    private static IEnumerable<string> EnumerateActiveCSharpBlocks(string content)
+    {
+        var index = 0;
+        while (index < content.Length)
+        {
+            if (content[index: index] != '$'
+                || !TemplateEmbeddedLanguage.TryReadCSharpBlock(text: content, dollarIndex: index, allowUnclosed: true, region: out var region))
+            {
+                index++;
                 continue;
             }
 
-            items.Add(
-                item: new TemplateAnalysisItem(
-                    Label: name,
-                    CompletionKind: CompletionKind.Function,
-                    Detail: "Template helper",
-                    Documentation: "Helper method declared in this .tst template.",
-                    TargetKind: TemplateAnalysisTargetKind.Helper));
+            yield return TemplateRuntimeCompiler.StripDisabledPreprocessorText(
+                code: content[region.ContentStart..region.ContentEnd]);
+            index = Math.Max(val1: region.End, val2: index + 1);
         }
     }
 

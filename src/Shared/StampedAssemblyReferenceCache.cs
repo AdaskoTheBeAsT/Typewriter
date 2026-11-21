@@ -11,7 +11,9 @@ namespace Typewriter.CompilerServices;
 internal sealed class StampedAssemblyReferenceCache(int capacity = 1024)
 {
     private readonly Lock _sync = new();
+#pragma warning disable IDE0028
     private readonly Dictionary<string, Entry> _entries = new(comparer: StringComparer.OrdinalIgnoreCase);
+#pragma warning restore IDE0028
     private readonly Queue<string> _order = new();
 
     public static StampedAssemblyReferenceCache Shared { get; } = new();
