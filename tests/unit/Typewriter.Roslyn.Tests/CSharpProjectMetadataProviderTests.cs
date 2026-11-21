@@ -666,6 +666,82 @@ public sealed class CSharpProjectMetadataProviderTests
     }
 
     [Fact]
+    public async Task GetMetadataMapsPropertyAccessibilityFromDeclarationAndGetterIssue145()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var projectPath = Path.Combine(path1: directory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(
+                path: projectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                            </PropertyGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Models.cs"),
+                contents: """
+                          namespace Sample;
+
+                          public sealed class VisibilityModel
+                          {
+                              public string Open { get; set; } = string.Empty;
+
+                              public string PublicGetInternalSet { get; internal set; } = string.Empty;
+
+                              public string PublicGetPrivateSet { get; private set; } = string.Empty;
+
+                              public string InternalGetter { internal get; set; } = string.Empty;
+
+                              internal string InternalProp { get; set; } = string.Empty;
+
+                              public string PrivateGetter { private get; set; } = string.Empty;
+
+                              public string WriteOnly { set { } }
+                          }
+
+                          internal sealed class InternalModel
+                          {
+                              public string Cursor { get; set; } = string.Empty;
+                          }
+                          """);
+            var provider = new CSharpProjectMetadataProvider();
+
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: projectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().BeEmpty();
+            var visibilityModel = metadata.Types.Should().ContainSingle(type => type.Name == "VisibilityModel").Which;
+            visibilityModel.Accessibility.Should().Be(MetadataAccessibility.Public);
+            visibilityModel.Properties.Should().ContainSingle(property => property.Name == "Open")
+                .Which.Accessibility.Should().Be(MetadataAccessibility.Public);
+            visibilityModel.Properties.Should().ContainSingle(property => property.Name == "PublicGetInternalSet")
+                .Which.Accessibility.Should().Be(MetadataAccessibility.Public);
+            visibilityModel.Properties.Should().ContainSingle(property => property.Name == "PublicGetPrivateSet")
+                .Which.Accessibility.Should().Be(MetadataAccessibility.Public);
+            visibilityModel.Properties.Should().ContainSingle(property => property.Name == "InternalGetter")
+                .Which.Accessibility.Should().Be(MetadataAccessibility.Internal);
+            visibilityModel.Properties.Should().ContainSingle(property => property.Name == "InternalProp")
+                .Which.Accessibility.Should().Be(MetadataAccessibility.Internal);
+            visibilityModel.Properties.Should().NotContain(property => property.Name == "PrivateGetter");
+            visibilityModel.Properties.Should().NotContain(property => property.Name == "WriteOnly");
+
+            var internalModel = metadata.Types.Should().ContainSingle(type => type.Name == "InternalModel").Which;
+            internalModel.Accessibility.Should().Be(MetadataAccessibility.Internal);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
     public async Task GetMetadataCompilesProjectReferencesSeparatelyBeforeMergingMetadata()
     {
         var directory = CreateProjectDirectory();

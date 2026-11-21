@@ -77,6 +77,11 @@
           "description": "Render nullable types as 'T | null'. Templates can override via settings.DisableStrictNullGeneration().",
           "default": true
         },
+        "includeInternals": {
+          "type": "boolean",
+          "description": "Include internal C# types and members in the template code model. Templates can override via settings.IncludeInternals(...).",
+          "default": false
+        },
         "indentStyle": {
           "type": "string",
           "enum": ["preserve", "space", "tab"],

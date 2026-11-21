@@ -111,6 +111,7 @@ public static class TypewriterConfigurationLoader
                 DryRun = loaded.Output?.DryRun ?? current.Output.DryRun,
                 FileNameConvention = loaded.Output?.FileNameConvention ?? current.Output.FileNameConvention,
                 StrictNull = loaded.Output?.StrictNull ?? current.Output.StrictNull,
+                IncludeInternals = loaded.Output?.IncludeInternals ?? current.Output.IncludeInternals,
                 IndentStyle = loaded.Output?.IndentStyle ?? current.Output.IndentStyle,
                 IndentSize = loaded.Output?.IndentSize ?? current.Output.IndentSize,
                 InsertFinalNewline = loaded.Output?.InsertFinalNewline ?? current.Output.InsertFinalNewline,
@@ -169,6 +170,8 @@ public static class TypewriterConfigurationLoader
             {
                 Newline = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_NEWLINE")
                     ?? configuration.Output.Newline,
+                IncludeInternals = ReadBooleanEnvironment(name: "TYPEWRITER_OUTPUT_INCLUDE_INTERNALS")
+                    ?? configuration.Output.IncludeInternals,
                 DateLibrary = ReadEnumEnvironment<DateLibrary>(name: "TYPEWRITER_OUTPUT_DATE_LIBRARY")
                     ?? configuration.Output.DateLibrary,
                 DateType = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_DATE_TYPE")
@@ -295,6 +298,8 @@ public static class TypewriterConfigurationLoader
         public FileNameConvention? FileNameConvention { get; init; }
 
         public bool? StrictNull { get; init; }
+
+        public bool? IncludeInternals { get; init; }
 
         public IndentStyle? IndentStyle { get; init; }
 

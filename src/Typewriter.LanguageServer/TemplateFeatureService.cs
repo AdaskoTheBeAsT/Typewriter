@@ -592,7 +592,7 @@ internal sealed class TemplateFeatureService : IDisposable
             items: items,
             label: "$Types",
             insertText: "Types[$0]",
-            documentation: "All public/internal C# types available to this template.");
+            documentation: "C# types available to this template (public by default; internal when IncludeInternals is enabled).");
         AddTypewriterSnippet(items: items, label: "$Classes", insertText: "Classes[$0]", documentation: "C# classes.");
         AddTypewriterSnippet(items: items, label: "$Records", insertText: "Records[$0]", documentation: "C# records.");
         AddTypewriterSnippet(items: items, label: "$Structs", insertText: "Structs[$0]", documentation: "C# structs.");
@@ -632,13 +632,20 @@ internal sealed class TemplateFeatureService : IDisposable
             .OrderBy(keySelector: item => item.Label, comparer: StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-#pragma warning disable MA0051 // Method is too long
+    private static bool IsAccessible(
+        MetadataAccessibility accessibility,
+        bool includeInternals) =>
+        accessibility == MetadataAccessibility.Public
+        || (includeInternals && accessibility == MetadataAccessibility.Internal);
+
+#pragma warning disable MA0051,S3776
     private static void AddMetadataItems(
         ICollection<TemplateAnalysisItem> items,
-        ProjectMetadata project)
-#pragma warning restore MA0051 // Method is too long
+        ProjectMetadata project,
+        bool includeInternals)
+#pragma warning restore MA0051,S3776
     {
-        foreach (var type in project.Types)
+        foreach (var type in project.Types.Where(predicate: candidate => IsAccessible(accessibility: candidate.Accessibility, includeInternals: includeInternals)))
         {
             items.Add(
                 item: new TemplateAnalysisItem(
@@ -657,7 +664,7 @@ internal sealed class TemplateFeatureService : IDisposable
                     Location: type.Location,
                     TargetKind: TemplateAnalysisTargetKind.Type));
 
-            foreach (var property in type.Properties)
+            foreach (var property in type.Properties.Where(predicate: candidate => IsAccessible(accessibility: candidate.Accessibility, includeInternals: includeInternals)))
             {
                 AddMember(
                     items: items,
@@ -681,7 +688,7 @@ internal sealed class TemplateFeatureService : IDisposable
                 }
             }
 
-            foreach (var method in type.Methods)
+            foreach (var method in type.Methods.Where(predicate: candidate => IsAccessible(accessibility: candidate.Accessibility, includeInternals: includeInternals)))
             {
                 AddMember(
                     items: items,
@@ -705,7 +712,7 @@ internal sealed class TemplateFeatureService : IDisposable
                 }
             }
 
-            foreach (var constant in type.Constants)
+            foreach (var constant in type.Constants.Where(predicate: candidate => IsAccessible(accessibility: candidate.Accessibility, includeInternals: includeInternals)))
             {
                 AddMember(
                     items: items,
@@ -1108,6 +1115,53 @@ internal sealed class TemplateFeatureService : IDisposable
             settings.AllProjects ? "all" : string.Empty);
     }
 
+    private static async Task<bool> ResolveIncludeInternalsAsync(
+        TextDocumentState document,
+        LanguageServerSettings settings,
+        ProjectMetadata project,
+        CancellationToken cancellationToken)
+    {
+        var workspacePath = settings.ResolveWorkspacePath(documentPath: document.Path);
+        var projectPath = settings.ResolveProjectPath(workspacePath: workspacePath);
+        var configuration = await TypewriterConfigurationLoader.LoadAsync(
+            workspacePath: workspacePath,
+            projectPath: projectPath,
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        var includeInternals = configuration.Output.IncludeInternals;
+        if (!document.Text.Contains(value: "IncludeInternals", comparisonType: StringComparison.Ordinal))
+        {
+            return includeInternals;
+        }
+
+        try
+        {
+            var diagnostics = new List<GenerationDiagnostic>();
+            var template = TemplateDocument.Parse(
+                template: new TemplateFile(
+                    Path: document.Path ?? "Template.tst",
+                    Content: document.Text),
+                diagnostics: diagnostics);
+            if (!template.HasCompiledCode)
+            {
+                return includeInternals;
+            }
+
+            var defaults = TemplateRenderDefaults.FromConfiguration(
+                configuration: configuration,
+                solutionFullName: workspacePath);
+            var inspection = TemplateRenderer.InspectTemplate(
+                template: template,
+                metadata: project,
+                diagnostics: diagnostics,
+                defaults: defaults);
+            return inspection.IncludeInternals;
+        }
+        catch (Exception)
+        {
+            return includeInternals;
+        }
+    }
+
     private async Task<IReadOnlyList<TemplateAnalysisItem>> GetAnalysisItemsAsync(
         TextDocumentState document,
         LanguageServerSettings settings,
@@ -1120,7 +1174,12 @@ internal sealed class TemplateFeatureService : IDisposable
         var project = await LoadProjectMetadataAsync(document: document, settings: settings, cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         if (project is not null)
         {
-            AddMetadataItems(items: items, project: project);
+            var includeInternals = await ResolveIncludeInternalsAsync(
+                document: document,
+                settings: settings,
+                project: project,
+                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            AddMetadataItems(items: items, project: project, includeInternals: includeInternals);
         }
 
         return items;

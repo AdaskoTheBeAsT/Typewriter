@@ -454,17 +454,21 @@ public sealed partial class CSharpProjectMetadataProvider
             return members.OfType<IPropertySymbol>()
                 .Where(predicate: property => !property.IsStatic)
                 .Where(predicate: property => property.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
-                .Where(predicate: property => property.GetMethod is not null)
+                .Where(predicate: property => property.GetMethod is { DeclaredAccessibility: Accessibility.Public or Accessibility.Internal })
                 .Select(
                     selector: property =>
                     {
                         var fullName = property.ToDisplayString(format: SymbolDisplayFormat.CSharpErrorMessageFormat);
                         var docComment = GetDocComment(symbol: property);
+                        var accessibility = property.DeclaredAccessibility == Accessibility.Public
+                            && property.GetMethod!.DeclaredAccessibility == Accessibility.Public
+                                ? MetadataAccessibility.Public
+                                : MetadataAccessibility.Internal;
                         return new PropertyMetadata(
                             Name: property.Name,
                             FullName: fullName,
                             Type: CreateTypeReference(symbol: property.Type, nullableAnnotation: property.NullableAnnotation),
-                            Accessibility: MapAccessibility(accessibility: property.DeclaredAccessibility),
+                            Accessibility: accessibility,
                             HasGetter: property.GetMethod is not null,
                             HasSetter: property.SetMethod is not null,
                             IsRequired: property.IsRequired,
