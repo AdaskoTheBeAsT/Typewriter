@@ -222,6 +222,72 @@ public sealed class TypewriterConfigurationLoaderTests
         }
     }
 
+    [Fact]
+    public async Task LoadAsyncReadsIncludeInternalsAndAppliesEnvironmentOverrideIssue145()
+    {
+        var root = CreateProjectDirectory();
+        var originalIncludeInternals = Environment.GetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_INCLUDE_INTERNALS");
+        try
+        {
+            Environment.SetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_INCLUDE_INTERNALS", value: null);
+            var projectDirectory = Path.Combine(path1: root, path2: "src");
+            Directory.CreateDirectory(path: projectDirectory);
+            var projectPath = Path.Combine(path1: projectDirectory, path2: "Sample.csproj");
+            await File.WriteAllTextAsync(path: projectPath, contents: "<Project />");
+
+            var defaultConfig = await TypewriterConfigurationLoader.LoadAsync(
+                workspacePath: root,
+                projectPath: projectPath,
+                cancellationToken: CancellationToken.None);
+            defaultConfig.Output.IncludeInternals.Should().BeFalse();
+
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: root, path2: "typewriter.json"),
+                contents: """
+                          {
+                            "output": {
+                              "includeInternals": true
+                            }
+                          }
+                          """);
+
+            var workspaceEnabled = await TypewriterConfigurationLoader.LoadAsync(
+                workspacePath: root,
+                projectPath: projectPath,
+                cancellationToken: CancellationToken.None);
+            workspaceEnabled.Output.IncludeInternals.Should().BeTrue();
+
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: projectDirectory, path2: "typewriter.json"),
+                contents: """
+                          {
+                            "output": {
+                              "includeInternals": false
+                            }
+                          }
+                          """);
+
+            var projectDisabled = await TypewriterConfigurationLoader.LoadAsync(
+                workspacePath: root,
+                projectPath: projectPath,
+                cancellationToken: CancellationToken.None);
+            projectDisabled.Output.IncludeInternals.Should().BeFalse();
+
+            Environment.SetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_INCLUDE_INTERNALS", value: "true");
+
+            var envEnabled = await TypewriterConfigurationLoader.LoadAsync(
+                workspacePath: root,
+                projectPath: projectPath,
+                cancellationToken: CancellationToken.None);
+            envEnabled.Output.IncludeInternals.Should().BeTrue();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable: "TYPEWRITER_OUTPUT_INCLUDE_INTERNALS", value: originalIncludeInternals);
+            Directory.Delete(path: root, recursive: true);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(

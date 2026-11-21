@@ -250,7 +250,9 @@ internal sealed class TemplateCodeModelAdapterFactory
         }
 
         return new Typewriter.CodeModel.InterfaceCollection(
-            items: Defer(source: type.BaseTypes.Where(predicate: IsInterfaceReference), selector: baseInterface => CreateInterfaceReference(
+            items: Defer(
+                source: type.BaseTypes.Where(predicate: candidate => IsInterfaceReference(reference: candidate) && IsAccessibleTypeReference(reference: candidate)),
+                selector: baseInterface => CreateInterfaceReference(
                     reference: SubstituteTypeArguments(type: type, reference: reference, target: baseInterface))));
     }
 
@@ -464,6 +466,21 @@ internal sealed class TemplateCodeModelAdapterFactory
     private TemplateCodeModelAdapterFactory CaptureFactory() =>
         _canDefer && _liveFactory is null ? new TemplateCodeModelAdapterFactory(source: this) : this;
 
+    private bool IsAccessible(MetadataAccessibility accessibility) =>
+        accessibility == MetadataAccessibility.Public
+        || (accessibility == MetadataAccessibility.Internal && _settings.IncludeInternalsGeneration);
+
+    private bool IsAccessibleTypeReference(TypeMetadataReference reference) =>
+        !TryResolveType(reference: reference, metadata: out var metadata)
+        || IsAccessible(accessibility: metadata.Accessibility);
+
+    private IEnumerable<T> FilterAccessible<T>(
+        IEnumerable<T> items,
+        Func<T, MetadataAccessibility> getAccessibility) =>
+        items.TryGetNonEnumeratedCount(count: out var count) && count == 0
+            ? []
+            : items.Where(predicate: item => IsAccessible(accessibility: getAccessibility.Invoke(arg: item)));
+
     private IEnumerable<T> Defer<TSource, T>(IEnumerable<TSource> source, Func<TSource, T> selector)
         where T : Typewriter.CodeModel.Item
     {
@@ -573,6 +590,10 @@ internal sealed class TemplateCodeModelAdapterFactory
         var rootTypes = project.Types
             .Where(predicate: static type => string.IsNullOrWhiteSpace(value: type.ContainingTypeFullName))
             .ToArray();
+        var accessibleRootTypes = FilterAccessible(items: rootTypes, getAccessibility: static type => type.Accessibility);
+        var rootDelegates = project.Delegates
+            .Where(predicate: static @delegate => string.IsNullOrWhiteSpace(value: @delegate.ParentTypeFullName))
+            .ToArray();
 
         var file = new CodeFile
         {
@@ -580,18 +601,18 @@ internal sealed class TemplateCodeModelAdapterFactory
             FullName = filePath,
             Path = filePath,
             Classes = new Typewriter.CodeModel.ClassCollection(
-                items: Defer(source: rootTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Class), selector: CreateClass)),
+                items: Defer(source: accessibleRootTypes.Where(predicate: static type => type.Kind == TypeMetadataKind.Class), selector: CreateClass)),
             Records = new Typewriter.CodeModel.RecordCollection(
-                items: Defer(source: rootTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Record), selector: CreateRecord)),
+                items: Defer(source: accessibleRootTypes.Where(predicate: static type => type.Kind == TypeMetadataKind.Record), selector: CreateRecord)),
             Structs = new Typewriter.CodeModel.StructCollection(
-                items: Defer(source: rootTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Struct), selector: CreateStruct)),
+                items: Defer(source: accessibleRootTypes.Where(predicate: static type => type.Kind == TypeMetadataKind.Struct), selector: CreateStruct)),
             Delegates = new Typewriter.CodeModel.DelegateCollection(
-                items: Defer(source: project.Delegates.Where(predicate: @delegate => string.IsNullOrWhiteSpace(value: @delegate.ParentTypeFullName)), selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
+                items: Defer(source: FilterAccessible(items: rootDelegates, getAccessibility: static @delegate => @delegate.Accessibility), selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
             Interfaces = new Typewriter.CodeModel.InterfaceCollection(
-                items: Defer(source: rootTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Interface), selector: CreateInterface)),
+                items: Defer(source: accessibleRootTypes.Where(predicate: static type => type.Kind == TypeMetadataKind.Interface), selector: CreateInterface)),
             Enums = new Typewriter.CodeModel.EnumCollection(
-                items: Defer(source: rootTypes.Where(predicate: type => type.Kind == TypeMetadataKind.Enum), selector: CreateEnum)),
-            Types = new Typewriter.CodeModel.TypeCollection(items: Defer(source: rootTypes, selector: CreateType)),
+                items: Defer(source: accessibleRootTypes.Where(predicate: static type => type.Kind == TypeMetadataKind.Enum), selector: CreateEnum)),
+            Types = new Typewriter.CodeModel.TypeCollection(items: Defer(source: accessibleRootTypes, selector: CreateType)),
         };
         if (attachParents)
         {
@@ -665,19 +686,19 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsAbstract = type.IsAbstract,
             IsGeneric = classType.IsGeneric,
             IsStatic = type.IsStatic,
-            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: type.Constants, selector: constant => CreateConstant(constant: constant, parent: null))),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: type.Delegates, selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
-            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: type.Events, selector: @event => CreateEvent(@event: @event, parent: null))),
-            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: type.Fields, selector: field => CreateField(field: field, parent: null))),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: type.Methods, selector: method => CreateMethod(method: method, parent: null))),
-            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: type.NestedClasses, selector: CreateClass)),
-            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: type.NestedEnums, selector: CreateEnum)),
-            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: type.NestedInterfaces, selector: CreateInterface)),
-            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: type.NestedRecords, selector: CreateRecord)),
-            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: type.NestedStructs, selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: type.Properties, selector: property => CreateProperty(property: property, parent: null))),
+            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: FilterAccessible(items: type.Constants, getAccessibility: static constant => constant.Accessibility), selector: constant => CreateConstant(constant: constant, parent: null))),
+            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: FilterAccessible(items: type.Delegates, getAccessibility: static @delegate => @delegate.Accessibility), selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
+            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: FilterAccessible(items: type.Events, getAccessibility: static @event => @event.Accessibility), selector: @event => CreateEvent(@event: @event, parent: null))),
+            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: FilterAccessible(items: type.Fields, getAccessibility: static field => field.Accessibility), selector: field => CreateField(field: field, parent: null))),
+            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: FilterAccessible(items: type.Methods, getAccessibility: static method => method.Accessibility), selector: method => CreateMethod(method: method, parent: null))),
+            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: FilterAccessible(items: type.NestedClasses, getAccessibility: static nested => nested.Accessibility), selector: CreateClass)),
+            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: FilterAccessible(items: type.NestedEnums, getAccessibility: static nested => nested.Accessibility), selector: CreateEnum)),
+            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: FilterAccessible(items: type.NestedInterfaces, getAccessibility: static nested => nested.Accessibility), selector: CreateInterface)),
+            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: FilterAccessible(items: type.NestedRecords, getAccessibility: static nested => nested.Accessibility), selector: CreateRecord)),
+            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: FilterAccessible(items: type.NestedStructs, getAccessibility: static nested => nested.Accessibility), selector: CreateStruct)),
+            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: FilterAccessible(items: type.Properties, getAccessibility: static property => property.Accessibility), selector: property => CreateProperty(property: property, parent: null))),
             StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
-                items: Defer(source: type.StaticReadOnlyFields, selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
+                items: Defer(source: FilterAccessible(items: type.StaticReadOnlyFields, getAccessibility: static field => field.Accessibility), selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
             Type = classType,
             TypeArguments = classType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
@@ -724,19 +745,19 @@ internal sealed class TemplateCodeModelAdapterFactory
             Interfaces = CreateInterfaces(type: type, reference: reference),
             IsAbstract = type.IsAbstract,
             IsGeneric = recordType.IsGeneric,
-            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: type.Constants, selector: constant => CreateConstant(constant: constant, parent: null))),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: type.Delegates, selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
-            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: type.Events, selector: @event => CreateEvent(@event: @event, parent: null))),
-            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: type.Fields, selector: field => CreateField(field: field, parent: null))),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: type.Methods, selector: method => CreateMethod(method: method, parent: null))),
-            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: type.NestedClasses, selector: CreateClass)),
-            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: type.NestedEnums, selector: CreateEnum)),
-            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: type.NestedInterfaces, selector: CreateInterface)),
-            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: type.NestedRecords, selector: CreateRecord)),
-            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: type.NestedStructs, selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: type.Properties, selector: property => CreateProperty(property: property, parent: null))),
+            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: FilterAccessible(items: type.Constants, getAccessibility: static constant => constant.Accessibility), selector: constant => CreateConstant(constant: constant, parent: null))),
+            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: FilterAccessible(items: type.Delegates, getAccessibility: static @delegate => @delegate.Accessibility), selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
+            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: FilterAccessible(items: type.Events, getAccessibility: static @event => @event.Accessibility), selector: @event => CreateEvent(@event: @event, parent: null))),
+            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: FilterAccessible(items: type.Fields, getAccessibility: static field => field.Accessibility), selector: field => CreateField(field: field, parent: null))),
+            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: FilterAccessible(items: type.Methods, getAccessibility: static method => method.Accessibility), selector: method => CreateMethod(method: method, parent: null))),
+            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: FilterAccessible(items: type.NestedClasses, getAccessibility: static nested => nested.Accessibility), selector: CreateClass)),
+            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: FilterAccessible(items: type.NestedEnums, getAccessibility: static nested => nested.Accessibility), selector: CreateEnum)),
+            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: FilterAccessible(items: type.NestedInterfaces, getAccessibility: static nested => nested.Accessibility), selector: CreateInterface)),
+            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: FilterAccessible(items: type.NestedRecords, getAccessibility: static nested => nested.Accessibility), selector: CreateRecord)),
+            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: FilterAccessible(items: type.NestedStructs, getAccessibility: static nested => nested.Accessibility), selector: CreateStruct)),
+            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: FilterAccessible(items: type.Properties, getAccessibility: static property => property.Accessibility), selector: property => CreateProperty(property: property, parent: null))),
             StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
-                items: Defer(source: type.StaticReadOnlyFields, selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
+                items: Defer(source: FilterAccessible(items: type.StaticReadOnlyFields, getAccessibility: static field => field.Accessibility), selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
             Type = recordType,
             TypeArguments = recordType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
@@ -779,12 +800,12 @@ internal sealed class TemplateCodeModelAdapterFactory
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             ContainingClass = CreateContainingClass(type: type),
             DocComment = CreateDocComment(docComment: type.DocComment, parent: null),
-            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: type.Events, selector: @event => CreateEvent(@event: @event, parent: null))),
+            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: FilterAccessible(items: type.Events, getAccessibility: static @event => @event.Accessibility), selector: @event => CreateEvent(@event: @event, parent: null))),
             IsGeneric = interfaceType.IsGeneric,
             Interfaces = CreateInterfaces(type: type, reference: reference),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: type.Methods, selector: method => CreateMethod(method: method, parent: null))),
-            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: type.NestedStructs, selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: type.Properties, selector: property => CreateProperty(property: property, parent: null))),
+            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: FilterAccessible(items: type.Methods, getAccessibility: static method => method.Accessibility), selector: method => CreateMethod(method: method, parent: null))),
+            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: FilterAccessible(items: type.NestedStructs, getAccessibility: static nested => nested.Accessibility), selector: CreateStruct)),
+            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: FilterAccessible(items: type.Properties, getAccessibility: static property => property.Accessibility), selector: property => CreateProperty(property: property, parent: null))),
             Type = interfaceType,
             TypeArguments = interfaceType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
@@ -820,19 +841,19 @@ internal sealed class TemplateCodeModelAdapterFactory
             Interfaces = CreateInterfaces(type: type, reference: reference),
             IsGeneric = structType.IsGeneric,
             IsStatic = type.IsStatic,
-            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: type.Constants, selector: constant => CreateConstant(constant: constant, parent: null))),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: type.Delegates, selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
-            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: type.Events, selector: @event => CreateEvent(@event: @event, parent: null))),
-            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: type.Fields, selector: field => CreateField(field: field, parent: null))),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: type.Methods, selector: method => CreateMethod(method: method, parent: null))),
-            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: type.NestedClasses, selector: CreateClass)),
-            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: type.NestedEnums, selector: CreateEnum)),
-            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: type.NestedInterfaces, selector: CreateInterface)),
-            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: type.NestedRecords, selector: CreateRecord)),
-            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: type.NestedStructs, selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: type.Properties, selector: property => CreateProperty(property: property, parent: null))),
+            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: FilterAccessible(items: type.Constants, getAccessibility: static constant => constant.Accessibility), selector: constant => CreateConstant(constant: constant, parent: null))),
+            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: FilterAccessible(items: type.Delegates, getAccessibility: static @delegate => @delegate.Accessibility), selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
+            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: FilterAccessible(items: type.Events, getAccessibility: static @event => @event.Accessibility), selector: @event => CreateEvent(@event: @event, parent: null))),
+            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: FilterAccessible(items: type.Fields, getAccessibility: static field => field.Accessibility), selector: field => CreateField(field: field, parent: null))),
+            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: FilterAccessible(items: type.Methods, getAccessibility: static method => method.Accessibility), selector: method => CreateMethod(method: method, parent: null))),
+            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: FilterAccessible(items: type.NestedClasses, getAccessibility: static nested => nested.Accessibility), selector: CreateClass)),
+            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: FilterAccessible(items: type.NestedEnums, getAccessibility: static nested => nested.Accessibility), selector: CreateEnum)),
+            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: FilterAccessible(items: type.NestedInterfaces, getAccessibility: static nested => nested.Accessibility), selector: CreateInterface)),
+            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: FilterAccessible(items: type.NestedRecords, getAccessibility: static nested => nested.Accessibility), selector: CreateRecord)),
+            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: FilterAccessible(items: type.NestedStructs, getAccessibility: static nested => nested.Accessibility), selector: CreateStruct)),
+            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: FilterAccessible(items: type.Properties, getAccessibility: static property => property.Accessibility), selector: property => CreateProperty(property: property, parent: null))),
             StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
-                items: Defer(source: type.StaticReadOnlyFields, selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
+                items: Defer(source: FilterAccessible(items: type.StaticReadOnlyFields, getAccessibility: static field => field.Accessibility), selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
             Type = structType,
             TypeArguments = structType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
@@ -891,18 +912,18 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsGeneric = type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
             IsStruct = type.Kind == TypeMetadataKind.Struct,
             Interfaces = CreateInterfaces(type: type),
-            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: type.Constants, selector: constant => CreateConstant(constant: constant, parent: null))),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: type.Delegates, selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
-            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: type.Fields, selector: field => CreateField(field: field, parent: null))),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: type.Methods, selector: method => CreateMethod(method: method, parent: null))),
-            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: type.NestedClasses, selector: CreateClass)),
-            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: type.NestedEnums, selector: CreateEnum)),
-            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: type.NestedInterfaces, selector: CreateInterface)),
-            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: type.NestedRecords, selector: CreateRecord)),
-            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: type.NestedStructs, selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: type.Properties, selector: property => CreateProperty(property: property, parent: null))),
+            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: FilterAccessible(items: type.Constants, getAccessibility: static constant => constant.Accessibility), selector: constant => CreateConstant(constant: constant, parent: null))),
+            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: FilterAccessible(items: type.Delegates, getAccessibility: static @delegate => @delegate.Accessibility), selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
+            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: FilterAccessible(items: type.Fields, getAccessibility: static field => field.Accessibility), selector: field => CreateField(field: field, parent: null))),
+            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: FilterAccessible(items: type.Methods, getAccessibility: static method => method.Accessibility), selector: method => CreateMethod(method: method, parent: null))),
+            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: FilterAccessible(items: type.NestedClasses, getAccessibility: static nested => nested.Accessibility), selector: CreateClass)),
+            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: FilterAccessible(items: type.NestedEnums, getAccessibility: static nested => nested.Accessibility), selector: CreateEnum)),
+            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: FilterAccessible(items: type.NestedInterfaces, getAccessibility: static nested => nested.Accessibility), selector: CreateInterface)),
+            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: FilterAccessible(items: type.NestedRecords, getAccessibility: static nested => nested.Accessibility), selector: CreateRecord)),
+            NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: FilterAccessible(items: type.NestedStructs, getAccessibility: static nested => nested.Accessibility), selector: CreateStruct)),
+            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: FilterAccessible(items: type.Properties, getAccessibility: static property => property.Accessibility), selector: property => CreateProperty(property: property, parent: null))),
             StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
-                items: Defer(source: type.StaticReadOnlyFields, selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
+                items: Defer(source: FilterAccessible(items: type.StaticReadOnlyFields, getAccessibility: static field => field.Accessibility), selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
             TypeArguments = new Typewriter.CodeModel.TypeCollection(items: Defer(source: type.TypeArguments, selector: argument => CreateType(type: argument))),
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
             DefaultValue = GetDefaultValue(type: type),
@@ -1305,7 +1326,10 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         if (reference.Interfaces.Count > 0)
         {
-            return new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: reference.Interfaces, selector: CreateInterfaceReference));
+            return new Typewriter.CodeModel.InterfaceCollection(
+                items: Defer(
+                    source: reference.Interfaces.Where(predicate: IsAccessibleTypeReference),
+                    selector: CreateInterfaceReference));
         }
 
         return metadata is null

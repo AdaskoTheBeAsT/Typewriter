@@ -95,6 +95,110 @@ public sealed class ConfigurationDefaultsTests
     }
 
     [Fact]
+    public void RenderExcludesInternalsByDefaultAndHonorsConfigurationAndTemplateOverrides()
+    {
+        var stringType = new TypeMetadataReference(
+            Name: "String",
+            FullName: "System.String",
+            Namespace: "System",
+            IsNullable: false,
+            IsCollection: false,
+            IsDictionary: false,
+            IsEnum: false,
+            IsPrimitive: true,
+            IsDateLike: false,
+            ElementType: null,
+            TypeArguments: []);
+        var metadata = new ProjectMetadata(
+            ProjectPath: "Sample.csproj",
+            SourceFiles: [],
+            Types:
+            [
+                new TypeMetadata(
+                    Name: "PublicDto",
+                    FullName: "Sample.PublicDto",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Public,
+                    Properties:
+                    [
+                        new PropertyMetadata(
+                            Name: "PublicName",
+                            FullName: "Sample.PublicDto.PublicName",
+                            Type: stringType,
+                            Accessibility: MetadataAccessibility.Public,
+                            HasGetter: true,
+                            HasSetter: true,
+                            IsRequired: false,
+                            Attributes: []),
+                        new PropertyMetadata(
+                            Name: "InternalSecret",
+                            FullName: "Sample.PublicDto.InternalSecret",
+                            Type: stringType,
+                            Accessibility: MetadataAccessibility.Internal,
+                            HasGetter: true,
+                            HasSetter: true,
+                            IsRequired: false,
+                            Attributes: []),
+                    ],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+                new TypeMetadata(
+                    Name: "InternalDto",
+                    FullName: "Sample.InternalDto",
+                    Namespace: "Sample",
+                    Kind: TypeMetadataKind.Class,
+                    Accessibility: MetadataAccessibility.Internal,
+                    Properties: [],
+                    Attributes: [],
+                    BaseTypes: [],
+                    EnumValues: [],
+                    IsNullableAware: true),
+            ],
+            Diagnostics: []);
+
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var uncompiled = new TemplateDocument(Path: "models.tst", Content: "$Classes[$Name:$Properties[$Name][,];]", OutputPath: "models.ts");
+
+        var defaultDiagnostics = new List<GenerationDiagnostic>();
+        renderer.Render(template: uncompiled, metadata: metadata, diagnostics: defaultDiagnostics)
+            .Should().Be("PublicDto:PublicName;");
+        defaultDiagnostics.Should().BeEmpty();
+
+        var configuredTrueDefaults = TemplateRenderDefaults.FromConfiguration(
+            configuration: TypewriterConfiguration.Default with
+            {
+                Output = TypewriterConfiguration.Default.Output with { IncludeInternals = true },
+            });
+        var configuredDiagnostics = new List<GenerationDiagnostic>();
+        renderer.Render(template: uncompiled, metadata: metadata, diagnostics: configuredDiagnostics, defaults: configuredTrueDefaults)
+            .Should().Be("PublicDto:PublicName,InternalSecret;InternalDto:;");
+        configuredDiagnostics.Should().BeEmpty();
+
+        var optOutDiagnostics = new List<GenerationDiagnostic>();
+        var optOutDocument = TemplateDocument.Parse(
+            template: new TemplateFile(
+                Path: Path.Combine(path1: Path.GetTempPath(), path2: "opt-out-internals.tst"),
+                Content: """
+                         ${
+                             Template(Settings settings)
+                             {
+                                 settings.IncludeInternals(false);
+                             }
+                         }
+                         // output: opt-out-internals.ts
+                         $Classes[$Name:$Properties[$Name][,];]
+                         """),
+            diagnostics: optOutDiagnostics);
+        renderer.Render(template: optOutDocument, metadata: metadata, diagnostics: optOutDiagnostics, defaults: configuredTrueDefaults)
+            .Trim()
+            .Should().Be("PublicDto:PublicName;");
+        optOutDiagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
     public void RenderResultCarriesUtf8BomFromConfigurationAndTemplateOverride()
     {
         var metadata = CreateNullableEmailMetadata();

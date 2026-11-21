@@ -21,7 +21,7 @@ Add the package with `PrivateAssets="all"` and `ExcludeAssets="runtime"` so it i
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="AdaskoTheBeAsT.Typewriter.CodeModel" Version="4.15.0" PrivateAssets="all" ExcludeAssets="runtime" />
+  <PackageReference Include="AdaskoTheBeAsT.Typewriter.CodeModel" Version="4.17.0" PrivateAssets="all" ExcludeAssets="runtime" />
 </ItemGroup>
 ```
 
@@ -111,7 +111,7 @@ Choose one of the following patterns to get full IDE IntelliSense on `Typewriter
 
   ```xml
   <ItemGroup>
-    <PackageReference Include="AdaskoTheBeAsT.Typewriter.CodeModel" Version="4.15.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="AdaskoTheBeAsT.Typewriter.CodeModel" Version="4.17.0" PrivateAssets="all" ExcludeAssets="runtime" />
     <Compile Remove="templates/**/*.cs" />
     <None Include="templates/**/*.cs" />
   </ItemGroup>

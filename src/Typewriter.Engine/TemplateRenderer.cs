@@ -105,7 +105,8 @@ public sealed class TemplateRenderer
         return new TemplateRenderInspection(
             IsSingleFileMode: settings?.IsSingleFileMode == true,
             UsesOutputFilenameFactory: state.UsesOutputFilenameFactory,
-            IncludedProjects: settings?.IncludedProjects ?? []);
+            IncludedProjects: settings?.IncludedProjects ?? [],
+            IncludeInternals: state.IncludeInternalsGeneration);
     }
 #pragma warning restore SA1204
 
@@ -717,6 +718,19 @@ public sealed class TemplateRenderer
             str3: ">");
     }
 
+    private static bool IsAccessible(
+        MetadataAccessibility accessibility,
+        RenderState? state) =>
+        accessibility == MetadataAccessibility.Public
+        || (accessibility == MetadataAccessibility.Internal && (state?.IncludeInternalsGeneration ?? false));
+
+    private static bool IsAccessibleTypeReference(
+        TypeMetadataReference reference,
+        RenderState? state) =>
+        state is null
+        || !state.TryResolveType(reference: reference, type: out var metadata)
+        || IsAccessible(accessibility: metadata.Accessibility, state: state);
+
     private static bool HasAccessibility(
         object item,
         MetadataAccessibility accessibility)
@@ -777,11 +791,15 @@ public sealed class TemplateRenderer
         };
     }
 
-    private static IEnumerable<string> GetInheritanceSelectors(object item)
+    private static IEnumerable<string> GetInheritanceSelectors(
+        object item,
+        RenderState state)
     {
         return item switch
         {
-            TypeMetadata type => type.BaseTypes.SelectMany(selector: typeReference => new[] { typeReference.Name, typeReference.FullName }),
+            TypeMetadata type => type.BaseTypes
+                .Where(predicate: typeReference => IsAccessibleTypeReference(reference: typeReference, state: state))
+                .SelectMany(selector: typeReference => new[] { typeReference.Name, typeReference.FullName }),
             CodeModelInterface @interface => @interface.Interfaces.SelectMany(selector: implemented => new[] { implemented.Name, implemented.FullName }),
             _ => [],
         };
@@ -1955,9 +1973,9 @@ public sealed class TemplateRenderer
             "Struct" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Kind: TypeMetadataKind.Struct }),
             "Interface" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Kind: TypeMetadataKind.Interface }),
             "Enum" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Kind: TypeMetadataKind.Enum }),
-            "HasProperties" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Properties.Count: > 0 }),
-            "HasMethods" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Methods.Count: > 0 }),
-            "HasConstants" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { Constants.Count: > 0 }),
+            "HasProperties" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata type && type.Properties.Any(predicate: property => IsAccessible(accessibility: property.Accessibility, state: state))),
+            "HasMethods" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata type && type.Methods.Any(predicate: method => IsAccessible(accessibility: method.Accessibility, state: state))),
+            "HasConstants" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata type && type.Constants.Any(predicate: constant => IsAccessible(accessibility: constant.Accessibility, state: state))),
             "Static" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { IsStatic: true }),
             "NonStatic" => items.Where(predicate: item => state.AdapterFactory.GetFilterContext(item: item) is TypeMetadata { IsStatic: false }),
             "Public" => items.Where(predicate: item => HasAccessibility(item: state.AdapterFactory.GetFilterContext(item: item), accessibility: MetadataAccessibility.Public)),
@@ -1972,7 +1990,7 @@ public sealed class TemplateRenderer
             _ when trimmed.StartsWith(value: '[') && trimmed.EndsWith(value: ']') => items
                 .Where(predicate: item => MatchesAny(values: GetAttributeSelectors(item: state.AdapterFactory.GetFilterContext(item: item)), pattern: trimmed.Trim('[', ']', ' '))),
             _ when trimmed.StartsWith(value: ':') => items
-                .Where(predicate: item => MatchesAny(values: GetInheritanceSelectors(item: state.AdapterFactory.GetFilterContext(item: item)), pattern: trimmed[1..].Trim())),
+                .Where(predicate: item => MatchesAny(values: GetInheritanceSelectors(item: state.AdapterFactory.GetFilterContext(item: item), state: state), pattern: trimmed[1..].Trim())),
             _ => items.Where(predicate: item => MatchesAny(values: GetItemSelectors(item: state.AdapterFactory.GetFilterContext(item: item)), pattern: trimmed)),
         };
     }
@@ -2089,12 +2107,12 @@ public sealed class TemplateRenderer
                 value = enumValue.Value?.ToString(provider: CultureInfo.InvariantCulture) ?? enumValue.Name;
                 return true;
             case "InheritClass" or "InheritRecord" when context is TypeMetadata type:
-                value = type.BaseTypes.FirstOrDefault() is { } baseType
+                value = type.BaseTypes.FirstOrDefault(predicate: candidate => IsAccessibleTypeReference(reference: candidate, state: state)) is { } baseType
                     ? " extends " + baseType.Name
                     : string.Empty;
                 return true;
             case "InheritInterfaceForClass" or "InheritInterfaceForRecord" when context is TypeMetadata type:
-                value = type.BaseTypes.FirstOrDefault() is { } interfaceBaseType
+                value = type.BaseTypes.FirstOrDefault(predicate: candidate => IsAccessibleTypeReference(reference: candidate, state: state)) is { } interfaceBaseType
                     ? " extends I" + interfaceBaseType.Name
                     : string.Empty;
                 return true;
@@ -2102,7 +2120,7 @@ public sealed class TemplateRenderer
                 value = " implements I" + type.Name;
                 return true;
             case "SuperClass" or "SuperRecord" when context is TypeMetadata type:
-                value = type.BaseTypes.Count > 0
+                value = type.BaseTypes.Any(predicate: candidate => IsAccessibleTypeReference(reference: candidate, state: state))
                     ? Environment.NewLine + "    super(initObj);"
                     : string.Empty;
                 return true;
@@ -2667,7 +2685,7 @@ public sealed class TemplateRenderer
 
         value = context switch
         {
-            ProjectMetadata metadata => ResolveProject(metadata: metadata, identifier: identifier),
+            ProjectMetadata metadata => ResolveProject(metadata: metadata, identifier: identifier, state: state),
             TypeMetadata type => ResolveType(type: type, identifier: identifier, state: state),
             PropertyMetadata property => ResolveProperty(property: property, identifier: identifier, state: state),
             MethodMetadata method => ResolveMethod(method: method, identifier: identifier, state: state),
@@ -2738,20 +2756,21 @@ public sealed class TemplateRenderer
 #pragma warning disable CC0091,S2325
     private object ResolveProject(
         ProjectMetadata metadata,
-        string identifier)
+        string identifier,
+        RenderState? state)
     {
         return identifier switch
         {
             "ProjectPath" => metadata.ProjectPath,
             "RootNamespace" => Path.GetFileNameWithoutExtension(path: metadata.ProjectPath),
             "rootnamespace" => Path.GetFileNameWithoutExtension(path: metadata.ProjectPath),
-            "Types" => metadata.Types,
-            "Classes" => metadata.Types.Where(predicate: type => type.Kind is TypeMetadataKind.Class or TypeMetadataKind.Record),
-            "Records" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Record),
-            "Structs" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Struct),
-            "Delegates" => metadata.Delegates,
-            "Interfaces" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Interface),
-            "Enums" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Enum),
+            "Types" => metadata.Types.Where(predicate: type => IsAccessible(accessibility: type.Accessibility, state: state)),
+            "Classes" => metadata.Types.Where(predicate: type => type.Kind is TypeMetadataKind.Class or TypeMetadataKind.Record && IsAccessible(accessibility: type.Accessibility, state: state)),
+            "Records" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Record && IsAccessible(accessibility: type.Accessibility, state: state)),
+            "Structs" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Struct && IsAccessible(accessibility: type.Accessibility, state: state)),
+            "Delegates" => metadata.Delegates.Where(predicate: @delegate => IsAccessible(accessibility: @delegate.Accessibility, state: state)),
+            "Interfaces" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Interface && IsAccessible(accessibility: type.Accessibility, state: state)),
+            "Enums" => metadata.Types.Where(predicate: type => type.Kind == TypeMetadataKind.Enum && IsAccessible(accessibility: type.Accessibility, state: state)),
             _ => Unresolved.Value,
         };
     }
@@ -2776,27 +2795,27 @@ public sealed class TemplateRenderer
             "TypeParameters" => type.TypeParameters,
             "TypeArguments" => type.TypeArguments,
             "IsGeneric" => type.TypeParameters.Count > 0 || type.TypeArguments.Count > 0,
-            "Properties" => type.Properties,
-            "Methods" => type.Methods,
-            "Constants" => type.Constants,
-            "Fields" => type.Fields,
-            "StaticReadOnlyFields" => type.StaticReadOnlyFields,
-            "Events" => type.Events,
-            "Delegates" => type.Delegates,
+            "Properties" => type.Properties.Where(predicate: property => IsAccessible(accessibility: property.Accessibility, state: state)),
+            "Methods" => type.Methods.Where(predicate: method => IsAccessible(accessibility: method.Accessibility, state: state)),
+            "Constants" => type.Constants.Where(predicate: constant => IsAccessible(accessibility: constant.Accessibility, state: state)),
+            "Fields" => type.Fields.Where(predicate: field => IsAccessible(accessibility: field.Accessibility, state: state)),
+            "StaticReadOnlyFields" => type.StaticReadOnlyFields.Where(predicate: field => IsAccessible(accessibility: field.Accessibility, state: state)),
+            "Events" => type.Events.Where(predicate: @event => IsAccessible(accessibility: @event.Accessibility, state: state)),
+            "Delegates" => type.Delegates.Where(predicate: @delegate => IsAccessible(accessibility: @delegate.Accessibility, state: state)),
             "Attributes" => type.Attributes,
             "Interfaces" => ResolveInterfaces(type: type, state: state),
-            "BaseType" => type.BaseTypes.FirstOrDefault(),
-            "BaseClass" => type.BaseTypes.FirstOrDefault(),
-            "BaseRecord" => type.BaseTypes.FirstOrDefault(),
-            "BaseTypes" => type.BaseTypes,
+            "BaseType" => type.BaseTypes.FirstOrDefault(predicate: candidate => IsAccessibleTypeReference(reference: candidate, state: state)),
+            "BaseClass" => type.BaseTypes.FirstOrDefault(predicate: candidate => IsAccessibleTypeReference(reference: candidate, state: state)),
+            "BaseRecord" => type.BaseTypes.FirstOrDefault(predicate: candidate => IsAccessibleTypeReference(reference: candidate, state: state)),
+            "BaseTypes" => type.BaseTypes.Where(predicate: candidate => IsAccessibleTypeReference(reference: candidate, state: state)),
             "ContainingClass" => ResolveContainingType(type: type, kind: TypeMetadataKind.Class, state: state),
             "ContainingRecord" => ResolveContainingType(type: type, kind: TypeMetadataKind.Record, state: state),
             "ContainingStruct" => ResolveContainingType(type: type, kind: TypeMetadataKind.Struct, state: state),
-            "NestedClasses" => type.NestedClasses,
-            "NestedRecords" => type.NestedRecords,
-            "NestedStructs" => type.NestedStructs,
-            "NestedEnums" => type.NestedEnums,
-            "NestedInterfaces" => type.NestedInterfaces,
+            "NestedClasses" => type.NestedClasses.Where(predicate: nested => IsAccessible(accessibility: nested.Accessibility, state: state)),
+            "NestedRecords" => type.NestedRecords.Where(predicate: nested => IsAccessible(accessibility: nested.Accessibility, state: state)),
+            "NestedStructs" => type.NestedStructs.Where(predicate: nested => IsAccessible(accessibility: nested.Accessibility, state: state)),
+            "NestedEnums" => type.NestedEnums.Where(predicate: nested => IsAccessible(accessibility: nested.Accessibility, state: state)),
+            "NestedInterfaces" => type.NestedInterfaces.Where(predicate: nested => IsAccessible(accessibility: nested.Accessibility, state: state)),
             "FileLocations" => type.FileLocations,
             "OriginalName" => type.Name,
             "Type" => state is not null
@@ -3249,6 +3268,8 @@ public sealed class TemplateRenderer
 
         public bool StrictNullGeneration => TemplateSettings?.StrictNullGeneration ?? _defaults.StrictNullGeneration;
 
+        public bool IncludeInternalsGeneration => TemplateSettings?.IncludeInternalsGeneration ?? _defaults.IncludeInternalsGeneration;
+
         public string DateInitializerGeneration => TemplateSettings?.DateInitializerGeneration ?? _defaults.DateInitializerGeneration;
 
         public string DateOnlyInitializerGeneration => TemplateSettings?.DateOnlyInitializerGeneration ?? _defaults.DateOnlyInitializerGeneration;
@@ -3626,7 +3647,8 @@ public sealed class TemplateRenderer
                 guidInitializerGeneration: _defaults.GuidInitializerGeneration,
                 decimalTypeGeneration: _defaults.DecimalTypeGeneration,
                 decimalInitializerGeneration: _defaults.DecimalInitializerGeneration,
-                dateLibraryGeneration: _defaults.DateLibraryGeneration);
+                dateLibraryGeneration: _defaults.DateLibraryGeneration,
+                includeInternalsGeneration: _defaults.IncludeInternalsGeneration);
             return new TemplateCodeModelAdapterFactory(
                 metadata: _metadata,
                 settings: settings,

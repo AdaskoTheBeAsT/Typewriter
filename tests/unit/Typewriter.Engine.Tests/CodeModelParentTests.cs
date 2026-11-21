@@ -249,7 +249,8 @@ public sealed class CodeModelParentTests
             $Classes(FooViewModel)[$Imports]
             """;
 
-        Render(template: Template, metadata: metadata).Should().Be("ExternalViewModel");
+        Render(template: Template, metadata: metadata).Should().Be("BarViewModel,ExternalViewModel");
+        Render(template: Template, metadata: metadata, includeInternals: true).Should().Be("ExternalViewModel");
     }
 
     [Theory]
@@ -265,6 +266,8 @@ public sealed class CodeModelParentTests
         var template = "$" + collection + "(" + name + ")[$Parent[$Name:$Classes(Bar*)[$Name]:$Records[$Name]:$Structs[$Name]:$Interfaces[$Name]:$Enums[$Name]:$Delegates[$Name]]]";
 
         Render(template: template, metadata: CreateSampleProject()).Should()
+            .Be("FooViewModel::ModelRecord:ModelStruct:IModel:ModelStatus:Callback");
+        Render(template: template, metadata: CreateSampleProject(), includeInternals: true).Should()
             .Be("FooViewModel:BarViewModel:ModelRecord:ModelStruct:IModel:ModelStatus:Callback");
     }
 
@@ -290,7 +293,18 @@ public sealed class CodeModelParentTests
     {
         var template = "$Classes(FooViewModel)[$Parent[$Types(" + filter + ")[$Name;]]]";
 
-        Render(template: template, metadata: CreateSampleProject()).Should().Be(expected);
+        Render(template: template, metadata: CreateSampleProject(), includeInternals: true).Should().Be(expected);
+    }
+
+    [Fact]
+    public void ParentFileCollectionsExcludeInternalsByDefault()
+    {
+        var metadata = CreateSampleProject();
+
+        Render(template: "$Classes(FooViewModel)[$Parent[$Types[$Name;]]]", metadata: metadata).Should()
+            .Be("FooViewModel;StaticModel;ModelRecord;ModelStruct;IModel;ModelStatus;");
+        Render(template: "$Classes(FooViewModel)[$Parent[$Types(Internal)[$Name;]]]", metadata: metadata).Should()
+            .BeEmpty();
     }
 
     [Theory]
@@ -424,12 +438,16 @@ public sealed class CodeModelParentTests
         tupleModel.Parent.Should().BeNull();
     }
 
-    private static string Render(string template, ProjectMetadata metadata)
+    private static string Render(string template, ProjectMetadata metadata, bool includeInternals = false)
     {
         var diagnostics = new List<GenerationDiagnostic>();
         var document = TemplateDocument.Parse(template: new TemplateFile(Path: "models.tst", Content: template), diagnostics: diagnostics);
+        var defaults = TemplateRenderDefaults.Default with { IncludeInternalsGeneration = includeInternals };
         var output = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper()).Render(
-            template: document, metadata: metadata, diagnostics: diagnostics);
+            template: document,
+            metadata: metadata,
+            diagnostics: diagnostics,
+            defaults: defaults);
         diagnostics.Should().BeEmpty();
         return output.Trim();
     }

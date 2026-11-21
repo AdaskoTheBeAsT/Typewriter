@@ -25,6 +25,8 @@ public sealed record TemplateRenderDefaults(
         Utf8BomGeneration: true,
         SolutionFullName: string.Empty);
 
+    public bool IncludeInternalsGeneration { get; init; }
+
     public DateLibrary DateLibraryGeneration { get; init; } = DateLibrary.Legacy;
 
     public static TemplateRenderDefaults FromConfiguration(
@@ -49,6 +51,7 @@ public sealed record TemplateRenderDefaults(
             DecimalTypeGeneration: configuration.Output.DecimalType,
             DecimalInitializerGeneration: configuration.Output.DecimalInitializer)
         {
+            IncludeInternalsGeneration = configuration.Output.IncludeInternals,
             DateLibraryGeneration = configuration.Output.DateLibrary,
         };
     }

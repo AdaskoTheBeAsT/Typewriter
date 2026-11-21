@@ -762,6 +762,71 @@ public sealed class TemplateFeatureServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetCompletionsAsyncFiltersInternalMetadataUnlessIncludeInternalsEnabledIssue145()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Models", path3: "Internals.cs"),
+                contents: """
+                          namespace Sample;
+
+                          internal sealed class InternalAuditRecord
+                          {
+                              public string SecretCursor { get; init; } = string.Empty;
+                          }
+
+                          public sealed class PublicWithInternalMember
+                          {
+                              public string VisibleField { get; init; } = string.Empty;
+
+                              internal string HiddenSecret { get; init; } = string.Empty;
+                          }
+                          """);
+
+            var settings = CreateSettings(directory: directory, projectPath: project.ProjectPath);
+            using var service = new TemplateFeatureService();
+
+            var defaultDoc = CreateDocument(path: project.TemplatePath, text: "$");
+            var defaultCompletions = await service.GetCompletionsAsync(
+                document: defaultDoc,
+                settings: settings,
+                position: new LspPosition(Line: 0, Character: 1),
+                cancellationToken: CancellationToken.None);
+
+            defaultCompletions.Items.Should().Contain(item => item.Label == "PublicWithInternalMember");
+            defaultCompletions.Items.Should().Contain(item => item.Label == "VisibleField");
+            defaultCompletions.Items.Should().NotContain(item => item.Label == "InternalAuditRecord");
+            defaultCompletions.Items.Should().NotContain(item => item.Label == "HiddenSecret");
+
+            const string EnabledTemplate = """
+                ${
+                    Template(Settings settings)
+                    {
+                        settings.IncludeInternals();
+                    }
+                }
+                $
+                """;
+            var enabledDoc = CreateDocument(path: project.TemplatePath, text: EnabledTemplate);
+            var enabledCompletions = await service.GetCompletionsAsync(
+                document: enabledDoc,
+                settings: settings,
+                position: new LspPosition(Line: 6, Character: 1),
+                cancellationToken: CancellationToken.None);
+
+            enabledCompletions.Items.Should().Contain(item => item.Label == "InternalAuditRecord");
+            enabledCompletions.Items.Should().Contain(item => item.Label == "HiddenSecret");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static async Task<SampleProject> CreateSimpleProjectAsync(string directory)
     {
         Directory.CreateDirectory(path: directory);

@@ -59,6 +59,7 @@ public sealed class CliIntegrationTests
             output.GetProperty(propertyName: "guidInitializer").GetString().Should().Be("auto");
             output.GetProperty(propertyName: "decimalType").GetString().Should().Be("number");
             output.GetProperty(propertyName: "decimalInitializer").GetString().Should().Be("auto");
+            output.GetProperty(propertyName: "includeInternals").GetBoolean().Should().BeFalse();
 
             var diagnostics = root.GetProperty(propertyName: "diagnostics");
             diagnostics.GetProperty(propertyName: "failOnWarning").GetBoolean().Should().BeFalse();
@@ -1476,6 +1477,80 @@ public sealed class CliIntegrationTests
             result.ExitCode.Should().Be(4);
             result.StandardError.Should().Contain("error TW0002:");
             File.Exists(path: generatedPath).Should().BeFalse();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncGenerateExcludesInternalsByDefaultAndHonorsIncludeInternalsIssue145()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                sourceContent: """
+                               namespace Sample.Models;
+
+                               public sealed class Customer
+                               {
+                                   public required string Name { get; init; }
+                                   public string AuditStamp { internal get; init; } = string.Empty;
+                                   internal string InternalToken { get; init; } = string.Empty;
+                               }
+
+                               internal sealed class InternalState
+                               {
+                                   public string Secret { get; init; } = string.Empty;
+                               }
+                               """);
+            var generatedPath = Path.Combine(path1: directory, path2: "generated", path3: "models.ts");
+
+            var defaultResult = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+
+            defaultResult.ExitCode.Should().Be(0);
+            var defaultContent = await File.ReadAllTextAsync(path: generatedPath);
+            defaultContent.Should().Contain("name: string;");
+            defaultContent.Should().NotContain("auditStamp");
+            defaultContent.Should().NotContain("internalToken");
+            defaultContent.Should().NotContain("InternalState");
+
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: ConfigurationFileName),
+                contents: """{ "output": { "includeInternals": true } }""");
+
+            var configuredResult = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+
+            configuredResult.ExitCode.Should().Be(0);
+            var configuredContent = await File.ReadAllTextAsync(path: generatedPath);
+            configuredContent.Should().Contain("auditStamp: string;");
+            configuredContent.Should().Contain("internalToken: string;");
+            configuredContent.Should().Contain("export interface InternalState");
         }
         finally
         {

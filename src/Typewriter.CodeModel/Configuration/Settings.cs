@@ -90,6 +90,8 @@ public class Settings
 
     public virtual bool StrictNullGeneration { get; private set; } = true;
 
+    public virtual bool IncludeInternalsGeneration { get; private set; }
+
     public virtual bool Utf8BomGeneration { get; private set; } = true;
 
     public virtual string TemplatePath { get; init; } = string.Empty;
@@ -128,6 +130,12 @@ public class Settings
 
     public virtual Settings IncludeAllProjects()
     {
+        return this;
+    }
+
+    public virtual Settings IncludeInternals(bool includeInternals = true)
+    {
+        IncludeInternalsGeneration = includeInternals;
         return this;
     }
 
@@ -267,6 +275,7 @@ public class Settings
         return this;
     }
 
+#pragma warning disable S107
     internal void ApplyConfigurationDefaults(
         bool strictNullGeneration,
         bool utf8BomGeneration,
@@ -281,9 +290,12 @@ public class Settings
         string guidInitializerGeneration,
         string decimalTypeGeneration,
         string decimalInitializerGeneration,
-        DateLibrary dateLibraryGeneration)
+        DateLibrary dateLibraryGeneration,
+        bool includeInternalsGeneration = false)
+#pragma warning restore S107
     {
         StrictNullGeneration = strictNullGeneration;
+        IncludeInternalsGeneration = includeInternalsGeneration;
         Utf8BomGeneration = utf8BomGeneration;
         _stringLiteralCharacter = stringLiteralCharacter;
         UseDateType(dateType: dateTypeGeneration);

@@ -100,6 +100,8 @@ public sealed record OutputConfiguration(
         DecimalType: DefaultDecimalType,
         DecimalInitializer: DefaultDecimalInitializer);
 
+    public bool IncludeInternals { get; init; }
+
     public DateLibrary DateLibrary { get; init; } = DateLibrary.Legacy;
 
     public void Deconstruct(
