@@ -57,10 +57,16 @@ internal sealed class ProjectMetadataGraph
     private static string GetIdentity(string fullName, string assemblyName) =>
         string.Concat(str0: fullName, str1: "\u001F", str2: assemblyName);
 
+    private static string GetTypeIdentity(TypeMetadata type) =>
+        $"{type.FullName}\u001F{type.AssemblyName}\u001F{type.TypeParameters.Count.ToString(provider: System.Globalization.CultureInfo.InvariantCulture)}";
+
     private ProjectMetadata Merge(CancellationToken cancellationToken)
     {
         var sourceFiles = new Dictionary<string, SourceFileMetadata>(comparer: StringComparer.OrdinalIgnoreCase);
         var types = new Dictionary<string, TypeMetadata>(comparer: StringComparer.Ordinal);
+#pragma warning disable IDE0028
+        var referencedTypes = new Dictionary<string, TypeMetadata>(comparer: StringComparer.Ordinal);
+#pragma warning restore IDE0028
         var delegates = new Dictionary<string, DelegateMetadata>(comparer: StringComparer.Ordinal);
         var visited = new HashSet<ProjectMetadataGraph>(comparer: ReferenceEqualityComparer.Instance);
         var pending = new Stack<ProjectMetadataGraph>();
@@ -83,6 +89,11 @@ internal sealed class ProjectMetadataGraph
                 types.TryAdd(key: GetIdentity(fullName: type.FullName, assemblyName: type.AssemblyName), value: type);
             }
 
+            foreach (var referencedType in current.LocalMetadata.ReferencedTypes)
+            {
+                referencedTypes.TryAdd(key: GetTypeIdentity(type: referencedType), value: referencedType);
+            }
+
             foreach (var @delegate in current.LocalMetadata.Delegates)
             {
                 delegates.TryAdd(key: GetIdentity(fullName: @delegate.FullName, assemblyName: @delegate.AssemblyName), value: @delegate);
@@ -101,6 +112,10 @@ internal sealed class ProjectMetadataGraph
             Diagnostics: GetDiagnostics(cancellationToken: cancellationToken))
         {
             Delegates = delegates.Values
+                .OrderBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
+                .ThenBy(keySelector: type => type.AssemblyName, comparer: StringComparer.Ordinal)
+                .ToArray(),
+            ReferencedTypes = referencedTypes.Values
                 .OrderBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
                 .ThenBy(keySelector: type => type.AssemblyName, comparer: StringComparer.Ordinal)
                 .ToArray(),

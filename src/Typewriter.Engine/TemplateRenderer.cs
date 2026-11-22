@@ -1756,6 +1756,149 @@ public sealed class TemplateRenderer
         return containingType.Kind == kind ? containingType : null;
     }
 
+    private static IEnumerable<PropertyMetadata> ResolveTypeReferenceProperties(
+        TypeMetadataReference type,
+        RenderState? state)
+    {
+        if (state is null || !state.TryResolveType(reference: type, type: out var metadata))
+        {
+            return [];
+        }
+
+        var substitution = TypeArgumentSubstitution.Create(type: metadata, reference: type);
+        var accessible = metadata.Properties.Where(predicate: property => IsAccessible(accessibility: property.Accessibility, state: state));
+        return substitution is null
+            ? accessible
+            : accessible.Select(selector: substitution.SubstituteProperty);
+    }
+
+    private static IEnumerable<MethodMetadata> ResolveTypeReferenceMethods(
+        TypeMetadataReference type,
+        RenderState? state)
+    {
+        if (state is null || !state.TryResolveType(reference: type, type: out var metadata))
+        {
+            return [];
+        }
+
+        var substitution = TypeArgumentSubstitution.Create(type: metadata, reference: type);
+        var accessible = metadata.Methods.Where(predicate: method => IsAccessible(accessibility: method.Accessibility, state: state));
+        return substitution is null
+            ? accessible
+            : accessible.Select(selector: substitution.SubstituteMethod);
+    }
+
+    private static IEnumerable<ConstantMetadata> ResolveTypeReferenceConstants(
+        TypeMetadataReference type,
+        RenderState? state)
+    {
+        if (state is null || !state.TryResolveType(reference: type, type: out var metadata))
+        {
+            return [];
+        }
+
+        var substitution = TypeArgumentSubstitution.Create(type: metadata, reference: type);
+        var accessible = metadata.Constants.Where(predicate: constant => IsAccessible(accessibility: constant.Accessibility, state: state));
+        return substitution is null
+            ? accessible
+            : accessible.Select(selector: substitution.SubstituteConstant);
+    }
+
+    private static IEnumerable<FieldMetadata> ResolveTypeReferenceFields(
+        TypeMetadataReference type,
+        RenderState? state)
+    {
+        if (state is null || !state.TryResolveType(reference: type, type: out var metadata))
+        {
+            return [];
+        }
+
+        var substitution = TypeArgumentSubstitution.Create(type: metadata, reference: type);
+        var accessible = metadata.Fields.Where(predicate: field => IsAccessible(accessibility: field.Accessibility, state: state));
+        return substitution is null
+            ? accessible
+            : accessible.Select(selector: substitution.SubstituteField);
+    }
+
+    private static IEnumerable<StaticReadOnlyFieldMetadata> ResolveTypeReferenceStaticReadOnlyFields(
+        TypeMetadataReference type,
+        RenderState? state)
+    {
+        if (state is null || !state.TryResolveType(reference: type, type: out var metadata))
+        {
+            return [];
+        }
+
+        var substitution = TypeArgumentSubstitution.Create(type: metadata, reference: type);
+        var accessible = metadata.StaticReadOnlyFields.Where(predicate: field => IsAccessible(accessibility: field.Accessibility, state: state));
+        return substitution is null
+            ? accessible
+            : accessible.Select(selector: substitution.SubstituteStaticReadOnlyField);
+    }
+
+    private static IEnumerable<EventMetadata> ResolveTypeReferenceEvents(
+        TypeMetadataReference type,
+        RenderState? state)
+    {
+        if (state is null || !state.TryResolveType(reference: type, type: out var metadata))
+        {
+            return [];
+        }
+
+        var substitution = TypeArgumentSubstitution.Create(type: metadata, reference: type);
+        var accessible = metadata.Events.Where(predicate: @event => IsAccessible(accessibility: @event.Accessibility, state: state));
+        return substitution is null
+            ? accessible
+            : accessible.Select(selector: substitution.SubstituteEvent);
+    }
+
+    private static IEnumerable<DelegateMetadata> ResolveTypeReferenceDelegates(
+        TypeMetadataReference type,
+        RenderState? state)
+    {
+        if (state is null || !state.TryResolveType(reference: type, type: out var metadata))
+        {
+            return [];
+        }
+
+        var substitution = TypeArgumentSubstitution.Create(type: metadata, reference: type);
+        var accessible = metadata.Delegates.Where(predicate: @delegate => IsAccessible(accessibility: @delegate.Accessibility, state: state));
+        return substitution is null
+            ? accessible
+            : accessible.Select(selector: substitution.SubstituteDelegate);
+    }
+
+    private static IReadOnlyList<EnumValueMetadata> ResolveTypeReferenceEnumValues(
+        TypeMetadataReference type,
+        RenderState? state)
+    {
+        if (type.EnumValues.Count > 0)
+        {
+            return type.EnumValues;
+        }
+
+        return state is not null && state.TryResolveType(reference: type, type: out var metadata)
+            ? metadata.EnumValues
+            : [];
+    }
+
+    private static bool IsInterfaceTypeReference(
+        TypeMetadataReference candidate,
+        RenderState? state)
+    {
+        if (state is not null && state.TryResolveType(reference: candidate, type: out var metadata))
+        {
+            return metadata.Kind == TypeMetadataKind.Interface;
+        }
+
+        return candidate.Interfaces.Any(predicate: item =>
+                   item.FullName.Equals(value: candidate.FullName, comparisonType: StringComparison.Ordinal)
+                   && item.Arity == candidate.Arity)
+               || (candidate.Name.Length > 1
+                   && candidate.Name[index: 0] == 'I'
+                   && char.IsUpper(c: candidate.Name[index: 1]));
+    }
+
     private void RenderCore(
         TemplateSlice template,
         object context,
@@ -3133,17 +3276,87 @@ public sealed class TemplateRenderer
             "FileLocations" => ResolveFileLocations(type: type, state: state),
             "Interfaces" => ResolveInterfaces(type: type, settings: settings, state: state),
             "TupleElements" => type.TupleElements,
+            "DocComment" => state is not null && state.TryResolveType(reference: type, type: out var docMetadata)
+                ? docMetadata.DocComment
+                : null,
+            "Attributes" => state is not null && state.TryResolveType(reference: type, type: out var attrMetadata)
+                ? attrMetadata.Attributes
+                : Array.Empty<AttributeMetadata>(),
+            "TypeParameters" => state is not null && state.TryResolveType(reference: type, type: out var typeParamMetadata)
+                ? typeParamMetadata.TypeParameters
+                : Array.Empty<TypeParameterMetadata>(),
+            "Properties" => ResolveTypeReferenceProperties(type: type, state: state),
+            "Methods" => ResolveTypeReferenceMethods(type: type, state: state),
+            "Constants" => ResolveTypeReferenceConstants(type: type, state: state),
+            "Fields" => ResolveTypeReferenceFields(type: type, state: state),
+            "StaticReadOnlyFields" => ResolveTypeReferenceStaticReadOnlyFields(type: type, state: state),
+            "Events" => ResolveTypeReferenceEvents(type: type, state: state),
+            "Delegates" => ResolveTypeReferenceDelegates(type: type, state: state),
+            "BaseType" => ResolveTypeReferenceBase(type: type, settings: settings, state: state, recordsOnly: false),
+            "BaseClass" => ResolveTypeReferenceBase(type: type, settings: settings, state: state, recordsOnly: false),
+            "BaseRecord" => ResolveTypeReferenceBase(type: type, settings: settings, state: state, recordsOnly: true),
+            "BaseTypes" => ResolveTypeReferenceBaseTypes(type: type, settings: settings, state: state),
+            "ContainingClass" => state is not null && state.TryResolveType(reference: type, type: out var classContained)
+                ? ResolveContainingType(type: classContained, kind: TypeMetadataKind.Class, state: state)
+                : null,
+            "ContainingRecord" => state is not null && state.TryResolveType(reference: type, type: out var recordContained)
+                ? ResolveContainingType(type: recordContained, kind: TypeMetadataKind.Record, state: state)
+                : null,
+            "ContainingStruct" => state is not null && state.TryResolveType(reference: type, type: out var structContained)
+                ? ResolveContainingType(type: structContained, kind: TypeMetadataKind.Struct, state: state)
+                : null,
+            "NestedClasses" => state is not null && state.TryResolveType(reference: type, type: out var nestedClassOwner)
+                ? nestedClassOwner.NestedClasses.Where(predicate: nested => IsAccessible(accessibility: nested.Accessibility, state: state))
+                : Array.Empty<TypeMetadata>(),
+            "NestedRecords" => state is not null && state.TryResolveType(reference: type, type: out var nestedRecordOwner)
+                ? nestedRecordOwner.NestedRecords.Where(predicate: nested => IsAccessible(accessibility: nested.Accessibility, state: state))
+                : Array.Empty<TypeMetadata>(),
+            "NestedStructs" => state is not null && state.TryResolveType(reference: type, type: out var nestedStructOwner)
+                ? nestedStructOwner.NestedStructs.Where(predicate: nested => IsAccessible(accessibility: nested.Accessibility, state: state))
+                : Array.Empty<TypeMetadata>(),
+            "NestedEnums" => state is not null && state.TryResolveType(reference: type, type: out var nestedEnumOwner)
+                ? nestedEnumOwner.NestedEnums.Where(predicate: nested => IsAccessible(accessibility: nested.Accessibility, state: state))
+                : Array.Empty<TypeMetadata>(),
+            "NestedInterfaces" => state is not null && state.TryResolveType(reference: type, type: out var nestedInterfaceOwner)
+                ? nestedInterfaceOwner.NestedInterfaces.Where(predicate: nested => IsAccessible(accessibility: nested.Accessibility, state: state))
+                : Array.Empty<TypeMetadata>(),
+            "Values" => ResolveTypeReferenceEnumValues(type: type, state: state),
+            "EnumValues" => ResolveTypeReferenceEnumValues(type: type, state: state),
+            "Kind" => state is not null && state.TryResolveType(reference: type, type: out var kindMetadata)
+                ? kindMetadata.Kind.ToString()
+                : null,
             "IsDefined" => ResolveIsDefined(type: type, state: state),
-            "IsGeneric" => type.TypeArguments.Count > 0,
+            "IsGeneric" => type.Arity > 0 || type.TypeArguments.Count > 0,
             "IsNullable" => type.IsNullable,
             "IsEnumerable" => type.IsCollection,
             "IsDictionary" => type.IsDictionary,
             "IsDynamic" => IsDynamicType(type: type),
-            "IsEnum" => type.IsEnum,
+            "IsEnum" => type.IsEnum
+                || (state is not null
+                    && state.TryResolveType(reference: type, type: out var enumMetadata)
+                    && enumMetadata.Kind == TypeMetadataKind.Enum),
             "IsPrimitive" => IsPrimitiveType(type: type),
+            "IsClass" => state is not null
+                && state.TryResolveType(reference: type, type: out var classMetadata)
+                && classMetadata.Kind == TypeMetadataKind.Class,
+            "IsRecord" => state is not null
+                && state.TryResolveType(reference: type, type: out var recordMetadata)
+                && recordMetadata.Kind == TypeMetadataKind.Record,
             "IsStruct" => state is not null
                 && state.TryResolveType(reference: type, type: out var metadata)
                 && metadata.Kind == TypeMetadataKind.Struct,
+            "IsInterface" => state is not null
+                && state.TryResolveType(reference: type, type: out var interfaceMetadata)
+                && interfaceMetadata.Kind == TypeMetadataKind.Interface,
+            "IsNullableAware" => state is not null
+                && state.TryResolveType(reference: type, type: out var nullableAwareMetadata)
+                && nullableAwareMetadata.IsNullableAware,
+            "IsStatic" => state is not null
+                && state.TryResolveType(reference: type, type: out var staticMetadata)
+                && staticMetadata.IsStatic,
+            "IsAbstract" => state is not null
+                && state.TryResolveType(reference: type, type: out var abstractMetadata)
+                && abstractMetadata.IsAbstract,
             "IsDate" => type.IsDateLike,
             "IsGuid" => type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal),
             "IsTimeSpan" => type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal),
@@ -3153,6 +3366,77 @@ public sealed class TemplateRenderer
         };
     }
 #pragma warning restore MA0051
+
+    private TypeTemplateValue? ResolveTypeReferenceBase(
+        TypeMetadataReference type,
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state,
+        bool recordsOnly)
+    {
+        if (state is null || !state.TryResolveType(reference: type, type: out var metadata))
+        {
+            return null;
+        }
+
+        var baseCandidate = metadata.BaseTypes.FirstOrDefault(predicate: candidate =>
+            !IsInterfaceTypeReference(candidate: candidate, state: state)
+            && IsAccessibleTypeReference(reference: candidate, state: state)
+            && (!recordsOnly
+                || !state.TryResolveType(reference: candidate, type: out var resolvedBase)
+                || resolvedBase.Kind == TypeMetadataKind.Record));
+        if (baseCandidate is null)
+        {
+            return null;
+        }
+
+        var substituted = TypeArgumentSubstitution.Create(type: metadata, reference: type)?.Substitute(target: baseCandidate)
+            ?? baseCandidate;
+        return new TypeTemplateValue(
+            Reference: substituted,
+            Text: _typeMapper.Map(
+                type: substituted,
+                strictNull: ResolveStrictNull(settings: settings, state: state),
+                dateMapping: ResolveDateMapping(settings: settings, state: state),
+                decimalType: ResolveDecimalType(settings: settings, state: state),
+                guidType: ResolveGuidType(settings: settings, state: state)),
+            Settings: settings ?? state.TemplateSettings,
+            RuntimeType: FrontendRuntimeTypeKind.Auto);
+    }
+
+    private TypeTemplateValue[] ResolveTypeReferenceBaseTypes(
+        TypeMetadataReference type,
+        Typewriter.Configuration.Settings? settings,
+        RenderState? state)
+    {
+        if (state is null || !state.TryResolveType(reference: type, type: out var metadata))
+        {
+            return [];
+        }
+
+        var substitution = TypeArgumentSubstitution.Create(type: metadata, reference: type);
+        var strictNull = ResolveStrictNull(settings: settings, state: state);
+        var dateMapping = ResolveDateMapping(settings: settings, state: state);
+        var decimalType = ResolveDecimalType(settings: settings, state: state);
+        var guidType = ResolveGuidType(settings: settings, state: state);
+        var effectiveSettings = settings ?? state.TemplateSettings;
+        return metadata.BaseTypes
+            .Where(predicate: candidate => IsAccessibleTypeReference(reference: candidate, state: state))
+            .Select(selector: candidate =>
+            {
+                var substituted = substitution?.Substitute(target: candidate) ?? candidate;
+                return new TypeTemplateValue(
+                    Reference: substituted,
+                    Text: _typeMapper.Map(
+                        type: substituted,
+                        strictNull: strictNull,
+                        dateMapping: dateMapping,
+                        decimalType: decimalType,
+                        guidType: guidType),
+                    Settings: effectiveSettings,
+                    RuntimeType: FrontendRuntimeTypeKind.Auto);
+            })
+            .ToArray();
+    }
 
     private bool TryResolveNameCase(
         object context,

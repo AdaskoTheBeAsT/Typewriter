@@ -80,3 +80,4 @@ using System.Runtime.CompilerServices;
 [assembly: TypeForwardedTo(typeof(Typewriter.Extensions.WebApi.UrlExtensions))]
 [assembly: TypeForwardedTo(typeof(Typewriter.VisualStudio.ILog))]
 [assembly: TypeForwardedTo(typeof(Typewriter.VisualStudio.NullLog))]
+[assembly: TypeForwardedTo(typeof(Typewriter.VisualStudio.TemplateDebugging))]

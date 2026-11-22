@@ -827,6 +827,71 @@ public sealed class TemplateFeatureServiceTests
         }
     }
 
+    [Fact]
+    public async Task EmbeddedCSharpHelperSupportsBreakAndParameterTypeMembersIssue146()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            const string Template = """
+                ${
+                    private void CollectTypeProperties(Type t, List<string> props)
+                    {
+                        Break();
+                        props.AddRange(t.Fields.Select(p => p.Name));
+                        props.AddRange(t.Properties.Select(p => p.Name));
+                        if (t.BaseClass != null)
+                        {
+                            CollectTypeProperties(t.BaseClass, props);
+                        }
+                    }
+
+                    string Inspect(Parameter p) => p.Type.Pro
+                }
+                """;
+            var document = CreateDocument(path: project.TemplatePath, text: Template);
+            var settings = CreateSettings(directory: directory, projectPath: project.ProjectPath);
+            var markerPosition = PositionOf(text: Template, marker: "p.Type.Pro");
+
+            using var service = new TemplateFeatureService();
+            var completions = await service.GetCompletionsAsync(
+                document: document,
+                settings: settings,
+                position: markerPosition with { Character = markerPosition.Character + "p.Type.Pro".Length },
+                cancellationToken: CancellationToken.None);
+
+            completions.Items.Should().Contain(item => item.Label == "Properties");
+
+            const string ValidTemplate = """
+                ${
+                    private void CollectTypeProperties(Type t, List<string> props)
+                    {
+                        Break();
+                        props.AddRange(t.Fields.Select(p => p.Name));
+                        props.AddRange(t.Properties.Select(p => p.Name));
+                        if (t.BaseClass != null)
+                        {
+                            CollectTypeProperties(t.BaseClass, props);
+                        }
+                    }
+                }
+                $Classes[$Name]
+                """;
+            var validDoc = CreateDocument(path: project.TemplatePath, text: ValidTemplate);
+            var diagnostics = await new TemplateDiagnosticService().ValidateAsync(
+                document: validDoc,
+                settings: settings,
+                cancellationToken: CancellationToken.None);
+
+            diagnostics.Should().BeEmpty();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static async Task<SampleProject> CreateSimpleProjectAsync(string directory)
     {
         Directory.CreateDirectory(path: directory);

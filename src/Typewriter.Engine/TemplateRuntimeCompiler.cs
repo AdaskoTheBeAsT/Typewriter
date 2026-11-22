@@ -548,6 +548,7 @@ internal static class TemplateRuntimeCompiler
             "using Typewriter.Extensions.Types;",
             "using Typewriter.Extensions.WebApi;",
             "using Typewriter.VisualStudio;",
+            "using static Typewriter.VisualStudio.TemplateDebugging;",
             "using Attribute = Typewriter.CodeModel.Attribute;",
             "using Class = Typewriter.CodeModel.Class;",
             "using Constant = Typewriter.CodeModel.Constant;",

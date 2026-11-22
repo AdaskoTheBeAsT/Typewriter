@@ -23,9 +23,11 @@ internal sealed class EmbeddedCSharpDocument
         "using System.Text.RegularExpressions;",
         "using Typewriter.CodeModel;",
         "using Typewriter.Configuration;",
+        "using Typewriter.Extensions.Documentation;",
         "using Typewriter.Extensions.Types;",
         "using Typewriter.Extensions.WebApi;",
         "using Typewriter.VisualStudio;",
+        "using static Typewriter.VisualStudio.TemplateDebugging;",
         "using Attribute = Typewriter.CodeModel.Attribute;",
         "using Class = Typewriter.CodeModel.Class;",
         "using Constant = Typewriter.CodeModel.Constant;",
@@ -38,6 +40,7 @@ internal sealed class EmbeddedCSharpDocument
         "using Parameter = Typewriter.CodeModel.Parameter;",
         "using Property = Typewriter.CodeModel.Property;",
         "using Record = Typewriter.CodeModel.Record;",
+        "using Struct = Typewriter.CodeModel.Struct;",
         "using Type = Typewriter.CodeModel.Type;",
     ];
 

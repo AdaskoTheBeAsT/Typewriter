@@ -7,4 +7,6 @@ public sealed record ProjectMetadata(
     IReadOnlyList<GenerationDiagnostic> Diagnostics)
 {
     public IReadOnlyList<DelegateMetadata> Delegates { get; init; } = [];
+
+    public IReadOnlyList<TypeMetadata> ReferencedTypes { get; init; } = [];
 }

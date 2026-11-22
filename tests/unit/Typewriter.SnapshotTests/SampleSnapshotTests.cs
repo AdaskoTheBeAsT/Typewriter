@@ -31,6 +31,7 @@ public sealed class SampleSnapshotTests
     [InlineData(data: ["issue115", "Issue115.csproj", "Models.tst", "TestModel.ts"])]
     [InlineData(data: ["issue145", "Issue145.csproj", "Models.tst", "Models.ts"])]
     [InlineData(data: ["issue145", "Issue145.csproj", "ModelsWithInternals.tst", "ModelsWithInternals.ts"])]
+    [InlineData(data: ["issue146", "Issue146.csproj", "Services.tst", "Services.ts"])]
     public Task GenerateAsyncMatchesModelsSnapshot(
         string sampleName,
         string projectPath,
