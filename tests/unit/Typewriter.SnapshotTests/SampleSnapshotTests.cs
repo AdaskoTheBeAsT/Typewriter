@@ -37,7 +37,37 @@ public sealed class SampleSnapshotTests
         string projectPath,
         string templatePath,
         string outputPath) =>
-        AssertGeneratedSnapshotAsync(sampleName: sampleName, projectPath: projectPath, templatePath: templatePath, outputPath: outputPath);
+        AssertGeneratedSnapshotAsync(
+            sampleName: sampleName,
+            projectPath: projectPath,
+            templatePath: templatePath,
+            outputPaths: [outputPath]);
+
+    [Theory]
+    [InlineData(data: ["issue112", "Issue112.csproj", "Models.tst", "Factory.ts", "net48"])]
+    [InlineData(data: ["issue112", "Issue112.csproj", "Models.tst", "Factory.ts", "net10.0"])]
+    [InlineData(data: ["issue112v2", "Issue112V2.csproj", "Models.tst", "Factory.ts", "net48"])]
+    [InlineData(data: ["issue112v2", "Issue112V2.csproj", "Models.tst", "Factory.ts", "net10.0"])]
+    public Task GenerateAsyncMatchesMultiTargetSnapshot(
+        string sampleName,
+        string projectPath,
+        string templatePath,
+        string outputPath,
+        string targetFramework) =>
+        AssertGeneratedSnapshotAsync(
+            sampleName: sampleName,
+            projectPath: projectPath,
+            templatePath: templatePath,
+            outputPaths: [outputPath],
+            targetFramework: targetFramework);
+
+    [Fact]
+    public Task GenerateAsyncMatchesMultiFileWorkspaceSnapshotIssue98() =>
+        AssertGeneratedSnapshotAsync(
+            sampleName: "issue98",
+            projectPath: "App/App.csproj",
+            templatePath: "App/Models.tst",
+            outputPaths: ["App/LocalDto.ts", "App/SharedDto.ts"]);
 
     [Theory]
     [InlineData("en-US")]
@@ -51,7 +81,7 @@ public sealed class SampleSnapshotTests
         {
             // Separate workspaces prevent metadata cached under one culture from masking another.
             var fixture = Path.Combine(path1: FindRepositoryRoot(), path2: "samples", path3: "issue125");
-            string[] fileNames = ["Issue125.csproj", "Models.cs", "Models.tst", "Models.ts"];
+            string[] fileNames = ["Directory.Build.props", "Issue125.csproj", "Models.cs", "Models.tst", "Models.ts"];
             foreach (var fileName in fileNames)
             {
 #pragma warning disable SEC0116
@@ -67,7 +97,7 @@ public sealed class SampleSnapshotTests
                 sampleName: "issue125",
                 projectPath: "Issue125.csproj",
                 templatePath: "Models.tst",
-                outputPath: "Models.ts",
+                outputPaths: ["Models.ts"],
                 sampleDirectory: workspace.FullName);
         }
         finally
@@ -81,13 +111,13 @@ public sealed class SampleSnapshotTests
         string sampleName,
         string projectPath,
         string templatePath,
-        string outputPath,
-        string? sampleDirectory = null)
+        IReadOnlyList<string> outputPaths,
+        string? sampleDirectory = null,
+        string? targetFramework = null)
     {
         sampleDirectory ??= Path.Combine(path1: FindRepositoryRoot(), path2: "samples", path3: sampleName);
         var absoluteProjectPath = ResolveSamplePath(sampleDirectory: sampleDirectory, relativePath: projectPath);
         var absoluteTemplatePath = ResolveSamplePath(sampleDirectory: sampleDirectory, relativePath: templatePath);
-        var expectedOutputPath = ResolveSamplePath(sampleDirectory: sampleDirectory, relativePath: outputPath);
 
         var generator = new TypewriterGenerator(
             templateDiscovery: new FileSystemTemplateDiscovery(),
@@ -96,6 +126,7 @@ public sealed class SampleSnapshotTests
 
         var configuration = TypewriterConfiguration.Default with
         {
+            DefaultTargetFramework = targetFramework,
             Output = TypewriterConfiguration.Default.Output with
             {
                 DryRun = true,
@@ -113,14 +144,30 @@ public sealed class SampleSnapshotTests
             cancellationToken: CancellationToken.None).ConfigureAwait(continueOnCapturedContext: false);
 
         result.Success.Should().BeTrue(because: FormatDiagnostics(diagnostics: result.Diagnostics));
+        result.GeneratedFiles.Should().HaveCount(expected: outputPaths.Count);
 
-        var generatedFile = result.GeneratedFiles.Should().ContainSingle().Which;
-        generatedFile.Path.Should().Be(expectedOutputPath);
-        generatedFile.Content.Should().StartWith(GeneratedFileHeader.Value);
-        generatedFile.Content.Should().NotContain("\r\n");
+#pragma warning disable IDE0028
+        var actualFiles = new Dictionary<string, GeneratedFile>(comparer: StringComparer.Ordinal);
+#pragma warning restore IDE0028
+        foreach (var generatedFile in result.GeneratedFiles)
+        {
+            actualFiles.Should().NotContainKey(
+                unexpected: generatedFile.Path,
+                because: string.Create(provider: CultureInfo.InvariantCulture, handler: $"Duplicate generated file path: {generatedFile.Path}"));
+            actualFiles.Add(key: generatedFile.Path, value: generatedFile);
+        }
 
-        var expected = await File.ReadAllTextAsync(path: expectedOutputPath).ConfigureAwait(continueOnCapturedContext: false);
-        generatedFile.Content.Should().Be(expected);
+        foreach (var outputPath in outputPaths)
+        {
+            var expectedOutputPath = ResolveSamplePath(sampleDirectory: sampleDirectory, relativePath: outputPath);
+            actualFiles.Should().ContainKey(expected: expectedOutputPath);
+            var generatedFile = actualFiles[key: expectedOutputPath];
+            generatedFile.Content.Should().StartWith(GeneratedFileHeader.Value);
+            generatedFile.Content.Should().NotContain("\r\n");
+
+            var expected = await File.ReadAllTextAsync(path: expectedOutputPath).ConfigureAwait(continueOnCapturedContext: false);
+            generatedFile.Content.Should().Be(expected);
+        }
     }
 
     private static async Task DeleteDirectoryWithRetryAsync(string directory)
