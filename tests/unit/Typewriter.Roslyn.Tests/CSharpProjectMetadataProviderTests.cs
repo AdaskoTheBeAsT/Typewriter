@@ -1882,6 +1882,130 @@ public sealed class CSharpProjectMetadataProviderTests
         }
     }
 
+    [Fact]
+    public async Task GetMetadataExtractsStandaloneSourceGeneratedTypesIntoReferencedTypesAcrossProjectReferencesIssue146()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var generatorPath = Path.Combine(path1: directory, path2: "generators", path3: "StandaloneDtoGenerator.dll");
+            Directory.CreateDirectory(path: Path.GetDirectoryName(path: generatorPath)!);
+            EmitAssembly(
+                path: generatorPath,
+                assemblyName: "StandaloneDtoGenerator",
+                source: """"
+                        using Microsoft.CodeAnalysis;
+
+                        [Generator]
+                        public sealed class StandaloneDtoGenerator : IIncrementalGenerator
+                        {
+                            public void Initialize(IncrementalGeneratorInitializationContext context)
+                            {
+                                context.RegisterPostInitializationOutput(static ctx =>
+                                {
+                                    ctx.AddSource(
+                                        hintName: "GeneratedFilter.g.cs",
+                                        source: """
+                                                namespace GeneratedContracts;
+
+                                                public class BaseGeneratedFilter
+                                                {
+                                                    public int PageIndex { get; set; }
+                                                }
+
+                                                public sealed class GeneratedCustomerFilter : BaseGeneratedFilter
+                                                {
+                                                    public string SearchTerm = string.Empty;
+
+                                                    public bool OnlyActive { get; set; }
+                                                }
+                                                """);
+                                });
+                            }
+                        }
+                        """");
+
+            var contractsDir = Path.Combine(path1: directory, path2: "Contracts");
+            var apiDir = Path.Combine(path1: directory, path2: "Api");
+            Directory.CreateDirectory(path: contractsDir);
+            Directory.CreateDirectory(path: apiDir);
+
+            var contractsProjectPath = Path.Combine(path1: contractsDir, path2: "Contracts.csproj");
+            await File.WriteAllTextAsync(
+                path: contractsProjectPath,
+                contents: $$"""
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                              <UseSharedCompilation>false</UseSharedCompilation>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <Analyzer Include="{{generatorPath}}" />
+                            </ItemGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: contractsDir, path2: "ContractMarker.cs"),
+                contents: "namespace Contracts; public sealed class ContractMarker { public string Tag { get; set; } = string.Empty; }");
+
+            var apiProjectPath = Path.Combine(path1: apiDir, path2: "Api.csproj");
+            await File.WriteAllTextAsync(
+                path: apiProjectPath,
+                contents: """
+                          <Project Sdk="Microsoft.NET.Sdk">
+                            <PropertyGroup>
+                              <TargetFramework>net10.0</TargetFramework>
+                              <Nullable>enable</Nullable>
+                              <ImplicitUsings>enable</ImplicitUsings>
+                              <UseSharedCompilation>false</UseSharedCompilation>
+                            </PropertyGroup>
+                            <ItemGroup>
+                              <ProjectReference Include="..\Contracts\Contracts.csproj" />
+                            </ItemGroup>
+                          </Project>
+                          """);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: apiDir, path2: "CustomersController.cs"),
+                contents: """
+                          using GeneratedContracts;
+
+                          namespace Api;
+
+                          public sealed class CustomersController
+                          {
+                              public void Search(GeneratedCustomerFilter filter)
+                              {
+                              }
+                          }
+                          """);
+
+            var provider = new CSharpProjectMetadataProvider();
+            var metadata = await provider.GetMetadataAsync(
+                project: new ProjectContext(ProjectPath: apiProjectPath, WorkspacePath: directory),
+                cancellationToken: CancellationToken.None);
+
+            metadata.Diagnostics.Should().BeEmpty();
+            metadata.Types.Select(selector: type => type.FullName)
+                .Should().Contain(["Api.CustomersController", "Contracts.ContractMarker"])
+                .And.NotContain("GeneratedContracts.GeneratedCustomerFilter");
+            metadata.SourceFiles.Select(selector: file => file.Path)
+                .Should().NotContain(path => path.EndsWith(value: "GeneratedFilter.g.cs", comparisonType: StringComparison.OrdinalIgnoreCase));
+
+            var generatedFilter = metadata.ReferencedTypes.Should().ContainSingle(
+                predicate: type => type.FullName == "GeneratedContracts.GeneratedCustomerFilter").Which;
+            generatedFilter.Properties.Should().ContainSingle(property => property.Name == "OnlyActive");
+            generatedFilter.Fields.Should().ContainSingle(field => field.Name == "SearchTerm");
+            metadata.ReferencedTypes.Should().ContainSingle(type => type.FullName == "GeneratedContracts.BaseGeneratedFilter");
+            ForceGarbageCollection();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static string CreateProjectDirectory()
     {
         var directory = Path.Combine(

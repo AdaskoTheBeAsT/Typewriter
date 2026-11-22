@@ -157,14 +157,14 @@ internal sealed class TemplateCodeModelAdapterFactory
             StaticReadOnlyFieldMetadata staticReadOnlyField => CreateStaticReadOnlyField(field: staticReadOnlyField, parent: null),
             EventMetadata @event => CreateEvent(@event: @event, parent: null),
             DelegateMetadata @delegate => CreateDelegate(@delegate: @delegate, parent: null),
-            TypeMetadataReference typeReference => CreateType(type: typeReference),
+            TypeMetadataReference typeReference => AdaptTypeReference(reference: typeReference, runtimeType: FrontendRuntimeTypeKind.Auto, targetType: targetType),
             EnumValueMetadata enumValue => CreateEnumValue(enumValue: enumValue, parent: null),
             AttributeMetadata attribute => CreateAttribute(attribute: attribute, parent: null),
             AttributeArgumentMetadata argument => CreateAttributeArgument(argument: argument),
             DocCommentMetadata docComment => CreateDocComment(docComment: docComment, parent: null),
             ParameterCommentMetadata parameterComment => CreateParameterComment(parameter: parameterComment, parent: null),
             TypeParameterMetadata typeParameter => CreateTypeParameter(parameter: typeParameter, parent: null),
-            TypeMappingContext typeContext => CreateType(type: typeContext.Reference, runtimeType: typeContext.RuntimeType),
+            TypeMappingContext typeContext => AdaptTypeReference(reference: typeContext.Reference, runtimeType: typeContext.RuntimeType, targetType: targetType),
             CodeClass codeClass when targetType.IsAssignableFrom(c: typeof(CodeType)) => codeClass.Type,
             CodeRecord codeRecord when targetType.IsAssignableFrom(c: typeof(CodeType)) => codeRecord.Type,
             CodeStruct codeStruct when targetType.IsAssignableFrom(c: typeof(CodeType)) => codeStruct.Type,
@@ -369,23 +369,8 @@ internal sealed class TemplateCodeModelAdapterFactory
     private static TypeMetadataReference SubstituteTypeArguments(
         TypeMetadata type,
         TypeMetadataReference? reference,
-        TypeMetadataReference target)
-    {
-        if (reference is null
-            || type.TypeParameters.Count == 0
-            || type.TypeParameters.Count != reference.TypeArguments.Count)
-        {
-            return target;
-        }
-
-        var substitutions = new Dictionary<string, TypeMetadataReference>(comparer: StringComparer.Ordinal);
-        for (var index = 0; index < type.TypeParameters.Count; index++)
-        {
-            substitutions[type.TypeParameters[index: index].Name] = reference.TypeArguments[index: index];
-        }
-
-        return new TypeArgumentSubstitution(substitutions: substitutions).Substitute(target: target);
-    }
+        TypeMetadataReference target) =>
+        TypeArgumentSubstitution.Create(type: type, reference: reference)?.Substitute(target: target) ?? target;
 
     private static string GetPrimaryFilePath(TypeMetadata type) =>
         !string.IsNullOrWhiteSpace(value: type.Location?.Path)
@@ -437,6 +422,12 @@ internal sealed class TemplateCodeModelAdapterFactory
 
         return item;
     }
+
+    private static IEnumerable<T> DeferAlways<TSource, T>(IEnumerable<TSource> source, Func<TSource, T> selector)
+        where T : Typewriter.CodeModel.Item =>
+        source.TryGetNonEnumeratedCount(count: out var count) && count == 0
+            ? []
+            : Typewriter.CodeModel.DeferredItems<T>.Create(source: source, selector: selector);
 
     private Typewriter.CodeModel.DocComment? CreateDocComment(
         DocCommentMetadata? docComment,
@@ -662,6 +653,46 @@ internal sealed class TemplateCodeModelAdapterFactory
             : null;
     }
 
+    private object? AdaptTypeReference(
+        TypeMetadataReference reference,
+        FrontendRuntimeTypeKind runtimeType,
+        System.Type targetType)
+    {
+        if (targetType.IsAssignableFrom(c: typeof(CodeType)))
+        {
+            return CreateType(type: reference, runtimeType: runtimeType);
+        }
+
+        if (!TryResolveType(reference: reference, metadata: out var type))
+        {
+            return null;
+        }
+
+        if (type.Kind is TypeMetadataKind.Class or TypeMetadataKind.Record && targetType.IsAssignableFrom(c: typeof(CodeClass)))
+        {
+            return CreateClass(type: type, reference: reference);
+        }
+
+        if (type.Kind == TypeMetadataKind.Record && targetType.IsAssignableFrom(c: typeof(CodeRecord)))
+        {
+            return CreateRecord(type: type, reference: reference);
+        }
+
+        if (type.Kind == TypeMetadataKind.Struct && targetType.IsAssignableFrom(c: typeof(CodeStruct)))
+        {
+            return CreateStruct(type: type, reference: reference);
+        }
+
+        if (type.Kind == TypeMetadataKind.Interface && targetType.IsAssignableFrom(c: typeof(CodeInterface)))
+        {
+            return CreateInterface(type: type, reference: reference);
+        }
+
+        return type.Kind == TypeMetadataKind.Enum && targetType.IsAssignableFrom(c: typeof(CodeEnum))
+            ? CreateEnum(type: type)
+            : null;
+    }
+
     private CodeClass CreateClass(TypeMetadata type)
     {
         return CreateClass(type: type, reference: null);
@@ -672,6 +703,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var classType = reference is null ? CreateType(type: type) : CreateType(type: reference);
+        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference);
         var item = new CodeClass
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
@@ -686,19 +718,18 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsAbstract = type.IsAbstract,
             IsGeneric = classType.IsGeneric,
             IsStatic = type.IsStatic,
-            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: FilterAccessible(items: type.Constants, getAccessibility: static constant => constant.Accessibility), selector: constant => CreateConstant(constant: constant, parent: null))),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: FilterAccessible(items: type.Delegates, getAccessibility: static @delegate => @delegate.Accessibility), selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
-            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: FilterAccessible(items: type.Events, getAccessibility: static @event => @event.Accessibility), selector: @event => CreateEvent(@event: @event, parent: null))),
-            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: FilterAccessible(items: type.Fields, getAccessibility: static field => field.Accessibility), selector: field => CreateField(field: field, parent: null))),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: FilterAccessible(items: type.Methods, getAccessibility: static method => method.Accessibility), selector: method => CreateMethod(method: method, parent: null))),
+            Constants = CreateMemberConstants(constants: type.Constants, substitution: substitution),
+            Delegates = CreateMemberDelegates(delegates: type.Delegates, substitution: substitution),
+            Events = CreateMemberEvents(events: type.Events, substitution: substitution),
+            Fields = CreateMemberFields(fields: type.Fields, substitution: substitution),
+            Methods = CreateMemberMethods(methods: type.Methods, substitution: substitution),
             NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: FilterAccessible(items: type.NestedClasses, getAccessibility: static nested => nested.Accessibility), selector: CreateClass)),
             NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: FilterAccessible(items: type.NestedEnums, getAccessibility: static nested => nested.Accessibility), selector: CreateEnum)),
             NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: FilterAccessible(items: type.NestedInterfaces, getAccessibility: static nested => nested.Accessibility), selector: CreateInterface)),
             NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: FilterAccessible(items: type.NestedRecords, getAccessibility: static nested => nested.Accessibility), selector: CreateRecord)),
             NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: FilterAccessible(items: type.NestedStructs, getAccessibility: static nested => nested.Accessibility), selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: FilterAccessible(items: type.Properties, getAccessibility: static property => property.Accessibility), selector: property => CreateProperty(property: property, parent: null))),
-            StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
-                items: Defer(source: FilterAccessible(items: type.StaticReadOnlyFields, getAccessibility: static field => field.Accessibility), selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
+            Properties = CreateMemberProperties(properties: type.Properties, substitution: substitution),
+            StaticReadOnlyFields = CreateMemberStaticReadOnlyFields(fields: type.StaticReadOnlyFields, substitution: substitution),
             Type = classType,
             TypeArguments = classType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
@@ -732,6 +763,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var recordType = reference is null ? CreateType(type: type) : CreateType(type: reference);
+        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference);
         var item = new CodeRecord
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
@@ -745,19 +777,18 @@ internal sealed class TemplateCodeModelAdapterFactory
             Interfaces = CreateInterfaces(type: type, reference: reference),
             IsAbstract = type.IsAbstract,
             IsGeneric = recordType.IsGeneric,
-            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: FilterAccessible(items: type.Constants, getAccessibility: static constant => constant.Accessibility), selector: constant => CreateConstant(constant: constant, parent: null))),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: FilterAccessible(items: type.Delegates, getAccessibility: static @delegate => @delegate.Accessibility), selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
-            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: FilterAccessible(items: type.Events, getAccessibility: static @event => @event.Accessibility), selector: @event => CreateEvent(@event: @event, parent: null))),
-            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: FilterAccessible(items: type.Fields, getAccessibility: static field => field.Accessibility), selector: field => CreateField(field: field, parent: null))),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: FilterAccessible(items: type.Methods, getAccessibility: static method => method.Accessibility), selector: method => CreateMethod(method: method, parent: null))),
+            Constants = CreateMemberConstants(constants: type.Constants, substitution: substitution),
+            Delegates = CreateMemberDelegates(delegates: type.Delegates, substitution: substitution),
+            Events = CreateMemberEvents(events: type.Events, substitution: substitution),
+            Fields = CreateMemberFields(fields: type.Fields, substitution: substitution),
+            Methods = CreateMemberMethods(methods: type.Methods, substitution: substitution),
             NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: FilterAccessible(items: type.NestedClasses, getAccessibility: static nested => nested.Accessibility), selector: CreateClass)),
             NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: FilterAccessible(items: type.NestedEnums, getAccessibility: static nested => nested.Accessibility), selector: CreateEnum)),
             NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: FilterAccessible(items: type.NestedInterfaces, getAccessibility: static nested => nested.Accessibility), selector: CreateInterface)),
             NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: FilterAccessible(items: type.NestedRecords, getAccessibility: static nested => nested.Accessibility), selector: CreateRecord)),
             NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: FilterAccessible(items: type.NestedStructs, getAccessibility: static nested => nested.Accessibility), selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: FilterAccessible(items: type.Properties, getAccessibility: static property => property.Accessibility), selector: property => CreateProperty(property: property, parent: null))),
-            StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
-                items: Defer(source: FilterAccessible(items: type.StaticReadOnlyFields, getAccessibility: static field => field.Accessibility), selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
+            Properties = CreateMemberProperties(properties: type.Properties, substitution: substitution),
+            StaticReadOnlyFields = CreateMemberStaticReadOnlyFields(fields: type.StaticReadOnlyFields, substitution: substitution),
             Type = recordType,
             TypeArguments = recordType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
@@ -791,6 +822,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var interfaceType = reference is null ? CreateType(type: type) : CreateType(type: reference);
+        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference);
         var item = new CodeInterface
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
@@ -800,12 +832,12 @@ internal sealed class TemplateCodeModelAdapterFactory
             Attributes = CreateAttributes(attributes: type.Attributes, parent: null),
             ContainingClass = CreateContainingClass(type: type),
             DocComment = CreateDocComment(docComment: type.DocComment, parent: null),
-            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: FilterAccessible(items: type.Events, getAccessibility: static @event => @event.Accessibility), selector: @event => CreateEvent(@event: @event, parent: null))),
+            Events = CreateMemberEvents(events: type.Events, substitution: substitution),
             IsGeneric = interfaceType.IsGeneric,
             Interfaces = CreateInterfaces(type: type, reference: reference),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: FilterAccessible(items: type.Methods, getAccessibility: static method => method.Accessibility), selector: method => CreateMethod(method: method, parent: null))),
+            Methods = CreateMemberMethods(methods: type.Methods, substitution: substitution),
             NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: FilterAccessible(items: type.NestedStructs, getAccessibility: static nested => nested.Accessibility), selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: FilterAccessible(items: type.Properties, getAccessibility: static property => property.Accessibility), selector: property => CreateProperty(property: property, parent: null))),
+            Properties = CreateMemberProperties(properties: type.Properties, substitution: substitution),
             Type = interfaceType,
             TypeArguments = interfaceType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
@@ -828,6 +860,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var structType = reference is null ? CreateType(type: type) : CreateType(type: reference);
+        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference);
         var item = new CodeStruct
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
@@ -841,19 +874,18 @@ internal sealed class TemplateCodeModelAdapterFactory
             Interfaces = CreateInterfaces(type: type, reference: reference),
             IsGeneric = structType.IsGeneric,
             IsStatic = type.IsStatic,
-            Constants = new Typewriter.CodeModel.ConstantCollection(items: Defer(source: FilterAccessible(items: type.Constants, getAccessibility: static constant => constant.Accessibility), selector: constant => CreateConstant(constant: constant, parent: null))),
-            Delegates = new Typewriter.CodeModel.DelegateCollection(items: Defer(source: FilterAccessible(items: type.Delegates, getAccessibility: static @delegate => @delegate.Accessibility), selector: @delegate => CreateDelegate(@delegate: @delegate, parent: null))),
-            Events = new Typewriter.CodeModel.EventCollection(items: Defer(source: FilterAccessible(items: type.Events, getAccessibility: static @event => @event.Accessibility), selector: @event => CreateEvent(@event: @event, parent: null))),
-            Fields = new Typewriter.CodeModel.FieldCollection(items: Defer(source: FilterAccessible(items: type.Fields, getAccessibility: static field => field.Accessibility), selector: field => CreateField(field: field, parent: null))),
-            Methods = new Typewriter.CodeModel.MethodCollection(items: Defer(source: FilterAccessible(items: type.Methods, getAccessibility: static method => method.Accessibility), selector: method => CreateMethod(method: method, parent: null))),
+            Constants = CreateMemberConstants(constants: type.Constants, substitution: substitution),
+            Delegates = CreateMemberDelegates(delegates: type.Delegates, substitution: substitution),
+            Events = CreateMemberEvents(events: type.Events, substitution: substitution),
+            Fields = CreateMemberFields(fields: type.Fields, substitution: substitution),
+            Methods = CreateMemberMethods(methods: type.Methods, substitution: substitution),
             NestedClasses = new Typewriter.CodeModel.ClassCollection(items: Defer(source: FilterAccessible(items: type.NestedClasses, getAccessibility: static nested => nested.Accessibility), selector: CreateClass)),
             NestedEnums = new Typewriter.CodeModel.EnumCollection(items: Defer(source: FilterAccessible(items: type.NestedEnums, getAccessibility: static nested => nested.Accessibility), selector: CreateEnum)),
             NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: Defer(source: FilterAccessible(items: type.NestedInterfaces, getAccessibility: static nested => nested.Accessibility), selector: CreateInterface)),
             NestedRecords = new Typewriter.CodeModel.RecordCollection(items: Defer(source: FilterAccessible(items: type.NestedRecords, getAccessibility: static nested => nested.Accessibility), selector: CreateRecord)),
             NestedStructs = new Typewriter.CodeModel.StructCollection(items: Defer(source: FilterAccessible(items: type.NestedStructs, getAccessibility: static nested => nested.Accessibility), selector: CreateStruct)),
-            Properties = new Typewriter.CodeModel.PropertyCollection(items: Defer(source: FilterAccessible(items: type.Properties, getAccessibility: static property => property.Accessibility), selector: property => CreateProperty(property: property, parent: null))),
-            StaticReadOnlyFields = new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
-                items: Defer(source: FilterAccessible(items: type.StaticReadOnlyFields, getAccessibility: static field => field.Accessibility), selector: field => CreateStaticReadOnlyField(field: field, parent: null))),
+            Properties = CreateMemberProperties(properties: type.Properties, substitution: substitution),
+            StaticReadOnlyFields = CreateMemberStaticReadOnlyFields(fields: type.StaticReadOnlyFields, substitution: substitution),
             Type = structType,
             TypeArguments = structType.TypeArguments,
             TypeParameters = CreateTypeParameters(typeParameters: type.TypeParameters, parent: null),
@@ -954,8 +986,6 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         var typeArguments = new Typewriter.CodeModel.TypeCollection(
             items: Defer(source: type.TypeArguments, selector: argument => CreateType(type: argument, runtimeType: runtimeType)));
-        _ = TryResolveType(reference: type, metadata: out var typeMetadata);
-        var fileLocations = ResolveFileLocations(type: type, metadata: typeMetadata);
         var mappedName = _typeMapper.Map(
             type: type,
             strictNull: _mappingSettings.StrictNullGeneration,
@@ -963,21 +993,38 @@ internal sealed class TemplateCodeModelAdapterFactory
             decimalType: _mappingSettings.DecimalTypeGeneration,
             guidType: _mappingSettings.GuidTypeGeneration,
             runtimeType: runtimeType);
-        var isStruct = typeMetadata?.Kind == TypeMetadataKind.Struct;
+        return TryResolveType(reference: type, metadata: out var typeMetadata)
+            ? CreateResolvedTypeReference(
+                type: type,
+                typeMetadata: typeMetadata,
+                mappedName: mappedName,
+                typeArguments: typeArguments,
+                runtimeType: runtimeType)
+            : CreateUnresolvedTypeReference(
+                type: type,
+                mappedName: mappedName,
+                typeArguments: typeArguments,
+                runtimeType: runtimeType);
+    }
+
+    private CodeType CreateUnresolvedTypeReference(
+        TypeMetadataReference type,
+        string mappedName,
+        Typewriter.CodeModel.TypeCollection typeArguments,
+        FrontendRuntimeTypeKind runtimeType)
+    {
+        var fileLocations = ResolveFileLocations(type: type, metadata: null);
         var item = new MappedCodeType(
-            interfacesFactory: () => LiveFactory.CaptureFactory().CreateInterfaces(reference: type, metadata: typeMetadata))
+            interfacesFactory: () => LiveFactory.CaptureFactory().CreateInterfaces(reference: type, metadata: null))
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = GetLegacyTypeName(mappedName: mappedName),
             FullName = type.FullName,
             Namespace = type.Namespace,
-            Attributes = typeMetadata is null
-                ? new Typewriter.CodeModel.AttributeCollection()
-                : CreateTypeReferenceAttributes(attributes: typeMetadata.Attributes),
             ElementType = _canDefer || type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType),
             FileLocations = fileLocations,
             IsDate = type.IsDateLike,
-            IsDefined = typeMetadata is not null || fileLocations.Count > 0,
+            IsDefined = fileLocations.Count > 0,
             IsDictionary = type.IsDictionary,
             IsDynamic = IsDynamic(type: type),
             IsEnum = type.IsEnum,
@@ -986,7 +1033,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             IsGeneric = type.Arity > 0,
             IsNullable = type.IsNullable,
             IsPrimitive = IsPrimitiveType(type: type),
-            IsStruct = isStruct,
+            IsStruct = false,
             IsTask = IsTaskLike(fullName: type.FullName),
             IsTimeSpan = type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal),
             IsValueTuple = type.IsValueTuple,
@@ -1003,12 +1050,183 @@ internal sealed class TemplateCodeModelAdapterFactory
             item.SetElementTypeFactory(elementTypeFactory: () => type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType));
         }
 
-        if (typeMetadata is not null)
+        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment, childCollections: [item.TupleElements]);
+    }
+
+#pragma warning disable MA0051
+    private CodeType CreateResolvedTypeReference(
+        TypeMetadataReference type,
+        TypeMetadata typeMetadata,
+        string mappedName,
+        Typewriter.CodeModel.TypeCollection typeArguments,
+        FrontendRuntimeTypeKind runtimeType)
+    {
+        var memberFactory = LiveFactory.CaptureFactory();
+        var substitution = TypeArgumentSubstitution.Create(type: typeMetadata, reference: type);
+        var item = new MappedCodeType(
+            interfacesFactory: () => memberFactory.CreateInterfaces(reference: type, metadata: typeMetadata))
         {
-            SetTypeParent(item: item, type: typeMetadata);
+            AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
+            Name = GetLegacyTypeName(mappedName: mappedName),
+            FullName = type.FullName,
+            Namespace = type.Namespace,
+            Attributes = CreateTypeReferenceAttributes(attributes: typeMetadata.Attributes),
+            DocComment = memberFactory.CreateDocComment(docComment: typeMetadata.DocComment, parent: null),
+            ElementType = _canDefer || type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType),
+            FileLocations = ResolveFileLocations(type: type, metadata: typeMetadata),
+            IsDate = type.IsDateLike,
+            IsDefined = true,
+            IsDictionary = type.IsDictionary,
+            IsDynamic = IsDynamic(type: type),
+            IsEnum = type.IsEnum || typeMetadata.Kind == TypeMetadataKind.Enum,
+            IsEnumerable = type.IsCollection,
+            IsGuid = type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal),
+            IsGeneric = type.Arity > 0,
+            IsNullable = type.IsNullable,
+            IsPrimitive = IsPrimitiveType(type: type),
+            IsStruct = typeMetadata.Kind == TypeMetadataKind.Struct,
+            IsTask = IsTaskLike(fullName: type.FullName),
+            IsTimeSpan = type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal),
+            IsValueTuple = type.IsValueTuple,
+            OriginalName = type.Name,
+            Constants = memberFactory.CreateMemberConstants(constants: typeMetadata.Constants, substitution: substitution, deferAlways: true),
+            Delegates = memberFactory.CreateMemberDelegates(delegates: typeMetadata.Delegates, substitution: substitution, deferAlways: true),
+            Fields = memberFactory.CreateMemberFields(fields: typeMetadata.Fields, substitution: substitution, deferAlways: true),
+            Methods = memberFactory.CreateMemberMethods(methods: typeMetadata.Methods, substitution: substitution, deferAlways: true),
+            NestedClasses = new Typewriter.CodeModel.ClassCollection(items: DeferAlways(source: memberFactory.FilterAccessible(items: typeMetadata.NestedClasses, getAccessibility: static nested => nested.Accessibility), selector: memberFactory.CreateClass)),
+            NestedEnums = new Typewriter.CodeModel.EnumCollection(items: DeferAlways(source: memberFactory.FilterAccessible(items: typeMetadata.NestedEnums, getAccessibility: static nested => nested.Accessibility), selector: memberFactory.CreateEnum)),
+            NestedInterfaces = new Typewriter.CodeModel.InterfaceCollection(items: DeferAlways(source: memberFactory.FilterAccessible(items: typeMetadata.NestedInterfaces, getAccessibility: static nested => nested.Accessibility), selector: memberFactory.CreateInterface)),
+            NestedRecords = new Typewriter.CodeModel.RecordCollection(items: DeferAlways(source: memberFactory.FilterAccessible(items: typeMetadata.NestedRecords, getAccessibility: static nested => nested.Accessibility), selector: memberFactory.CreateRecord)),
+            NestedStructs = new Typewriter.CodeModel.StructCollection(items: DeferAlways(source: memberFactory.FilterAccessible(items: typeMetadata.NestedStructs, getAccessibility: static nested => nested.Accessibility), selector: memberFactory.CreateStruct)),
+            Properties = memberFactory.CreateMemberProperties(properties: typeMetadata.Properties, substitution: substitution, deferAlways: true),
+            StaticReadOnlyFields = memberFactory.CreateMemberStaticReadOnlyFields(fields: typeMetadata.StaticReadOnlyFields, substitution: substitution, deferAlways: true),
+            TupleElements = new Typewriter.CodeModel.FieldCollection(items: DeferAlways(source: type.TupleElements, selector: field => memberFactory.CreateField(field: field, parent: null))),
+            TypeArguments = typeArguments,
+            TypeParameters = memberFactory.CreateTypeParameters(typeParameters: typeMetadata.TypeParameters, parent: null),
+            DefaultValue = GetDefaultValue(type: type, runtimeType: runtimeType),
+            Settings = _settings,
+            UseResolvedDefault = _mappingSettings.DateLibraryGeneration != Typewriter.Configuration.DateLibrary.Legacy
+                                 || runtimeType != FrontendRuntimeTypeKind.Auto,
+        };
+        if (_canDefer)
+        {
+            item.SetElementTypeFactory(elementTypeFactory: () => type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType));
         }
 
-        return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment, childCollections: [item.TupleElements]);
+        item.SetNavigationFactories(
+            baseTypeFactory: () => memberFactory.CreateBaseClass(type: typeMetadata, reference: type),
+            containingTypeFactory: () => memberFactory.CreateContainingClass(type: typeMetadata));
+        SetTypeParent(item: item, type: typeMetadata);
+        return AttachChildren(
+            item: item,
+            attributes: item.Attributes,
+            docComment: item.DocComment,
+            childCollections: [
+                item.Constants, item.Delegates, item.Fields, item.Methods,
+                item.NestedClasses, item.NestedEnums, item.NestedInterfaces, item.NestedRecords, item.NestedStructs,
+                item.Properties, item.StaticReadOnlyFields, item.TupleElements, item.TypeParameters,
+            ]);
+    }
+#pragma warning restore MA0051
+
+    private Typewriter.CodeModel.ConstantCollection CreateMemberConstants(
+        IReadOnlyList<ConstantMetadata> constants,
+        TypeArgumentSubstitution? substitution,
+        bool deferAlways = false)
+    {
+        var source = FilterAccessible(items: constants, getAccessibility: static constant => constant.Accessibility);
+        Func<ConstantMetadata, CodeConstant> selector = constant => CreateConstant(
+            constant: substitution is null ? constant : substitution.SubstituteConstant(constant: constant),
+            parent: null);
+        return new Typewriter.CodeModel.ConstantCollection(
+            items: deferAlways
+                ? DeferAlways(source: source, selector: selector)
+                : Defer(source: source, selector: selector));
+    }
+
+    private Typewriter.CodeModel.DelegateCollection CreateMemberDelegates(
+        IReadOnlyList<DelegateMetadata> delegates,
+        TypeArgumentSubstitution? substitution,
+        bool deferAlways = false)
+    {
+        var source = FilterAccessible(items: delegates, getAccessibility: static @delegate => @delegate.Accessibility);
+        Func<DelegateMetadata, CodeDelegate> selector = @delegate => CreateDelegate(
+            @delegate: substitution is null ? @delegate : substitution.SubstituteDelegate(@delegate: @delegate),
+            parent: null);
+        return new Typewriter.CodeModel.DelegateCollection(
+            items: deferAlways
+                ? DeferAlways(source: source, selector: selector)
+                : Defer(source: source, selector: selector));
+    }
+
+    private Typewriter.CodeModel.EventCollection CreateMemberEvents(
+        IReadOnlyList<EventMetadata> events,
+        TypeArgumentSubstitution? substitution) =>
+        new(
+            items: Defer(
+                source: FilterAccessible(items: events, getAccessibility: static @event => @event.Accessibility),
+                selector: @event => CreateEvent(
+                    @event: substitution is null ? @event : substitution.SubstituteEvent(@event: @event),
+                    parent: null)));
+
+    private Typewriter.CodeModel.FieldCollection CreateMemberFields(
+        IReadOnlyList<FieldMetadata> fields,
+        TypeArgumentSubstitution? substitution,
+        bool deferAlways = false)
+    {
+        var source = FilterAccessible(items: fields, getAccessibility: static field => field.Accessibility);
+        Func<FieldMetadata, CodeField> selector = field => CreateField(
+            field: substitution is null ? field : substitution.SubstituteField(field: field),
+            parent: null);
+        return new Typewriter.CodeModel.FieldCollection(
+            items: deferAlways
+                ? DeferAlways(source: source, selector: selector)
+                : Defer(source: source, selector: selector));
+    }
+
+    private Typewriter.CodeModel.MethodCollection CreateMemberMethods(
+        IReadOnlyList<MethodMetadata> methods,
+        TypeArgumentSubstitution? substitution,
+        bool deferAlways = false)
+    {
+        var source = FilterAccessible(items: methods, getAccessibility: static method => method.Accessibility);
+        Func<MethodMetadata, CodeMethod> selector = method => CreateMethod(
+            method: substitution is null ? method : substitution.SubstituteMethod(method: method),
+            parent: null);
+        return new Typewriter.CodeModel.MethodCollection(
+            items: deferAlways
+                ? DeferAlways(source: source, selector: selector)
+                : Defer(source: source, selector: selector));
+    }
+
+    private Typewriter.CodeModel.PropertyCollection CreateMemberProperties(
+        IReadOnlyList<PropertyMetadata> properties,
+        TypeArgumentSubstitution? substitution,
+        bool deferAlways = false)
+    {
+        var source = FilterAccessible(items: properties, getAccessibility: static property => property.Accessibility);
+        Func<PropertyMetadata, Typewriter.CodeModel.Property> selector = property => CreateProperty(
+            property: substitution is null ? property : substitution.SubstituteProperty(property: property),
+            parent: null);
+        return new Typewriter.CodeModel.PropertyCollection(
+            items: deferAlways
+                ? DeferAlways(source: source, selector: selector)
+                : Defer(source: source, selector: selector));
+    }
+
+    private Typewriter.CodeModel.StaticReadOnlyFieldCollection CreateMemberStaticReadOnlyFields(
+        IReadOnlyList<StaticReadOnlyFieldMetadata> fields,
+        TypeArgumentSubstitution? substitution,
+        bool deferAlways = false)
+    {
+        var source = FilterAccessible(items: fields, getAccessibility: static field => field.Accessibility);
+        Func<StaticReadOnlyFieldMetadata, CodeStaticReadOnlyField> selector = field => CreateStaticReadOnlyField(
+            field: substitution is null ? field : substitution.SubstituteStaticReadOnlyField(field: field),
+            parent: null);
+        return new Typewriter.CodeModel.StaticReadOnlyFieldCollection(
+            items: deferAlways
+                ? DeferAlways(source: source, selector: selector)
+                : Defer(source: source, selector: selector));
     }
 
     private bool TryResolveType(
@@ -1577,7 +1795,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         baseType = SubstituteTypeArguments(type: type, reference: reference, target: baseType);
 
         return TryResolveType(reference: baseType, metadata: out var baseMetadata)
-            && baseMetadata.Kind == TypeMetadataKind.Class
+            && baseMetadata.Kind is TypeMetadataKind.Class or TypeMetadataKind.Record
                 ? CreateClass(type: baseMetadata, reference: baseType)
                 : new CodeClass
                 {

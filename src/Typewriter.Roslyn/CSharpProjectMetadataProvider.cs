@@ -356,11 +356,11 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
         timer = new MetadataStageTimer(project: project);
         var diagnostics = GetCompilationDiagnostics(
                 compilation: compilation,
-                generatorDiagnostics: generatorDiagnostics,
                 runFullDiagnostics: project.RunFullDiagnostics,
                 cancellationToken: cancellationToken)
             .Where(predicate: diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .Select(selector: ToGenerationDiagnostic)
+            .Concat(second: generatorDiagnostics)
             .ToArray();
 
         timer.Complete(stage: "Diagnostics");
@@ -435,6 +435,13 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
                 })
             .ToArray();
 
+        var generatedTypes = ExtractGeneratedTypes(
+            compilation: compilation,
+            explicitSyntaxTrees: syntaxTrees,
+            sourceTypes: sourceSymbols.Types,
+            extractor: extractor,
+            cancellationToken: cancellationToken);
+
         var metadata = new ProjectMetadata(
             ProjectPath: projectPath,
             SourceFiles: sourceFiles,
@@ -448,6 +455,7 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
                 .Select(selector: item => item.Metadata)
                 .OrderBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
                 .ToArray(),
+            ReferencedTypes = generatedTypes,
         };
 
         timer.Complete(stage: "Metadata extraction");
@@ -458,6 +466,48 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
         {
             SourceTrees = sourceTrees,
         };
+    }
+
+    private static IReadOnlyList<TypeMetadata> ExtractGeneratedTypes(
+        CSharpCompilation compilation,
+        IReadOnlyCollection<SyntaxTree> explicitSyntaxTrees,
+        IReadOnlyCollection<INamedTypeSymbol> sourceTypes,
+        MetadataExtractor extractor,
+        CancellationToken cancellationToken)
+    {
+        if (compilation.SyntaxTrees.Length <= explicitSyntaxTrees.Count)
+        {
+            return [];
+        }
+
+        var explicitTreeSet = new HashSet<SyntaxTree>(collection: explicitSyntaxTrees);
+        var generatedTrees = compilation.SyntaxTrees
+            .Where(predicate: tree => !explicitTreeSet.Contains(item: tree))
+            .ToArray();
+        if (generatedTrees.Length == 0)
+        {
+            return [];
+        }
+
+#pragma warning disable IDE0028
+        var knownSourceTypes = new HashSet<INamedTypeSymbol>(collection: sourceTypes, comparer: SymbolEqualityComparer.Default);
+#pragma warning restore IDE0028
+        var generatedSymbols = extractor.GetSourceSymbols(
+            compilation: compilation,
+            syntaxTrees: generatedTrees,
+            cancellationToken: cancellationToken);
+        return generatedSymbols.Types
+            .Where(predicate: symbol => !knownSourceTypes.Contains(item: symbol))
+            .Select(
+                selector: symbol => new
+                {
+                    HasMetadata = extractor.TryCreateType(symbol: symbol, compilation: compilation, cancellationToken: cancellationToken, metadata: out var metadata),
+                    Metadata = metadata,
+                })
+            .Where(predicate: item => item.HasMetadata)
+            .Select(selector: item => item.Metadata)
+            .OrderBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static IReadOnlyList<MetadataReference> CreateCompilationReferences(
@@ -721,7 +771,7 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
         ProjectLoadResult loadedProject,
         CSharpParseOptions parseOptions,
         CancellationToken cancellationToken,
-        out ImmutableArray<Diagnostic> diagnostics)
+        out IReadOnlyList<GenerationDiagnostic> diagnostics)
     {
         using var loader = new AnalyzerAssemblyLoader();
         var generators = CreateSourceGenerators(analyzerReferences: loadedProject.AnalyzerReferences, loader: loader).ToArray();
@@ -743,13 +793,31 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
             additionalTexts: additionalTexts,
             parseOptions: parseOptions,
             optionsProvider: analyzerConfigOptionsProvider);
-        _ = driver.RunGeneratorsAndUpdateCompilation(
-            compilation: compilation,
-            outputCompilation: out var updatedCompilation,
-            diagnostics: out diagnostics,
-            cancellationToken: cancellationToken);
+        var runResult = driver
+            .RunGenerators(compilation: compilation, cancellationToken: cancellationToken)
+            .GetRunResult();
+        diagnostics = runResult.Diagnostics
+            .Where(predicate: static diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .Select(selector: ToGenerationDiagnostic)
+            .ToArray();
+        if (runResult.GeneratedTrees.Length == 0)
+        {
+            return compilation;
+        }
 
-        return (CSharpCompilation)updatedCompilation;
+        // Re-parse generated text into fresh SyntaxTree instances so GeneratorDriver's internal
+        // ConditionalWeakTable<SyntaxTree, ...> does not root generator assemblies in MetadataCache.
+        var detachedTrees = runResult.GeneratedTrees
+            .Select(
+                selector: tree => CSharpSyntaxTree.ParseText(
+                    text: SourceText.From(
+                        text: tree.GetText(cancellationToken: cancellationToken).ToString(),
+                        encoding: tree.Encoding),
+                    options: tree.Options as CSharpParseOptions ?? parseOptions,
+                    path: tree.FilePath,
+                    cancellationToken: cancellationToken))
+            .ToArray();
+        return compilation.AddSyntaxTrees(trees: detachedTrees);
     }
 
     private static AnalyzerConfigOptionsProvider CreateAnalyzerConfigOptionsProvider(
@@ -843,15 +911,13 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
 
     private static IEnumerable<Diagnostic> GetCompilationDiagnostics(
         CSharpCompilation compilation,
-        ImmutableArray<Diagnostic> generatorDiagnostics,
         bool runFullDiagnostics,
         CancellationToken cancellationToken)
     {
         return runFullDiagnostics
-            ? compilation.GetDiagnostics(cancellationToken: cancellationToken).Concat(second: generatorDiagnostics)
+            ? compilation.GetDiagnostics(cancellationToken: cancellationToken)
             : compilation.GetParseDiagnostics(cancellationToken: cancellationToken)
-                .Concat(second: compilation.GetDeclarationDiagnostics(cancellationToken: cancellationToken))
-                .Concat(second: generatorDiagnostics);
+                .Concat(second: compilation.GetDeclarationDiagnostics(cancellationToken: cancellationToken));
     }
 
     private static GenerationDiagnostic ToGenerationDiagnostic(Diagnostic diagnostic)
@@ -1438,6 +1504,9 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
         {
             private readonly ConcurrentDictionary<string, byte> _dependencyLocations = new(comparer: StringComparer.OrdinalIgnoreCase);
             private readonly ConcurrentDictionary<string, string> _referencePaths = new(comparer: StringComparer.OrdinalIgnoreCase);
+#pragma warning disable IDE0028
+            private readonly Dictionary<string, Assembly> _loadedByPath = new(comparer: StringComparer.OrdinalIgnoreCase);
+#pragma warning restore IDE0028
             private readonly Lock _loadLock = new();
 
             public AnalyzerAssemblyLoadContext()
@@ -1566,7 +1635,7 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
                 {
                     var loadedAssembly = candidateName is null
                         ? FindLoadedAssemblyByPath(assemblyPath: fullPath)
-                        : FindLoadedAssembly(assemblyName: candidateName);
+                        : FindLoadedAssembly(assemblyName: candidateName) ?? FindLoadedAssemblyByPath(assemblyPath: fullPath);
                     if (loadedAssembly is not null)
                     {
                         return loadedAssembly;
@@ -1574,9 +1643,12 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
 
                     try
                     {
-#pragma warning disable SCS0018
-                        return LoadFromAssemblyPath(assemblyPath: fullPath);
-#pragma warning restore SCS0018
+#pragma warning disable SCS0018,SEC0116
+                        using var stream = File.OpenRead(path: fullPath);
+#pragma warning restore SCS0018,SEC0116
+                        var loaded = LoadFromStream(assembly: stream);
+                        _loadedByPath[key: fullPath] = loaded;
+                        return loaded;
                     }
                     catch (FileLoadException) when (candidateName is not null && FindLoadedAssembly(assemblyName: candidateName) is not null)
                     {
@@ -1593,13 +1665,8 @@ public sealed partial class CSharpProjectMetadataProvider : IProjectMetadataProv
                 Assemblies.FirstOrDefault(
                     predicate: assembly => AssemblyName.ReferenceMatchesDefinition(reference: assemblyName, definition: assembly.GetName()));
 
-            private Assembly? FindLoadedAssemblyByPath(string assemblyPath)
-            {
-                var fullPath = Path.GetFullPath(path: assemblyPath);
-                return Assemblies.FirstOrDefault(
-                    predicate: assembly => assembly.Location.Length > 0
-                                           && string.Equals(a: Path.GetFullPath(path: assembly.Location), b: fullPath, comparisonType: StringComparison.OrdinalIgnoreCase));
-            }
+            private Assembly? FindLoadedAssemblyByPath(string assemblyPath) =>
+                _loadedByPath.GetValueOrDefault(key: Path.GetFullPath(path: assemblyPath));
         }
     }
 }

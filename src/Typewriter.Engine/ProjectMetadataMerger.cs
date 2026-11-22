@@ -34,6 +34,14 @@ internal static class ProjectMetadataMerger
             .ThenBy(keySelector: type => type.AssemblyName, comparer: StringComparer.Ordinal)
             .ToArray();
 
+        var referencedTypes = project.ReferencedTypes
+            .Concat(second: includedProjects.SelectMany(selector: included => included.ReferencedTypes))
+            .GroupBy(keySelector: GetReferencedTypeIdentity, comparer: StringComparer.Ordinal)
+            .Select(selector: group => group.First())
+            .OrderBy(keySelector: type => type.FullName, comparer: StringComparer.Ordinal)
+            .ThenBy(keySelector: type => type.AssemblyName, comparer: StringComparer.Ordinal)
+            .ToArray();
+
         return new ProjectMetadata(
             ProjectPath: project.ProjectPath,
             SourceFiles: sourceFiles,
@@ -41,6 +49,7 @@ internal static class ProjectMetadataMerger
             Diagnostics: project.Diagnostics)
         {
             Delegates = delegates,
+            ReferencedTypes = referencedTypes,
         };
     }
 
@@ -49,4 +58,7 @@ internal static class ProjectMetadataMerger
 
     private static string GetMetadataIdentity(DelegateMetadata type) =>
         string.Concat(str0: type.FullName, str1: "\u001F", str2: type.AssemblyName);
+
+    private static string GetReferencedTypeIdentity(TypeMetadata type) =>
+        $"{type.FullName}\u001F{type.AssemblyName}\u001F{type.TypeParameters.Count.ToString(provider: System.Globalization.CultureInfo.InvariantCulture)}";
 }

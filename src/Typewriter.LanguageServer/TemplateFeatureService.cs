@@ -1239,6 +1239,8 @@ internal sealed class TemplateFeatureService : IDisposable
         var metadataProvider = new CSharpProjectMetadataProvider();
         var sourceFiles = new List<SourceFileMetadata>();
         var types = new List<TypeMetadata>();
+        var referencedTypes = new List<TypeMetadata>();
+        var delegates = new List<DelegateMetadata>();
         var diagnostics = new List<GenerationDiagnostic>();
         foreach (var projectPath in projectPaths)
         {
@@ -1250,6 +1252,8 @@ internal sealed class TemplateFeatureService : IDisposable
                 cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             sourceFiles.AddRange(collection: metadata.SourceFiles);
             types.AddRange(collection: metadata.Types);
+            referencedTypes.AddRange(collection: metadata.ReferencedTypes);
+            delegates.AddRange(collection: metadata.Delegates);
             diagnostics.AddRange(collection: metadata.Diagnostics);
         }
 
@@ -1257,7 +1261,11 @@ internal sealed class TemplateFeatureService : IDisposable
             ProjectPath: projectPaths[index: 0],
             SourceFiles: sourceFiles,
             Types: types,
-            Diagnostics: diagnostics);
+            Diagnostics: diagnostics)
+        {
+            Delegates = delegates,
+            ReferencedTypes = referencedTypes,
+        };
     }
 
 #pragma warning disable CC0091

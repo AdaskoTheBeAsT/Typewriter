@@ -15,7 +15,7 @@ internal sealed class DeclarationSourceFileIndex(ProjectMetadata metadata)
     private static IReadOnlyDictionary<string, SourceFileMetadata> CreateFiles(ProjectMetadata metadata)
     {
         var typesByPath = new Dictionary<string, List<TypeMetadata>>(comparer: StringComparer.OrdinalIgnoreCase);
-        foreach (var type in metadata.Types)
+        foreach (var type in metadata.Types.Concat(second: metadata.ReferencedTypes))
         {
             var paths = type.FileLocations
                 .Append(element: type.Location?.Path ?? string.Empty)

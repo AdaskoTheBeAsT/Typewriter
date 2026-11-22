@@ -51,7 +51,7 @@ internal sealed class ProjectMetadataIndex
     {
         ArgumentNullException.ThrowIfNull(argument: metadata);
 
-        var indexedTypes = EnumerateIndexedTypes(types: metadata.Types);
+        var indexedTypes = EnumerateIndexedTypes(types: CombineIndexedTypes(metadata: metadata));
         var allTypes = indexedTypes.Select(selector: static entry => entry.Type).ToArray();
         return new ProjectMetadataIndex(
             metadata: metadata,
@@ -204,6 +204,32 @@ internal sealed class ProjectMetadataIndex
         string prefix,
         int arity) =>
         $"{prefix}`{arity.ToString(provider: CultureInfo.InvariantCulture)}";
+
+    private static IReadOnlyList<TypeMetadata> CombineIndexedTypes(ProjectMetadata metadata)
+    {
+        if (metadata.ReferencedTypes.Count == 0)
+        {
+            return metadata.Types;
+        }
+
+#pragma warning disable IDE0028
+        var seen = new HashSet<(string FullName, string AssemblyName, int Arity)>();
+#pragma warning restore IDE0028
+        var combined = new List<TypeMetadata>(capacity: metadata.Types.Count + metadata.ReferencedTypes.Count);
+        foreach (var type in metadata.Types)
+        {
+            _ = seen.Add(item: (type.FullName, type.AssemblyName, type.TypeParameters.Count));
+            combined.Add(item: type);
+        }
+
+        foreach (var referencedType in metadata.ReferencedTypes.Where(predicate: referencedType =>
+                     seen.Add(item: (referencedType.FullName, referencedType.AssemblyName, referencedType.TypeParameters.Count))))
+        {
+            combined.Add(item: referencedType);
+        }
+
+        return combined;
+    }
 
     private static IReadOnlyList<IndexedTypeEntry> EnumerateIndexedTypes(IReadOnlyList<TypeMetadata> types)
     {
