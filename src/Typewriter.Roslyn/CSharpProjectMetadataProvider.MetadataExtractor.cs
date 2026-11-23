@@ -79,7 +79,8 @@ public sealed partial class CSharpProjectMetadataProvider
             }
 
             metadata = null!;
-            if (symbol.DeclaredAccessibility is not (Accessibility.Public or Accessibility.Internal)
+            var accessibility = GetEffectiveTypeAccessibility(symbol: symbol);
+            if (accessibility is not (MetadataAccessibility.Public or MetadataAccessibility.Internal)
                 || symbol.IsImplicitlyDeclared)
             {
                 return false;
@@ -109,7 +110,7 @@ public sealed partial class CSharpProjectMetadataProvider
                 FullName: GetFullName(symbol: symbol),
                 Namespace: GetNamespace(symbol: symbol),
                 Kind: kind.Value,
-                Accessibility: MapAccessibility(accessibility: symbol.DeclaredAccessibility),
+                Accessibility: accessibility,
                 Properties: GetProperties(symbol: symbol, members: members).ToArray(),
                 Attributes: GetAttributes(attributes: symbol.GetAttributes()).ToArray(),
                 BaseTypes: GetBaseTypes(symbol: symbol).ToArray(),
@@ -152,8 +153,9 @@ public sealed partial class CSharpProjectMetadataProvider
             out DelegateMetadata metadata)
         {
             metadata = null!;
+            var accessibility = GetEffectiveTypeAccessibility(symbol: symbol);
             if (symbol.TypeKind != Microsoft.CodeAnalysis.TypeKind.Delegate
-                || symbol.DeclaredAccessibility is not (Accessibility.Public or Accessibility.Internal)
+                || accessibility is not (MetadataAccessibility.Public or MetadataAccessibility.Internal)
                 || symbol.IsImplicitlyDeclared)
             {
                 return false;
@@ -168,7 +170,7 @@ public sealed partial class CSharpProjectMetadataProvider
             metadata = new DelegateMetadata(
                 Name: symbol.Name,
                 FullName: fullName,
-                Accessibility: MapAccessibility(accessibility: symbol.DeclaredAccessibility),
+                Accessibility: accessibility,
                 ReturnType: returnType,
                 IsGeneric: symbol.IsGenericType,
                 Parameters: invokeMethod is null ? [] : GetParameters(method: invokeMethod, methodFullName: fullName).ToArray(),
@@ -298,6 +300,32 @@ public sealed partial class CSharpProjectMetadataProvider
             };
         }
 
+        private static MetadataAccessibility GetEffectiveTypeAccessibility(INamedTypeSymbol symbol)
+        {
+            var accessibility = MetadataAccessibility.Public;
+            for (var current = symbol; current is not null; current = current.ContainingType)
+            {
+                if (current.DeclaredAccessibility == Accessibility.Internal)
+                {
+                    accessibility = MetadataAccessibility.Internal;
+                }
+                else if (current.DeclaredAccessibility != Accessibility.Public)
+                {
+                    return MapAccessibility(accessibility: current.DeclaredAccessibility);
+                }
+            }
+
+            return accessibility;
+        }
+
+        private static string GetTypeParameterKey(ITypeParameterSymbol symbol)
+        {
+            var owner = symbol.ContainingSymbol.OriginalDefinition;
+            var ownerId = owner.GetDocumentationCommentId()
+                ?? owner.ToDisplayString(format: SymbolDisplayFormat.FullyQualifiedFormat);
+            return $"{GetAssemblyName(symbol: owner)}:{ownerId}:{symbol.Ordinal.ToString(provider: CultureInfo.InvariantCulture)}";
+        }
+
         private static SourceLocation? GetSourceLocation(ISymbol symbol)
         {
             var location = symbol.Locations.FirstOrDefault(predicate: candidate => candidate.IsInSource);
@@ -355,6 +383,7 @@ public sealed partial class CSharpProjectMetadataProvider
             return symbols.Select(selector: symbol => new TypeParameterMetadata(Name: symbol.Name)
             {
                 FullName = symbol.ToDisplayString(format: SymbolDisplayFormat.CSharpErrorMessageFormat),
+                Key = GetTypeParameterKey(symbol: symbol),
                 Documentation = GetDocComment(symbol: symbol)?.Summary,
             });
         }
@@ -981,6 +1010,8 @@ public sealed partial class CSharpProjectMetadataProvider
             {
                 Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
                 AssemblyName = GetAssemblyName(symbol: symbol),
+                Accessibility = symbol is INamedTypeSymbol named ? GetEffectiveTypeAccessibility(symbol: named) : null,
+                TypeParameterKey = symbol is ITypeParameterSymbol parameter ? GetTypeParameterKey(symbol: parameter) : null,
                 ContainingType = GetContainingTypeReference(symbol: symbol),
                 FileLocations = GetFileLocations(symbol: symbol),
                 Interfaces = GetInterfaceReferences(symbol: symbol),
@@ -1051,6 +1082,8 @@ public sealed partial class CSharpProjectMetadataProvider
             {
                 Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
                 AssemblyName = GetAssemblyName(symbol: symbol),
+                Accessibility = symbol is INamedTypeSymbol named ? GetEffectiveTypeAccessibility(symbol: named) : null,
+                TypeParameterKey = symbol is ITypeParameterSymbol parameter ? GetTypeParameterKey(symbol: parameter) : null,
                 ContainingType = GetContainingTypeReference(symbol: symbol),
                 FileLocations = GetFileLocations(symbol: symbol),
                 Interfaces = GetInterfaceReferences(symbol: symbol),
@@ -1128,6 +1161,8 @@ public sealed partial class CSharpProjectMetadataProvider
             {
                 Arity = symbol is INamedTypeSymbol namedSymbol ? namedSymbol.Arity : 0,
                 AssemblyName = GetAssemblyName(symbol: symbol),
+                Accessibility = symbol is INamedTypeSymbol named ? GetEffectiveTypeAccessibility(symbol: named) : null,
+                TypeParameterKey = symbol is ITypeParameterSymbol parameter ? GetTypeParameterKey(symbol: parameter) : null,
                 ContainingType = GetContainingTypeReference(symbol: symbol),
                 FileLocations = GetFileLocations(symbol: symbol),
             };

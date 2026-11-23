@@ -75,6 +75,7 @@
   - [🔨 Building from Source](#-building-from-source)
   - [🗺 Project Status and Roadmap](#-project-status-and-roadmap)
   - [Changelog](#changelog)
+    - [4.17.0](#4170)
     - [4.16.0](#4160)
     - [4.15.0](#4150)
     - [4.14.0](#4140)
@@ -1579,6 +1580,12 @@ dotnet build src/Typewriter.VisualStudio/Typewriter.VisualStudio.csproj --config
 ---
 
 ## Changelog
+
+### 4.17.0
+
+- Restored public-only template collections by default ([#145](https://github.com/AdaskoTheBeAsT/Typewriter/issues/145)). If a template intentionally uses `internal` declarations, call `settings.IncludeInternals()` or set `"output": { "includeInternals": true }` in `typewriter.json`.
+- When upgrading or opting out, remove any previously generated per-file outputs for internal-only sources from your generated output directory. Typewriter skips those outputs now but does not delete files from earlier runs.
+- Restored member and base-type traversal on resolved references, including parameter types and source-generated DTOs ([#146](https://github.com/AdaskoTheBeAsT/Typewriter/issues/146)).
 
 ### 4.16.0
 

@@ -85,6 +85,32 @@ public sealed class Issue146ParameterTypeMembersTests
     }
 
     [Fact]
+    public void RenderAllowsExplicitSystemDebuggerImport()
+    {
+        const string TemplateText = """
+            ${
+                using static System.Diagnostics.Debugger;
+
+                string Inspect(Class c)
+                {
+                    if (IsAttached) { Break(); }
+                    return c.Name;
+                }
+            }
+            $Classes(Name=OrdersController)[$Inspect]
+            """;
+        var diagnostics = new List<GenerationDiagnostic>();
+        var document = TemplateDocument.Parse(
+            template: new TemplateFile(Path: "DebuggerImport.tst", Content: TemplateText),
+            diagnostics: diagnostics);
+        var renderer = new TemplateRenderer(typeMapper: new TypeScriptTypeMapper());
+        var output = renderer.Render(template: document, metadata: CreateControllerHierarchyMetadata(), diagnostics: diagnostics);
+
+        diagnostics.Should().BeEmpty();
+        output.Trim().Should().Be("OrdersController");
+    }
+
+    [Fact]
     public void TryAdaptSubstitutesGenericTypeArgumentsAcrossParameterTypeAndBaseClassMembers()
     {
         var metadata = CreateGenericParameterMetadata();

@@ -1558,6 +1558,142 @@ public sealed class CliIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task RunAsyncGenerateFiltersEffectivelyInternalNestedTypesAndReferencedMembers()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                sourceContent: """
+                               namespace Sample;
+
+                               internal class Outer
+                               {
+                                   public class Nested { public string Secret { get; set; } = ""; }
+                               }
+
+                               public class DtoKindAttribute(System.Type value) : System.Attribute
+                               {
+                                   public System.Type Value => value;
+                               }
+
+                               [DtoKind(typeof(Outer.Nested))]
+                               public class Contract { }
+                               """);
+            const string TemplateBody = """
+                roots=[$Classes[$Name][,]]
+                direct=[$Classes(Name=Contract)[$Attributes[$Arguments[$TypeValue[$Properties[$Name][,]]]]]]
+                helper=[$Classes(Name=Contract)[$MemberNames]]
+                """;
+            const string TemplateHelpers = """
+                ${
+                    string MemberNames(Class c) => string.Join(",", c.Attributes.Single().Arguments.Single().TypeValue.Properties.Select(p => p.Name));
+                    Template(Settings settings) { settings.IncludeInternals(OPT_IN); }
+                }
+                """;
+            var generatedPath = Path.Combine(path1: directory, path2: "models.ts");
+            foreach (var includeInternals in new[] { "false", "true" })
+            {
+                await File.WriteAllTextAsync(
+                    path: project.TemplatePath,
+                    contents: "// output: models.ts\n"
+                        + TemplateHelpers.Replace(oldValue: "OPT_IN", newValue: includeInternals, comparisonType: StringComparison.Ordinal)
+                        + "\n" + TemplateBody);
+                var result = await RunCliAsync(
+                    "generate",
+                    "--workspace",
+                    directory,
+                    "--project",
+                    project.ProjectPath,
+                    "--template",
+                    project.TemplatePath,
+                    "--framework",
+                    "net10.0",
+                    "--output",
+                    "json");
+                result.ExitCode.Should().Be(0);
+                var content = await File.ReadAllTextAsync(path: generatedPath);
+                if (includeInternals == "true")
+                {
+                    content.Should().Contain("roots=[Contract,DtoKindAttribute,Outer,Nested]");
+                    content.Should().Contain("direct=[Secret]").And.Contain("helper=[Secret]");
+                }
+                else
+                {
+                    content.Should().Contain("roots=[Contract,DtoKindAttribute]");
+                    content.Should().Contain("direct=[]").And.Contain("helper=[]");
+                }
+            }
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncGenerateSubstitutesGenericMembersByParameterIdentityAcrossContainingTypes()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                sourceContent: """
+                               namespace Sample;
+
+                               public class T { }
+                               public class Box<T>
+                               {
+                                   public T Value { get; set; } = default!;
+                                   public global::Sample.T Unrelated { get; set; } = new();
+                                   public Outer<T>.Inner Nested { get; set; } = new();
+                               }
+
+                               public class Outer<T>
+                               {
+                                   public class Inner { public T Value { get; set; } = default!; }
+                               }
+
+                               public class Contracts
+                               {
+                                   public void Submit(Box<string> box, Outer<int>.Inner inner) { }
+                               }
+                               """,
+                templateContent: """
+                                 // output: models.ts
+                                 ${
+                                     string Members(Parameter p) => string.Join(",", p.Type.Properties
+                                         .Where(x => x.Name != "Nested").Select(x => x.Name + "=" + x.Type.Name));
+                                 }
+                                 $Classes(Name=Contracts)[$Methods[$Parameters[$Name:helper=[$Members] direct=[$Type[$Properties(Name=Value)[$Name=$Type]$Properties(Name=Unrelated)[,$Name=$Type]]] nested=[$Type[$Properties(Name=Nested)[$Type[$Properties[$Name=$Type]]]]]
+                                 ]]]
+                                 """);
+            var result = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+            result.ExitCode.Should().Be(0);
+            var content = await File.ReadAllTextAsync(path: Path.Combine(path1: directory, path2: "models.ts"));
+            content.Should().Contain("box:helper=[Value=string,Unrelated=T] direct=[Value=string,Unrelated=T] nested=[Value=string]");
+            content.Should().Contain("inner:helper=[Value=number] direct=[Value=number] nested=[]");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
     private static async Task<CliRawRunResult> RunWatchScenarioAsync(
         string[] args,
         Func<CancellationToken, Task> scenario)

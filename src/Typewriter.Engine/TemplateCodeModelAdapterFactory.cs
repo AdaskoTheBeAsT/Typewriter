@@ -366,12 +366,6 @@ internal sealed class TemplateCodeModelAdapterFactory
             : $"{enumName}.{enumValues[index: 0].Name}";
     }
 
-    private static TypeMetadataReference SubstituteTypeArguments(
-        TypeMetadata type,
-        TypeMetadataReference? reference,
-        TypeMetadataReference target) =>
-        TypeArgumentSubstitution.Create(type: type, reference: reference)?.Substitute(target: target) ?? target;
-
     private static string GetPrimaryFilePath(TypeMetadata type) =>
         !string.IsNullOrWhiteSpace(value: type.Location?.Path)
             ? type.Location.Path
@@ -429,6 +423,12 @@ internal sealed class TemplateCodeModelAdapterFactory
             ? []
             : Typewriter.CodeModel.DeferredItems<T>.Create(source: source, selector: selector);
 
+    private TypeMetadataReference SubstituteTypeArguments(
+        TypeMetadata type,
+        TypeMetadataReference? reference,
+        TypeMetadataReference target) =>
+        TypeArgumentSubstitution.Create(type: type, reference: reference, metadataIndex: _metadataIndex)?.Substitute(target: target) ?? target;
+
     private Typewriter.CodeModel.DocComment? CreateDocComment(
         DocCommentMetadata? docComment,
         Typewriter.CodeModel.Item? parent)
@@ -462,8 +462,9 @@ internal sealed class TemplateCodeModelAdapterFactory
         || (accessibility == MetadataAccessibility.Internal && _settings.IncludeInternalsGeneration);
 
     private bool IsAccessibleTypeReference(TypeMetadataReference reference) =>
-        !TryResolveType(reference: reference, metadata: out var metadata)
-        || IsAccessible(accessibility: metadata.Accessibility);
+        TryResolveType(reference: reference, metadata: out var metadata)
+            ? IsAccessible(accessibility: metadata.Accessibility)
+            : reference.Accessibility is not { } accessibility || IsAccessible(accessibility: accessibility);
 
     private IEnumerable<T> FilterAccessible<T>(
         IEnumerable<T> items,
@@ -663,7 +664,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             return CreateType(type: reference, runtimeType: runtimeType);
         }
 
-        if (!TryResolveType(reference: reference, metadata: out var type))
+        if (!TryResolveType(reference: reference, metadata: out var type) || !IsAccessible(accessibility: type.Accessibility))
         {
             return null;
         }
@@ -703,7 +704,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var classType = reference is null ? CreateType(type: type) : CreateType(type: reference);
-        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference);
+        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference, metadataIndex: _metadataIndex);
         var item = new CodeClass
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
@@ -763,7 +764,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var recordType = reference is null ? CreateType(type: type) : CreateType(type: reference);
-        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference);
+        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference, metadataIndex: _metadataIndex);
         var item = new CodeRecord
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
@@ -822,7 +823,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var interfaceType = reference is null ? CreateType(type: type) : CreateType(type: reference);
-        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference);
+        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference, metadataIndex: _metadataIndex);
         var item = new CodeInterface
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
@@ -860,7 +861,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference? reference)
     {
         var structType = reference is null ? CreateType(type: type) : CreateType(type: reference);
-        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference);
+        var substitution = TypeArgumentSubstitution.Create(type: type, reference: reference, metadataIndex: _metadataIndex);
         var item = new CodeStruct
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
@@ -993,7 +994,7 @@ internal sealed class TemplateCodeModelAdapterFactory
             decimalType: _mappingSettings.DecimalTypeGeneration,
             guidType: _mappingSettings.GuidTypeGeneration,
             runtimeType: runtimeType);
-        return TryResolveType(reference: type, metadata: out var typeMetadata)
+        return TryResolveType(reference: type, metadata: out var typeMetadata) && IsAccessible(accessibility: typeMetadata.Accessibility)
             ? CreateResolvedTypeReference(
                 type: type,
                 typeMetadata: typeMetadata,
@@ -1004,18 +1005,20 @@ internal sealed class TemplateCodeModelAdapterFactory
                 type: type,
                 mappedName: mappedName,
                 typeArguments: typeArguments,
-                runtimeType: runtimeType);
+                runtimeType: runtimeType,
+                metadata: typeMetadata);
     }
 
     private CodeType CreateUnresolvedTypeReference(
         TypeMetadataReference type,
         string mappedName,
         Typewriter.CodeModel.TypeCollection typeArguments,
-        FrontendRuntimeTypeKind runtimeType)
+        FrontendRuntimeTypeKind runtimeType,
+        TypeMetadata? metadata)
     {
-        var fileLocations = ResolveFileLocations(type: type, metadata: null);
+        var fileLocations = ResolveFileLocations(type: type, metadata: metadata);
         var item = new MappedCodeType(
-            interfacesFactory: () => LiveFactory.CaptureFactory().CreateInterfaces(reference: type, metadata: null))
+            interfacesFactory: () => LiveFactory.CaptureFactory().CreateInterfaces(reference: type, metadata: metadata))
         {
             AssemblyName = ResolveAssemblyName(assemblyName: type.AssemblyName),
             Name = GetLegacyTypeName(mappedName: mappedName),
@@ -1024,16 +1027,16 @@ internal sealed class TemplateCodeModelAdapterFactory
             ElementType = _canDefer || type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType),
             FileLocations = fileLocations,
             IsDate = type.IsDateLike,
-            IsDefined = fileLocations.Count > 0,
+            IsDefined = metadata is not null || fileLocations.Count > 0,
             IsDictionary = type.IsDictionary,
             IsDynamic = IsDynamic(type: type),
-            IsEnum = type.IsEnum,
+            IsEnum = type.IsEnum || metadata?.Kind == TypeMetadataKind.Enum,
             IsEnumerable = type.IsCollection,
             IsGuid = type.FullName.Equals(value: "System.Guid", comparisonType: StringComparison.Ordinal),
             IsGeneric = type.Arity > 0,
             IsNullable = type.IsNullable,
             IsPrimitive = IsPrimitiveType(type: type),
-            IsStruct = false,
+            IsStruct = metadata?.Kind == TypeMetadataKind.Struct,
             IsTask = IsTaskLike(fullName: type.FullName),
             IsTimeSpan = type.FullName.Equals(value: "System.TimeSpan", comparisonType: StringComparison.Ordinal),
             IsValueTuple = type.IsValueTuple,
@@ -1050,6 +1053,11 @@ internal sealed class TemplateCodeModelAdapterFactory
             item.SetElementTypeFactory(elementTypeFactory: () => type.ElementType is null ? null : CreateType(type: type.ElementType, runtimeType: runtimeType));
         }
 
+        if (metadata is not null && string.IsNullOrWhiteSpace(value: metadata.ContainingTypeFullName))
+        {
+            SetTypeParent(item: item, type: metadata);
+        }
+
         return AttachChildren(item: item, attributes: item.Attributes, docComment: item.DocComment, childCollections: [item.TupleElements]);
     }
 
@@ -1062,7 +1070,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         FrontendRuntimeTypeKind runtimeType)
     {
         var memberFactory = LiveFactory.CaptureFactory();
-        var substitution = TypeArgumentSubstitution.Create(type: typeMetadata, reference: type);
+        var substitution = TypeArgumentSubstitution.Create(type: typeMetadata, reference: type, metadataIndex: _metadataIndex);
         var item = new MappedCodeType(
             interfacesFactory: () => memberFactory.CreateInterfaces(reference: type, metadata: typeMetadata))
         {
@@ -1542,6 +1550,12 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadataReference reference,
         TypeMetadata? metadata)
     {
+        if ((metadata?.Accessibility ?? reference.Accessibility) is { } accessibility
+            && !IsAccessible(accessibility: accessibility))
+        {
+            return new Typewriter.CodeModel.InterfaceCollection();
+        }
+
         if (reference.Interfaces.Count > 0)
         {
             return new Typewriter.CodeModel.InterfaceCollection(
@@ -1646,6 +1660,7 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         return _metadataIndex.TryResolveParentType(fullName: type.ContainingTypeFullName, item: type, metadata: out var containingType)
             && containingType.Kind == TypeMetadataKind.Class
+            && IsAccessible(accessibility: containingType.Accessibility)
                 ? CreateShallowClass(type: containingType)
                 : null;
     }
@@ -1654,6 +1669,7 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         return _metadataIndex.TryResolveParentType(fullName: type.ContainingTypeFullName, item: type, metadata: out var containingType)
             && containingType.Kind == TypeMetadataKind.Record
+            && IsAccessible(accessibility: containingType.Accessibility)
                 ? CreateShallowRecord(type: containingType)
                 : null;
     }
@@ -1662,6 +1678,7 @@ internal sealed class TemplateCodeModelAdapterFactory
     {
         return _metadataIndex.TryResolveParentType(fullName: type.ContainingTypeFullName, item: type, metadata: out var containingType)
             && containingType.Kind == TypeMetadataKind.Struct
+            && IsAccessible(accessibility: containingType.Accessibility)
                 ? CreateShallowStruct(type: containingType)
                 : null;
     }
@@ -1786,7 +1803,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadata type,
         TypeMetadataReference? reference = null)
     {
-        var baseType = type.BaseTypes.FirstOrDefault(predicate: candidate => !IsInterfaceReference(reference: candidate));
+        var baseType = type.BaseTypes.FirstOrDefault(predicate: candidate => !IsInterfaceReference(reference: candidate) && IsAccessibleTypeReference(reference: candidate));
         if (baseType is null)
         {
             return null;
@@ -1813,7 +1830,7 @@ internal sealed class TemplateCodeModelAdapterFactory
         TypeMetadata type,
         TypeMetadataReference? reference = null)
     {
-        var baseType = type.BaseTypes.FirstOrDefault(predicate: IsRecordBaseReference);
+        var baseType = type.BaseTypes.FirstOrDefault(predicate: candidate => IsRecordBaseReference(reference: candidate) && IsAccessibleTypeReference(reference: candidate));
         if (baseType is null)
         {
             return null;

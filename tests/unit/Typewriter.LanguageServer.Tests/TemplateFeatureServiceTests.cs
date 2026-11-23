@@ -828,6 +828,64 @@ public sealed class TemplateFeatureServiceTests
     }
 
     [Fact]
+    public async Task GetCompletionsAsyncUsesDefaultVisibilityWhileConfigurationIsInvalid()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(directory: directory);
+            await File.WriteAllTextAsync(
+                path: Path.Combine(path1: directory, path2: "Models", path3: "Internal.cs"),
+                contents: "namespace Sample; internal class InternalModel { }");
+            var configurationPath = Path.Combine(path1: directory, path2: "typewriter.json");
+            await File.WriteAllTextAsync(path: configurationPath, contents: """{"output":""");
+            var settings = CreateSettings(directory: directory, projectPath: project.ProjectPath);
+            var document = CreateDocument(path: project.TemplatePath, text: "$");
+            using var service = new TemplateFeatureService();
+
+            var fallback = await service.GetCompletionsAsync(
+                document: document,
+                settings: settings,
+                position: new LspPosition(Line: 0, Character: 1),
+                cancellationToken: CancellationToken.None);
+            fallback.Items.Should().Contain(item => item.Label == "Customer");
+            fallback.Items.Should().NotContain(item => item.Label == "InternalModel");
+
+            await File.WriteAllTextAsync(path: configurationPath, contents: """{"output":{"includeInternals":true}}""");
+            var configured = await service.GetCompletionsAsync(
+                document: document,
+                settings: settings,
+                position: new LspPosition(Line: 0, Character: 1),
+                cancellationToken: CancellationToken.None);
+            configured.Items.Should().Contain(item => item.Label == "InternalModel");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public void EmbeddedCSharpDoesNotAddLegacyBreakImportWhenDebuggerIsExplicitlyImported()
+    {
+        const string Template = """
+            ${
+                using static global::System.Diagnostics.Debugger;
+                string Inspect(Class c)
+                {
+                    if (IsAttached) { Break(); }
+                    return c.Name;
+                }
+            }
+            """;
+
+        var document = EmbeddedCSharpDocument.Create(templateText: Template);
+        document.Should().NotBeNull();
+        document.Source.Should().Contain("using static global::System.Diagnostics.Debugger;");
+        document.Source.Should().NotContain("using static Typewriter.VisualStudio.TemplateDebugging;");
+    }
+
+    [Fact]
     public async Task EmbeddedCSharpHelperSupportsBreakAndParameterTypeMembersIssue146()
     {
         var directory = CreateProjectDirectory();

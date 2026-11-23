@@ -27,7 +27,6 @@ internal sealed class EmbeddedCSharpDocument
         "using Typewriter.Extensions.Types;",
         "using Typewriter.Extensions.WebApi;",
         "using Typewriter.VisualStudio;",
-        "using static Typewriter.VisualStudio.TemplateDebugging;",
         "using Attribute = Typewriter.CodeModel.Attribute;",
         "using Class = Typewriter.CodeModel.Class;",
         "using Constant = Typewriter.CodeModel.Constant;",
@@ -70,6 +69,7 @@ internal sealed class EmbeddedCSharpDocument
             CollectUsingDirectives(templateText: templateText, region: region, usings: usings);
         }
 
+        TemplateRuntimeCompiler.AddDefaultTemplateDebuggingImport(usings: usings);
         var source = new StringBuilder();
         var mappings = new List<EmbeddedSpanMapping>();
         source.Append(value: "#define ").Append(value: TemplateRuntimeCompiler.PreprocessorSymbol).Append(value: '\n');
