@@ -377,6 +377,7 @@ internal static class TypewriterCli
                     {
                         result.Success,
                         DurationMs = (long)result.Duration.TotalMilliseconds,
+                        result.DeletedFiles,
                         GeneratedFiles = result.GeneratedFiles.Select(
                             selector: file => new
                             {
@@ -393,6 +394,11 @@ internal static class TypewriterCli
         foreach (var diagnostic in result.Diagnostics)
         {
             Console.Error.WriteLine(value: FormatDiagnostic(diagnostic: diagnostic));
+        }
+
+        foreach (var path in result.DeletedFiles)
+        {
+            Console.WriteLine(value: $"deleted: {path}");
         }
 
         foreach (var file in result.GeneratedFiles)

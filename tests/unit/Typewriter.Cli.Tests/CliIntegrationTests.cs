@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using AwesomeAssertions;
+using Typewriter.Engine;
 using Xunit;
 
 namespace Typewriter.Cli.Tests;
@@ -46,6 +48,7 @@ public sealed class CliIntegrationTests
             output.GetProperty(propertyName: "newline").GetString().Should().Be("lf");
             output.GetProperty(propertyName: "encoding").GetString().Should().Be("utf-8");
             output.GetProperty(propertyName: "writeOnlyWhenChanged").GetBoolean().Should().BeTrue();
+            output.GetProperty(propertyName: "cleanStaleFiles").GetBoolean().Should().BeTrue();
             output.GetProperty(propertyName: "dryRun").GetBoolean().Should().BeFalse();
             output.GetProperty(propertyName: "fileNameConvention").GetString().Should().Be("preserve");
             output.GetProperty(propertyName: "dateLibrary").GetString().Should().Be("legacy");
@@ -1551,6 +1554,145 @@ public sealed class CliIntegrationTests
             configuredContent.Should().Contain("auditStamp: string;");
             configuredContent.Should().Contain("internalToken: string;");
             configuredContent.Should().Contain("export interface InternalState");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncCleanupUsesTypewriterHeaderForConventionalLegacyOutputs()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                templateContent: "$Classes[export interface $Name {}]");
+            var models = Path.GetDirectoryName(path: project.SourcePath)!;
+            await File.WriteAllTextAsync(path: Path.Combine(path1: models, path2: "InternalModel.cs"), contents: "internal class InternalModel {}");
+            await File.WriteAllTextAsync(path: Path.Combine(path1: models, path2: "ManualModel.cs"), contents: "internal class ManualModel {}");
+            var stalePath = Path.Combine(path1: directory, path2: "InternalModel.ts");
+            var manualPath = Path.Combine(path1: directory, path2: "ManualModel.ts");
+            var unrelatedPath = Path.Combine(path1: directory, path2: "Unrelated.ts");
+
+            // No manifest. The old file has a BOM, CRLF, and manual edits below the intact header.
+            await File.WriteAllTextAsync(
+                path: stalePath,
+                contents: GeneratedFileHeader.Value.Replace(oldValue: "\n", newValue: "\r\n", comparisonType: StringComparison.Ordinal) + "\r\n// edited",
+                encoding: new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            await File.WriteAllTextAsync(path: manualPath, contents: GeneratedFileHeader.Value + "-not-the-typewriter-header\n");
+            await File.WriteAllTextAsync(path: unrelatedPath, contents: GeneratedFileHeader.Value + "\n");
+
+            var result = await RunCliAsync("generate", "--workspace", directory, "--template", project.TemplatePath, "--output", "json");
+
+            result.ExitCode.Should().Be(0);
+            using var json = JsonDocument.Parse(json: result.StandardOutput);
+            ReadStringArray(element: json.RootElement.GetProperty(propertyName: "deletedFiles")).Should().Equal(stalePath);
+            File.Exists(path: stalePath).Should().BeFalse();
+            File.Exists(path: manualPath).Should().BeTrue();
+            File.Exists(path: unrelatedPath).Should().BeTrue();
+            File.Exists(path: Path.Combine(path1: directory, path2: "Customer.ts")).Should().BeTrue();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncCleanupRequiresSuccessfulFullGenerationAndOptOutStillRegenerates()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                templateContent: """
+                                 ${
+                                     Template(Settings settings) {
+                                         settings.OutputFilenameFactory = file => "mapped-" + file.Classes.First().Name + ".ts";
+                                     }
+                                 }
+                                 $Classes[export interface $Name {}]
+                                 """);
+            var sourceDirectory = Path.GetDirectoryName(path: project.SourcePath)!;
+            await File.WriteAllTextAsync(path: Path.Combine(path1: sourceDirectory, path2: "InternalModel.cs"), contents: "internal class InternalModel {}");
+            await File.WriteAllTextAsync(path: Path.Combine(path1: sourceDirectory, path2: "ManualModel.cs"), contents: "internal class ManualModel {}");
+            var configurationPath = Path.Combine(path1: directory, path2: ConfigurationFileName);
+            await File.WriteAllTextAsync(path: configurationPath, contents: """{"output":{"includeInternals":true}}""");
+            var initial = await RunCliAsync("generate", "--workspace", directory, "--output", "json");
+            initial.ExitCode.Should().Be(0);
+            var stalePath = Path.Combine(path1: directory, path2: "mapped-InternalModel.ts");
+            var manualPath = Path.Combine(path1: directory, path2: "mapped-ManualModel.ts");
+            var activePath = Path.Combine(path1: directory, path2: "mapped-Customer.ts");
+            File.Exists(path: stalePath).Should().BeTrue();
+            const string ManualContent = "// hand-maintained file, no Typewriter header\n";
+            await File.WriteAllTextAsync(path: manualPath, contents: ManualContent);
+            await File.WriteAllTextAsync(path: configurationPath, contents: """{"output":{"includeInternals":false}}""");
+
+            var dryRun = await RunCliAsync("generate", "--workspace", directory, "--dry-run", "--output", "json");
+            dryRun.ExitCode.Should().Be(0);
+            File.Exists(path: stalePath).Should().BeTrue();
+            var validation = await RunCliAsync("validate", "--workspace", directory, "--output", "json");
+            validation.ExitCode.Should().Be(0);
+            File.Exists(path: stalePath).Should().BeTrue();
+            var incremental = await RunCliAsync("generate", "--workspace", directory, "--changed", project.SourcePath, "--output", "json");
+            incremental.ExitCode.Should().Be(0);
+            File.Exists(path: stalePath).Should().BeTrue();
+
+            var failingTemplate = Path.Combine(path1: directory, path2: "Invalid.tst");
+            await File.WriteAllTextAsync(path: failingTemplate, contents: "// output: Invalid.tst\n$Classes[$Name]");
+            var failed = await RunCliAsync("generate", "--workspace", directory, "--output", "json");
+            failed.ExitCode.Should().NotBe(0);
+            File.Exists(path: stalePath).Should().BeTrue();
+            await File.WriteAllTextAsync(path: failingTemplate, contents: "$Classes(Name=NoSuchClass)[$Name]");
+
+            await File.AppendAllTextAsync(path: activePath, contents: "\n// edit to replace");
+            await File.WriteAllTextAsync(path: configurationPath, contents: """{"output":{"cleanStaleFiles":false}}""");
+            var optedOut = await RunCliAsync("generate", "--workspace", directory, "--output", "json");
+            optedOut.ExitCode.Should().Be(0);
+            File.Exists(path: stalePath).Should().BeTrue();
+            (await File.ReadAllTextAsync(path: activePath)).Should().NotContain("edit to replace");
+
+            await File.WriteAllTextAsync(path: configurationPath, contents: "{}");
+            var full = await RunCliRawAsync(args: ["generate", "--workspace", directory], cancellationToken: CancellationToken.None);
+            full.ExitCode.Should().Be(0);
+            full.StandardOutput.Should().Contain($"deleted: {stalePath}");
+            File.Exists(path: stalePath).Should().BeFalse();
+            (await File.ReadAllTextAsync(path: manualPath)).Should().Be(ManualContent);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncCleanupKeepsOutputStillClaimedByAnotherTemplateScope()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            const string ActiveTemplate = "$Classes[export interface $Name {}]";
+            const string InactiveTemplate = "$Classes(Name=NoSuchClass)[export interface $Name {}]";
+            var project = await CreateSimpleProjectAsync(directory: directory, templateContent: ActiveTemplate);
+            var otherTemplate = Path.Combine(path1: directory, path2: "Other.tst");
+            await File.WriteAllTextAsync(path: otherTemplate, contents: ActiveTemplate);
+            var outputPath = Path.Combine(path1: directory, path2: "Customer.ts");
+            (await RunCliAsync("generate", "--workspace", directory, "--template", project.TemplatePath, "--output", "json")).ExitCode.Should().Be(0);
+
+            // The second template produces the same path and text, so this run skips the write.
+            (await RunCliAsync("generate", "--workspace", directory, "--template", otherTemplate, "--output", "json")).ExitCode.Should().Be(0);
+
+            await File.WriteAllTextAsync(path: project.TemplatePath, contents: InactiveTemplate);
+            (await RunCliAsync("generate", "--workspace", directory, "--template", project.TemplatePath, "--output", "json")).ExitCode.Should().Be(0);
+            File.Exists(path: outputPath).Should().BeTrue();
+
+            await File.WriteAllTextAsync(path: otherTemplate, contents: InactiveTemplate);
+            (await RunCliAsync("generate", "--workspace", directory, "--template", otherTemplate, "--output", "json")).ExitCode.Should().Be(0);
+            File.Exists(path: outputPath).Should().BeFalse();
         }
         finally
         {

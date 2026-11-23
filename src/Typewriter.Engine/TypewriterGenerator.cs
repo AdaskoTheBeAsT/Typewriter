@@ -75,6 +75,11 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
             solutionFullName: ResolveSolutionFullName(workspaceRootPath: workspace.RootPath));
         performanceTrace.Add(stage: "Render default resolution", elapsed: defaultsStopwatch.Elapsed);
         var incrementalChangedSourcePaths = ResolveIncrementalChangedSourcePaths(request: request);
+        using var ownership = await OpenOwnershipAsync(
+            request: request,
+            workspace: workspace,
+            projectPaths: projectPaths,
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         foreach (var projectPath in projectPaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -88,12 +93,34 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                 diagnostics: diagnostics,
                 generatedFiles: generatedFiles,
                 plannedOutputPaths: plannedOutputPaths,
+                ownership: ownership,
                 performanceTrace: performanceTrace,
                 cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
         }
 
-        return CreateResult(stopwatch: stopwatch, generatedFiles: generatedFiles, diagnostics: diagnostics, request: request, performanceTrace: performanceTrace);
+        var deletedFiles = await ReconcileOwnershipAsync(
+            ownership: ownership,
+            request: request,
+            isFullRun: incrementalChangedSourcePaths is null,
+            diagnostics: diagnostics,
+            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+        return CreateResult(stopwatch: stopwatch, generatedFiles: generatedFiles, diagnostics: diagnostics, request: request, performanceTrace: performanceTrace)
+            with { DeletedFiles = deletedFiles };
     }
+
+    private static Task<IReadOnlyList<string>> ReconcileOwnershipAsync(
+        GeneratedOutputOwnership? ownership,
+        GenerationRequest request,
+        bool isFullRun,
+        IReadOnlyList<GenerationDiagnostic> diagnostics,
+        CancellationToken cancellationToken) =>
+        ownership?.ReconcileAsync(
+            canPrune: request.Configuration.Output.CleanStaleFiles
+                && isFullRun
+                && IsSuccessful(diagnostics: diagnostics, request: request)
+                && !diagnostics.Any(predicate: diagnostic => string.Equals(a: diagnostic.Code, b: DiagnosticCodes.IncludedProjectNotFound, comparisonType: StringComparison.Ordinal)),
+            cancellationToken: cancellationToken)
+        ?? Task.FromResult<IReadOnlyList<string>>(result: []);
 
     private static void ReportDuplicateOutputPath(
         TemplateDocument template,
@@ -431,16 +458,18 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         stopwatch.Stop();
         performanceTrace.Add(stage: "Total generation", elapsed: stopwatch.Elapsed);
         performanceTrace.AddDiagnostics(diagnostics: diagnostics, file: request.WorkspacePath ?? request.ProjectPath ?? request.TemplatePath ?? Environment.CurrentDirectory);
-        var hasErrors = diagnostics.Any(predicate: diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var hasFailedWarnings = request.Configuration.Diagnostics.FailOnWarning
-            && diagnostics.Any(predicate: diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning);
-
         return new GenerationResult(
-            Success: !hasErrors && !hasFailedWarnings,
+            Success: IsSuccessful(diagnostics: diagnostics, request: request),
             GeneratedFiles: generatedFiles,
             Diagnostics: diagnostics.ToArray(),
             Duration: stopwatch.Elapsed);
     }
+
+    private static bool IsSuccessful(
+        IEnumerable<GenerationDiagnostic> diagnostics,
+        GenerationRequest request) =>
+        !diagnostics.Any(predicate: diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+            || (request.Configuration.Diagnostics.FailOnWarning && diagnostic.Severity == DiagnosticSeverity.Warning));
 
     private static CompiledTemplateFactory? CreateCompiledTemplateFactory(
         TemplateDocument template,
@@ -448,6 +477,21 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         !template.HasCompiledCode
             ? null
             : TemplateRuntimeCompiler.CompileFactory(template: template, diagnostics: diagnostics);
+
+    private Task<GeneratedOutputOwnership?> OpenOwnershipAsync(
+        GenerationRequest request,
+        WorkspaceContext workspace,
+        IReadOnlyList<string> projectPaths,
+        CancellationToken cancellationToken)
+    {
+        return _fileWriter is not FileSystemGeneratedFileWriter || request.Mode != GenerationMode.Generate || request.Configuration.Output.DryRun
+            ? Task.FromResult<GeneratedOutputOwnership?>(result: null)
+            : GeneratedOutputOwnership.OpenAsync(
+                workspacePath: workspace.RootPath,
+                projectPaths: projectPaths,
+                request: request,
+                cancellationToken: cancellationToken);
+    }
 
 #pragma warning disable MA0051,S107,S3776
     private async Task GenerateProjectAsync(
@@ -460,6 +504,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         ICollection<GenerationDiagnostic> diagnostics,
         ICollection<GeneratedFile> generatedFiles,
         IDictionary<string, string> plannedOutputPaths,
+        GeneratedOutputOwnership? ownership,
         GenerationPerformanceTrace performanceTrace,
         CancellationToken cancellationToken)
 #pragma warning restore MA0051,S107,S3776
@@ -612,6 +657,23 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
 
                         if (sourceRenderResult.RootItemCount == 0)
                         {
+                            if (ownership is not null
+                                && incrementalChangedSourcePaths is null
+                                && request.Configuration.Output.CleanStaleFiles
+                                && !sourceRenderResult.UsesOutputFilenameFactory)
+                            {
+                                var legacyOutput = ApplyLegacySourceOutputPath(
+                                    sourceFile: sourceContext.SourceFile,
+                                    renderResult: sourceRenderResult,
+                                    fileNameConvention: request.Configuration.Output.FileNameConvention);
+                                ownership.ConsiderLegacyPath(
+                                    path: GeneratedFilePlanner.ResolveOutputPath(
+                                        template: template,
+                                        configuredOutputPath: legacyOutput.OutputPath,
+                                        fileNameConvention: request.Configuration.Output.FileNameConvention),
+                                    templatePath: template.Path);
+                            }
+
                             continue;
                         }
 
@@ -627,6 +689,8 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                             diagnostics: diagnostics,
                             generatedFiles: generatedFiles,
                             plannedOutputPaths: plannedOutputPaths,
+                            ownership: ownership,
+                            perSourceFile: true,
                             statistics: templateStatistics,
                             cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
                     }
@@ -657,6 +721,8 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
                     diagnostics: diagnostics,
                     generatedFiles: generatedFiles,
                     plannedOutputPaths: plannedOutputPaths,
+                    ownership: ownership,
+                    perSourceFile: false,
                     statistics: templateStatistics,
                     cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
             }
@@ -767,6 +833,8 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         ICollection<GenerationDiagnostic> diagnostics,
         ICollection<GeneratedFile> generatedFiles,
         IDictionary<string, string> plannedOutputPaths,
+        GeneratedOutputOwnership? ownership,
+        bool perSourceFile,
         TemplatePerformanceStatistics? statistics,
         CancellationToken cancellationToken)
 #pragma warning restore S107
@@ -795,6 +863,7 @@ public sealed class TypewriterGenerator : ITypewriterGenerator
         if (plannedFile is not null)
         {
             ReportDuplicateOutputPath(template: template, plannedFile: plannedFile, diagnostics: diagnostics, plannedOutputPaths: plannedOutputPaths);
+            ownership?.Observe(path: plannedFile.Path, perSourceFile: perSourceFile);
             var writingStarted = statistics is null ? 0 : Stopwatch.GetTimestamp();
             var generatedFile = _fileWriter is FileSystemGeneratedFileWriter
                 ? await FileSystemGeneratedFileWriter.WriteAsync(
