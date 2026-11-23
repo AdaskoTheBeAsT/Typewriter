@@ -6,9 +6,9 @@
     <AssemblyName>Typewriter.VisualStudio</AssemblyName>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <MinimumVisualStudioVersion>18.12.1</MinimumVisualStudioVersion>
+    <MinimumVisualStudioVersion>18.0.0</MinimumVisualStudioVersion>
     <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
-    <VSSDKTargetPlatformVersion>18.12.1</VSSDKTargetPlatformVersion>
+    <VSSDKTargetPlatformVersion>18.0.0</VSSDKTargetPlatformVersion>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
     <UseCodebase>true</UseCodebase>
     <IncludeAssemblyFromOutputFolderInVSIXContainer>true</IncludeAssemblyFromOutputFolderInVSIXContainer>
