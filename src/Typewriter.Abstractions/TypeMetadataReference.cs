@@ -23,6 +23,12 @@ public sealed record TypeMetadataReference(
 
     public string AssemblyName { get; init; } = string.Empty;
 
+    /// <summary>Gets the effective accessibility of a named type when known.</summary>
+    public MetadataAccessibility? Accessibility { get; init; }
+
+    /// <summary>Gets the identity of the declaring parameter for a generic parameter reference.</summary>
+    public string? TypeParameterKey { get; init; }
+
     public TypeMetadataReference? ContainingType { get; init; }
 
     public IReadOnlyList<string> FileLocations { get; init; } = [];

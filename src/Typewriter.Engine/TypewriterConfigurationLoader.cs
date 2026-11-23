@@ -108,6 +108,7 @@ public static class TypewriterConfigurationLoader
                 Newline = loaded.Output?.Newline ?? current.Output.Newline,
                 Encoding = loaded.Output?.Encoding ?? current.Output.Encoding,
                 WriteOnlyWhenChanged = loaded.Output?.WriteOnlyWhenChanged ?? current.Output.WriteOnlyWhenChanged,
+                CleanStaleFiles = loaded.Output?.CleanStaleFiles ?? current.Output.CleanStaleFiles,
                 DryRun = loaded.Output?.DryRun ?? current.Output.DryRun,
                 FileNameConvention = loaded.Output?.FileNameConvention ?? current.Output.FileNameConvention,
                 StrictNull = loaded.Output?.StrictNull ?? current.Output.StrictNull,
@@ -292,6 +293,8 @@ public static class TypewriterConfigurationLoader
         public string? Encoding { get; init; }
 
         public bool? WriteOnlyWhenChanged { get; init; }
+
+        public bool? CleanStaleFiles { get; init; }
 
         public bool? DryRun { get; init; }
 

@@ -386,7 +386,8 @@ public sealed class FileSystemTemplateDiscovery : ITemplateDiscovery
     }
 
     private static bool IsAlwaysIgnoredDirectoryName(string name) =>
-        name.Equals(value: ".git", comparisonType: StringComparison.OrdinalIgnoreCase);
+        name.Equals(value: ".git", comparisonType: StringComparison.OrdinalIgnoreCase)
+        || GeneratedOutputOwnership.IsStateDirectoryName(name: name);
 
     private static bool IsExcluded(
         string root,

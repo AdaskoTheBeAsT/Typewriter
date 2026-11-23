@@ -102,6 +102,8 @@ public sealed record OutputConfiguration(
 
     public bool IncludeInternals { get; init; }
 
+    public bool CleanStaleFiles { get; init; } = true;
+
     public DateLibrary DateLibrary { get; init; } = DateLibrary.Legacy;
 
     public void Deconstruct(

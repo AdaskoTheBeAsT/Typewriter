@@ -61,6 +61,11 @@
           "description": "Skip disk writes when content is unchanged (keeps file watchers and HMR calm).",
           "default": true
         },
+        "cleanStaleFiles": {
+          "type": "boolean",
+          "description": "After a successful full generation, remove stale per-source outputs that still carry the Typewriter generated-file header.",
+          "default": true
+        },
         "dryRun": {
           "type": "boolean",
           "description": "Render without writing files.",

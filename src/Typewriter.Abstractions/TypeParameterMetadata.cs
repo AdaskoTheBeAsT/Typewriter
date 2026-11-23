@@ -5,5 +5,8 @@ public sealed record TypeParameterMetadata(
 {
     public string FullName { get; init; } = Name;
 
+    /// <summary>Gets the declaration identity used to match generic parameter references.</summary>
+    public string? Key { get; init; }
+
     public string? Documentation { get; init; }
 }

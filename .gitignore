@@ -21,6 +21,7 @@ x64/
 
 [Ll]ib/*.dll
 [Aa]rtifacts/
+.typewriter-outputs/
 
 # MSTest test Results
 [Tt]est[Rr]esult*/

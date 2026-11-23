@@ -1123,18 +1123,20 @@ internal sealed class TemplateFeatureService : IDisposable
     {
         var workspacePath = settings.ResolveWorkspacePath(documentPath: document.Path);
         var projectPath = settings.ResolveProjectPath(workspacePath: workspacePath);
-        var configuration = await TypewriterConfigurationLoader.LoadAsync(
-            workspacePath: workspacePath,
-            projectPath: projectPath,
-            cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
-        var includeInternals = configuration.Output.IncludeInternals;
-        if (!document.Text.Contains(value: "IncludeInternals", comparisonType: StringComparison.Ordinal))
-        {
-            return includeInternals;
-        }
+        var includeInternals = TypewriterConfiguration.Default.Output.IncludeInternals;
 
         try
         {
+            var configuration = await TypewriterConfigurationLoader.LoadAsync(
+                workspacePath: workspacePath,
+                projectPath: projectPath,
+                cancellationToken: cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            includeInternals = configuration.Output.IncludeInternals;
+            if (!document.Text.Contains(value: "IncludeInternals", comparisonType: StringComparison.Ordinal))
+            {
+                return includeInternals;
+            }
+
             var diagnostics = new List<GenerationDiagnostic>();
             var template = TemplateDocument.Parse(
                 template: new TemplateFile(
@@ -1156,8 +1158,13 @@ internal sealed class TemplateFeatureService : IDisposable
                 defaults: defaults);
             return inspection.IncludeInternals;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception)
         {
+            // Validation reports invalid configuration separately from editor requests.
             return includeInternals;
         }
     }

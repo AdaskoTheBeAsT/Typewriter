@@ -63,6 +63,19 @@ public sealed class GeneratedFilePlanner
 
         var resolvedOutputPath = ResolveOutputPath(template: template, configuredOutputPath: outputPath, fileNameConvention: fileNameConvention);
 
+        if (resolvedOutputPath.Split(separator: [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], options: StringSplitOptions.None)
+            .Any(predicate: GeneratedOutputOwnership.IsStateDirectoryName))
+        {
+            diagnostic = new GenerationDiagnostic(
+                File: resolvedOutputPath,
+                Line: null,
+                Column: null,
+                Severity: DiagnosticSeverity.Error,
+                Message: $"Cannot generate files in the reserved '{GeneratedOutputOwnership.StateDirectoryName}' directory.",
+                Code: DiagnosticCodes.GeneratedFileConflict);
+            return false;
+        }
+
         if (string.Equals(
             a: Path.GetFullPath(path: template.Path),
             b: resolvedOutputPath,
@@ -111,7 +124,7 @@ public sealed class GeneratedFilePlanner
         return true;
     }
 
-    private static string ResolveOutputPath(
+    internal static string ResolveOutputPath(
         TemplateDocument template,
         string? configuredOutputPath,
         FileNameConvention fileNameConvention)
@@ -134,6 +147,10 @@ public sealed class GeneratedFilePlanner
         return Path.GetFullPath(path: combined);
     }
 
+    internal static bool HasGeneratedHeader(ReadOnlySpan<char> content) =>
+        HasHeader(content: content, header: GeneratedFileHeader.Value)
+        || HasHeader(content: content, header: CrLfGeneratedFileHeader);
+
     private static string EnsureGeneratedHeader(string content)
     {
         if (HasGeneratedHeader(content: content))
@@ -144,7 +161,7 @@ public sealed class GeneratedFilePlanner
         return $"{GeneratedFileHeader.Value}\n\n{content.TrimStart('\r', '\n')}";
     }
 
-    private static bool HasGeneratedHeader(string content) =>
-        content.StartsWith(value: GeneratedFileHeader.Value, comparisonType: StringComparison.Ordinal)
-        || content.StartsWith(value: CrLfGeneratedFileHeader, comparisonType: StringComparison.Ordinal);
+    private static bool HasHeader(ReadOnlySpan<char> content, string header) =>
+        content.StartsWith(value: header, comparisonType: StringComparison.Ordinal)
+        && (content.Length == header.Length || content[header.Length] is '\r' or '\n');
 }

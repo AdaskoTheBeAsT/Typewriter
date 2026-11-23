@@ -198,6 +198,22 @@ internal static class TemplateRuntimeCompiler
         }
     }
 
+    internal static void AddDefaultTemplateDebuggingImport(ISet<string> usings)
+    {
+        foreach (var line in usings.Where(predicate: line => line.Contains(value: "Debugger", comparisonType: StringComparison.Ordinal)))
+        {
+            var directive = SyntaxFactory.ParseCompilationUnit(text: line).Usings.FirstOrDefault();
+            if (directive is { StaticKeyword.RawKind: (int)SyntaxKind.StaticKeyword, Name: { } name }
+                && string.Concat(values: name.DescendantTokens().Select(selector: token => token.ValueText)) is
+                    "System.Diagnostics.Debugger" or "global::System.Diagnostics.Debugger")
+            {
+                return;
+            }
+        }
+
+        _ = usings.Add(item: "using static Typewriter.VisualStudio.TemplateDebugging;");
+    }
+
     internal static IReadOnlyList<TextSpan> GetDisabledPreprocessorSpans(string code)
     {
         if (!code.Contains(value: '#', comparisonType: StringComparison.Ordinal))
@@ -548,7 +564,6 @@ internal static class TemplateRuntimeCompiler
             "using Typewriter.Extensions.Types;",
             "using Typewriter.Extensions.WebApi;",
             "using Typewriter.VisualStudio;",
-            "using static Typewriter.VisualStudio.TemplateDebugging;",
             "using Attribute = Typewriter.CodeModel.Attribute;",
             "using Class = Typewriter.CodeModel.Class;",
             "using Constant = Typewriter.CodeModel.Constant;",
@@ -580,6 +595,7 @@ internal static class TemplateRuntimeCompiler
             }
         }
 
+        AddDefaultTemplateDebuggingImport(usings: usings);
         var source = new StringBuilder();
         source.AppendLine(value: "#define " + PreprocessorSymbol);
         source.AppendLine(value: "#nullable disable");

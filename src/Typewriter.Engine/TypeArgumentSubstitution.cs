@@ -11,11 +11,10 @@ internal sealed class TypeArgumentSubstitution(IReadOnlyDictionary<string, TypeM
 
     public static TypeArgumentSubstitution? Create(
         TypeMetadata type,
-        TypeMetadataReference? reference)
+        TypeMetadataReference? reference,
+        ProjectMetadataIndex metadataIndex)
     {
-        if (reference is null
-            || type.TypeParameters.Count == 0
-            || type.TypeParameters.Count != reference.TypeArguments.Count)
+        if (reference is null || (type.TypeParameters.Count == 0 && reference.ContainingType is null))
         {
             return null;
         }
@@ -23,12 +22,16 @@ internal sealed class TypeArgumentSubstitution(IReadOnlyDictionary<string, TypeM
 #pragma warning disable IDE0028
         var map = new Dictionary<string, TypeMetadataReference>(comparer: StringComparer.Ordinal);
 #pragma warning restore IDE0028
-        for (var index = 0; index < type.TypeParameters.Count; index++)
+        AddBindings(parameters: type.TypeParameters, arguments: reference.TypeArguments, map: map);
+        for (var containing = reference.ContainingType; containing is not null; containing = containing.ContainingType)
         {
-            map[type.TypeParameters[index: index].Name] = reference.TypeArguments[index: index];
+            if (metadataIndex.TryResolveType(reference: containing, metadata: out var owner))
+            {
+                AddBindings(parameters: owner.TypeParameters, arguments: containing.TypeArguments, map: map);
+            }
         }
 
-        return new TypeArgumentSubstitution(substitutions: map);
+        return map.Count == 0 ? null : new TypeArgumentSubstitution(substitutions: map);
     }
 
     public TypeMetadataReference Substitute(TypeMetadataReference target)
@@ -133,6 +136,23 @@ internal sealed class TypeArgumentSubstitution(IReadOnlyDictionary<string, TypeM
                 };
     }
 
+    private static void AddBindings(
+        IReadOnlyList<TypeParameterMetadata> parameters,
+        IReadOnlyList<TypeMetadataReference> arguments,
+        Dictionary<string, TypeMetadataReference> map)
+    {
+        if (parameters.Count != arguments.Count)
+        {
+            return;
+        }
+
+        for (var index = 0; index < parameters.Count; index++)
+        {
+            var parameter = parameters[index: index];
+            _ = map.TryAdd(key: parameter.Key ?? parameter.Name, value: arguments[index: index]);
+        }
+    }
+
     private IReadOnlyList<ParameterMetadata> SubstituteParameters(IReadOnlyList<ParameterMetadata> parameters)
     {
         if (parameters.Count == 0)
@@ -206,10 +226,11 @@ internal sealed class TypeArgumentSubstitution(IReadOnlyDictionary<string, TypeM
 
     private TypeMetadataReference SubstituteUncached(TypeMetadataReference target)
     {
-        if (target.Arity == 0
-            && target.TypeArguments.Count == 0
-            && (substitutions.TryGetValue(key: target.Name, value: out var replacement)
-                || substitutions.TryGetValue(key: target.FullName, value: out replacement)))
+        if (target.TypeParameterKey is { } key
+                ? substitutions.TryGetValue(key: key, value: out var replacement)
+                : target.Accessibility is null && target.Arity == 0 && target.TypeArguments.Count == 0
+                  && (substitutions.TryGetValue(key: target.FullName, value: out replacement)
+                      || substitutions.TryGetValue(key: target.Name, value: out replacement)))
         {
             return target.IsNullable && !replacement.IsNullable
                 ? replacement with { IsNullable = true }
@@ -218,6 +239,8 @@ internal sealed class TypeArgumentSubstitution(IReadOnlyDictionary<string, TypeM
 
         var hasChanges = false;
         var typeArguments = SubstituteTypeArguments(arguments: target.TypeArguments, hasChanges: ref hasChanges);
+        var containingType = target.ContainingType is { } containing ? SubstituteCore(target: containing) : null;
+        hasChanges |= !ReferenceEquals(objA: containingType, objB: target.ContainingType);
         var elementType = target.ElementType;
         if (elementType is not null)
         {
@@ -235,6 +258,7 @@ internal sealed class TypeArgumentSubstitution(IReadOnlyDictionary<string, TypeM
             ? target with
             {
                 TypeArguments = typeArguments,
+                ContainingType = containingType,
                 ElementType = elementType,
                 TupleElements = tupleElements,
                 Interfaces = new LazySubstitutedTypeReferenceList(source: target.Interfaces, substitution: this),

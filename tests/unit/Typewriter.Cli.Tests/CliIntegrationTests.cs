@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using AwesomeAssertions;
+using Typewriter.Engine;
 using Xunit;
 
 namespace Typewriter.Cli.Tests;
@@ -46,6 +48,7 @@ public sealed class CliIntegrationTests
             output.GetProperty(propertyName: "newline").GetString().Should().Be("lf");
             output.GetProperty(propertyName: "encoding").GetString().Should().Be("utf-8");
             output.GetProperty(propertyName: "writeOnlyWhenChanged").GetBoolean().Should().BeTrue();
+            output.GetProperty(propertyName: "cleanStaleFiles").GetBoolean().Should().BeTrue();
             output.GetProperty(propertyName: "dryRun").GetBoolean().Should().BeFalse();
             output.GetProperty(propertyName: "fileNameConvention").GetString().Should().Be("preserve");
             output.GetProperty(propertyName: "dateLibrary").GetString().Should().Be("legacy");
@@ -1551,6 +1554,281 @@ public sealed class CliIntegrationTests
             configuredContent.Should().Contain("auditStamp: string;");
             configuredContent.Should().Contain("internalToken: string;");
             configuredContent.Should().Contain("export interface InternalState");
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncCleanupUsesTypewriterHeaderForConventionalLegacyOutputs()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                templateContent: "$Classes[export interface $Name {}]");
+            var models = Path.GetDirectoryName(path: project.SourcePath)!;
+            await File.WriteAllTextAsync(path: Path.Combine(path1: models, path2: "InternalModel.cs"), contents: "internal class InternalModel {}");
+            await File.WriteAllTextAsync(path: Path.Combine(path1: models, path2: "ManualModel.cs"), contents: "internal class ManualModel {}");
+            var stalePath = Path.Combine(path1: directory, path2: "InternalModel.ts");
+            var manualPath = Path.Combine(path1: directory, path2: "ManualModel.ts");
+            var unrelatedPath = Path.Combine(path1: directory, path2: "Unrelated.ts");
+
+            // No manifest. The old file has a BOM, CRLF, and manual edits below the intact header.
+            await File.WriteAllTextAsync(
+                path: stalePath,
+                contents: GeneratedFileHeader.Value.Replace(oldValue: "\n", newValue: "\r\n", comparisonType: StringComparison.Ordinal) + "\r\n// edited",
+                encoding: new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            await File.WriteAllTextAsync(path: manualPath, contents: GeneratedFileHeader.Value + "-not-the-typewriter-header\n");
+            await File.WriteAllTextAsync(path: unrelatedPath, contents: GeneratedFileHeader.Value + "\n");
+
+            var result = await RunCliAsync("generate", "--workspace", directory, "--template", project.TemplatePath, "--output", "json");
+
+            result.ExitCode.Should().Be(0);
+            using var json = JsonDocument.Parse(json: result.StandardOutput);
+            ReadStringArray(element: json.RootElement.GetProperty(propertyName: "deletedFiles")).Should().Equal(stalePath);
+            File.Exists(path: stalePath).Should().BeFalse();
+            File.Exists(path: manualPath).Should().BeTrue();
+            File.Exists(path: unrelatedPath).Should().BeTrue();
+            File.Exists(path: Path.Combine(path1: directory, path2: "Customer.ts")).Should().BeTrue();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncCleanupRequiresSuccessfulFullGenerationAndOptOutStillRegenerates()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                templateContent: """
+                                 ${
+                                     Template(Settings settings) {
+                                         settings.OutputFilenameFactory = file => "mapped-" + file.Classes.First().Name + ".ts";
+                                     }
+                                 }
+                                 $Classes[export interface $Name {}]
+                                 """);
+            var sourceDirectory = Path.GetDirectoryName(path: project.SourcePath)!;
+            await File.WriteAllTextAsync(path: Path.Combine(path1: sourceDirectory, path2: "InternalModel.cs"), contents: "internal class InternalModel {}");
+            await File.WriteAllTextAsync(path: Path.Combine(path1: sourceDirectory, path2: "ManualModel.cs"), contents: "internal class ManualModel {}");
+            var configurationPath = Path.Combine(path1: directory, path2: ConfigurationFileName);
+            await File.WriteAllTextAsync(path: configurationPath, contents: """{"output":{"includeInternals":true}}""");
+            var initial = await RunCliAsync("generate", "--workspace", directory, "--output", "json");
+            initial.ExitCode.Should().Be(0);
+            var stalePath = Path.Combine(path1: directory, path2: "mapped-InternalModel.ts");
+            var manualPath = Path.Combine(path1: directory, path2: "mapped-ManualModel.ts");
+            var activePath = Path.Combine(path1: directory, path2: "mapped-Customer.ts");
+            File.Exists(path: stalePath).Should().BeTrue();
+            const string ManualContent = "// hand-maintained file, no Typewriter header\n";
+            await File.WriteAllTextAsync(path: manualPath, contents: ManualContent);
+            await File.WriteAllTextAsync(path: configurationPath, contents: """{"output":{"includeInternals":false}}""");
+
+            var dryRun = await RunCliAsync("generate", "--workspace", directory, "--dry-run", "--output", "json");
+            dryRun.ExitCode.Should().Be(0);
+            File.Exists(path: stalePath).Should().BeTrue();
+            var validation = await RunCliAsync("validate", "--workspace", directory, "--output", "json");
+            validation.ExitCode.Should().Be(0);
+            File.Exists(path: stalePath).Should().BeTrue();
+            var incremental = await RunCliAsync("generate", "--workspace", directory, "--changed", project.SourcePath, "--output", "json");
+            incremental.ExitCode.Should().Be(0);
+            File.Exists(path: stalePath).Should().BeTrue();
+
+            var failingTemplate = Path.Combine(path1: directory, path2: "Invalid.tst");
+            await File.WriteAllTextAsync(path: failingTemplate, contents: "// output: Invalid.tst\n$Classes[$Name]");
+            var failed = await RunCliAsync("generate", "--workspace", directory, "--output", "json");
+            failed.ExitCode.Should().NotBe(0);
+            File.Exists(path: stalePath).Should().BeTrue();
+            await File.WriteAllTextAsync(path: failingTemplate, contents: "$Classes(Name=NoSuchClass)[$Name]");
+
+            await File.AppendAllTextAsync(path: activePath, contents: "\n// edit to replace");
+            await File.WriteAllTextAsync(path: configurationPath, contents: """{"output":{"cleanStaleFiles":false}}""");
+            var optedOut = await RunCliAsync("generate", "--workspace", directory, "--output", "json");
+            optedOut.ExitCode.Should().Be(0);
+            File.Exists(path: stalePath).Should().BeTrue();
+            (await File.ReadAllTextAsync(path: activePath)).Should().NotContain("edit to replace");
+
+            await File.WriteAllTextAsync(path: configurationPath, contents: "{}");
+            var full = await RunCliRawAsync(args: ["generate", "--workspace", directory], cancellationToken: CancellationToken.None);
+            full.ExitCode.Should().Be(0);
+            full.StandardOutput.Should().Contain($"deleted: {stalePath}");
+            File.Exists(path: stalePath).Should().BeFalse();
+            (await File.ReadAllTextAsync(path: manualPath)).Should().Be(ManualContent);
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncCleanupKeepsOutputStillClaimedByAnotherTemplateScope()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            const string ActiveTemplate = "$Classes[export interface $Name {}]";
+            const string InactiveTemplate = "$Classes(Name=NoSuchClass)[export interface $Name {}]";
+            var project = await CreateSimpleProjectAsync(directory: directory, templateContent: ActiveTemplate);
+            var otherTemplate = Path.Combine(path1: directory, path2: "Other.tst");
+            await File.WriteAllTextAsync(path: otherTemplate, contents: ActiveTemplate);
+            var outputPath = Path.Combine(path1: directory, path2: "Customer.ts");
+            (await RunCliAsync("generate", "--workspace", directory, "--template", project.TemplatePath, "--output", "json")).ExitCode.Should().Be(0);
+
+            // The second template produces the same path and text, so this run skips the write.
+            (await RunCliAsync("generate", "--workspace", directory, "--template", otherTemplate, "--output", "json")).ExitCode.Should().Be(0);
+
+            await File.WriteAllTextAsync(path: project.TemplatePath, contents: InactiveTemplate);
+            (await RunCliAsync("generate", "--workspace", directory, "--template", project.TemplatePath, "--output", "json")).ExitCode.Should().Be(0);
+            File.Exists(path: outputPath).Should().BeTrue();
+
+            await File.WriteAllTextAsync(path: otherTemplate, contents: InactiveTemplate);
+            (await RunCliAsync("generate", "--workspace", directory, "--template", otherTemplate, "--output", "json")).ExitCode.Should().Be(0);
+            File.Exists(path: outputPath).Should().BeFalse();
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncGenerateFiltersEffectivelyInternalNestedTypesAndReferencedMembers()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                sourceContent: """
+                               namespace Sample;
+
+                               internal class Outer
+                               {
+                                   public class Nested { public string Secret { get; set; } = ""; }
+                               }
+
+                               public class DtoKindAttribute(System.Type value) : System.Attribute
+                               {
+                                   public System.Type Value => value;
+                               }
+
+                               [DtoKind(typeof(Outer.Nested))]
+                               public class Contract { }
+                               """);
+            const string TemplateBody = """
+                roots=[$Classes[$Name][,]]
+                direct=[$Classes(Name=Contract)[$Attributes[$Arguments[$TypeValue[$Properties[$Name][,]]]]]]
+                helper=[$Classes(Name=Contract)[$MemberNames]]
+                """;
+            const string TemplateHelpers = """
+                ${
+                    string MemberNames(Class c) => string.Join(",", c.Attributes.Single().Arguments.Single().TypeValue.Properties.Select(p => p.Name));
+                    Template(Settings settings) { settings.IncludeInternals(OPT_IN); }
+                }
+                """;
+            var generatedPath = Path.Combine(path1: directory, path2: "models.ts");
+            foreach (var includeInternals in new[] { "false", "true" })
+            {
+                await File.WriteAllTextAsync(
+                    path: project.TemplatePath,
+                    contents: "// output: models.ts\n"
+                        + TemplateHelpers.Replace(oldValue: "OPT_IN", newValue: includeInternals, comparisonType: StringComparison.Ordinal)
+                        + "\n" + TemplateBody);
+                var result = await RunCliAsync(
+                    "generate",
+                    "--workspace",
+                    directory,
+                    "--project",
+                    project.ProjectPath,
+                    "--template",
+                    project.TemplatePath,
+                    "--framework",
+                    "net10.0",
+                    "--output",
+                    "json");
+                result.ExitCode.Should().Be(0);
+                var content = await File.ReadAllTextAsync(path: generatedPath);
+                if (includeInternals == "true")
+                {
+                    content.Should().Contain("roots=[Contract,DtoKindAttribute,Outer,Nested]");
+                    content.Should().Contain("direct=[Secret]").And.Contain("helper=[Secret]");
+                }
+                else
+                {
+                    content.Should().Contain("roots=[Contract,DtoKindAttribute]");
+                    content.Should().Contain("direct=[]").And.Contain("helper=[]");
+                }
+            }
+        }
+        finally
+        {
+            await DeleteDirectoryWithRetryAsync(directory: directory);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsyncGenerateSubstitutesGenericMembersByParameterIdentityAcrossContainingTypes()
+    {
+        var directory = CreateProjectDirectory();
+        try
+        {
+            var project = await CreateSimpleProjectAsync(
+                directory: directory,
+                sourceContent: """
+                               namespace Sample;
+
+                               public class T { }
+                               public class Box<T>
+                               {
+                                   public T Value { get; set; } = default!;
+                                   public global::Sample.T Unrelated { get; set; } = new();
+                                   public Outer<T>.Inner Nested { get; set; } = new();
+                               }
+
+                               public class Outer<T>
+                               {
+                                   public class Inner { public T Value { get; set; } = default!; }
+                               }
+
+                               public class Contracts
+                               {
+                                   public void Submit(Box<string> box, Outer<int>.Inner inner) { }
+                               }
+                               """,
+                templateContent: """
+                                 // output: models.ts
+                                 ${
+                                     string Members(Parameter p) => string.Join(",", p.Type.Properties
+                                         .Where(x => x.Name != "Nested").Select(x => x.Name + "=" + x.Type.Name));
+                                 }
+                                 $Classes(Name=Contracts)[$Methods[$Parameters[$Name:helper=[$Members] direct=[$Type[$Properties(Name=Value)[$Name=$Type]$Properties(Name=Unrelated)[,$Name=$Type]]] nested=[$Type[$Properties(Name=Nested)[$Type[$Properties[$Name=$Type]]]]]
+                                 ]]]
+                                 """);
+            var result = await RunCliAsync(
+                "generate",
+                "--workspace",
+                directory,
+                "--project",
+                project.ProjectPath,
+                "--template",
+                project.TemplatePath,
+                "--framework",
+                "net10.0",
+                "--output",
+                "json");
+            result.ExitCode.Should().Be(0);
+            var content = await File.ReadAllTextAsync(path: Path.Combine(path1: directory, path2: "models.ts"));
+            content.Should().Contain("box:helper=[Value=string,Unrelated=T] direct=[Value=string,Unrelated=T] nested=[Value=string]");
+            content.Should().Contain("inner:helper=[Value=number] direct=[Value=number] nested=[]");
         }
         finally
         {
