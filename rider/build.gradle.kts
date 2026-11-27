@@ -14,6 +14,8 @@ repositories {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+
     intellijPlatform {
         rider(providers.gradleProperty("platformVersion").get()) {
             useInstaller = false

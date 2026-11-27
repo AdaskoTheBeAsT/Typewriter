@@ -19,6 +19,7 @@ This is the Rider frontend layer: a Kotlin/IntelliJ Platform plugin for UI, acti
   - Generate All Templates
   - Validate Current Template
 - Adds Settings | Typewriter project settings for CLI path, CLI arguments, workspace/project/template paths, framework, all-project generation, and save-time generation/validation for files matched by `typewriter.json` `inputExtensions`.
+- Uses the nearest unambiguous `.csproj` for single-template generation and validation when no project path is configured. For shared templates without a clear project, set **Project path** in Settings | Typewriter.
 - Restricts source-file save generation to templates under the owning C# project.
 - Reuses a project-scoped Typewriter language-server process for generation and validation, with CLI fallback.
 
@@ -35,7 +36,7 @@ winget install EclipseAdoptium.Temurin.21.JDK
 ```powershell
 .\rider\gradlew.bat -p rider verifyPluginProjectConfiguration
 .\rider\gradlew.bat -p rider verifyPlugin
-.\rider\gradlew.bat -p rider buildPlugin
+.\rider\gradlew.bat -p rider test buildPlugin
 ```
 
 The plugin ZIP is written under `rider/build/distributions/typewriter-rider-<version>.zip`. CI collects it as `Typewriter-Rider-<version>.zip`.

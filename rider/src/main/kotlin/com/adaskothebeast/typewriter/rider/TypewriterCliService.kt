@@ -92,7 +92,7 @@ class TypewriterCliService(private val project: Project) {
             }
         }
 
-        val projectPath = findNearestProjectPathForInput(file)
+        val projectPath = findNearestProjectPathForInput(file.path)
         return when {
             settings.generateOnSave -> SaveRequest("generate", "Generate Typewriter templates after save", templatePath = null, allTemplates = true, projectPath = projectPath, projectScoped = true)
             settings.validateOnSave -> SaveRequest("validate", "Validate Typewriter templates after save", templatePath = null, allTemplates = true, projectPath = projectPath, projectScoped = true)
@@ -202,7 +202,12 @@ class TypewriterCliService(private val project: Project) {
 
         try {
             val workingDirectory = getPathBase(workspacePath).toString()
-            val projectPath = resolveOptionalPath(settings.projectPath, getPathBase(workspacePath).toString()) ?: projectPathOverride
+            val currentTemplatePath = if (allTemplates) null else templatePath
+            val projectPath = resolveGenerationProjectPath(
+                configuredProjectPath = resolveOptionalPath(settings.projectPath, workingDirectory),
+                projectPathOverride = projectPathOverride,
+                templatePath = currentTemplatePath,
+            )
             val templateSearchPath = if (projectScoped) resolveProjectTemplateSearchPath(projectPath) else null
             if (allTemplates && templatePath.isNullOrBlank() && templateSearchPath == null && shouldSkipWithoutTemplates(projectPath, workspacePath)) {
                 if (!projectScoped) {
@@ -216,7 +221,7 @@ class TypewriterCliService(private val project: Project) {
                     command = command,
                     workspacePath = workspacePath,
                     projectPath = projectPath,
-                    templatePath = if (allTemplates) null else templatePath,
+                    templatePath = currentTemplatePath,
                     templateSearchPath = templateSearchPath,
                     framework = settings.framework.ifBlank { null },
                     allProjects = allTemplates && settings.allProjects,
@@ -247,9 +252,9 @@ class TypewriterCliService(private val project: Project) {
                 arguments += projectPath
             }
 
-            if (!templatePath.isNullOrBlank() && !allTemplates) {
+            if (!currentTemplatePath.isNullOrBlank()) {
                 arguments += "--template"
-                arguments += templatePath
+                arguments += currentTemplatePath
             }
 
             if (!templateSearchPath.isNullOrBlank()) {
@@ -369,27 +374,6 @@ class TypewriterCliService(private val project: Project) {
             path.parent != null -> path.parent
             else -> path
         }
-    }
-
-    private fun findNearestProjectPathForInput(file: VirtualFile): String? {
-        if (file.extension.equals("csproj", ignoreCase = true)) {
-            return file.path
-        }
-
-        var directory = Paths.get(file.path).parent
-        while (directory != null) {
-            val projectFile = directory.toFile()
-                .listFiles { candidate -> candidate.isFile && candidate.name.endsWith(".csproj", ignoreCase = true) }
-                ?.sortedBy { it.name.lowercase() }
-                ?.firstOrNull()
-            if (projectFile != null) {
-                return projectFile.toPath().toString()
-            }
-
-            directory = directory.parent
-        }
-
-        return null
     }
 
     private fun resolveProjectTemplateSearchPath(projectPath: String?): String? {
